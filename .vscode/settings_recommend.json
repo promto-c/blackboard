@@ -1,0 +1,24 @@
+{
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}"
+    },
+    "terminal.integrated.env.osx": {
+        "PYTHONPATH": "${workspaceFolder}:${env:PYTHONPATH}"
+    },
+    "terminal.integrated.env.windows": {
+        "PYTHONPATH": "${workspaceFolder};${env:PYTHONPATH}"
+    },
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "files.associations": {
+        "*.glsl": "csharp",
+        "*.vert": "csharp",
+        "*.frag": "csharp",
+        "*.vs": "csharp",
+        "*.fs": "csharp",
+        "*.gs": "csharp"
+    }
+}
