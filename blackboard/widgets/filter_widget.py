@@ -14,13 +14,13 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-from utils.tree_utils import extract_all_items_from_tree
-from utils.date_utils import get_date_list
+from blackboard.utils.tree_utils import extract_all_items_from_tree
+from blackboard.utils.date_utils import get_date_list
 
 from blackboard.widgets.calendar_widget import RangeCalendarWidget
 from blackboard.widgets.tag_widget import TagWidget
 
-from theme import set_theme
+from blackboard.theme import set_theme
 
 class MatchContainsCompleter(QtWidgets.QCompleter):
     def __init__(self, parent=None):

@@ -199,7 +199,7 @@ def main():
     # Set theme of QApplication to the dark theme
     set_theme(app, 'dark')
 
-    from example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
+    from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
 
     # Create an instance of the widget
     database_view_widget = DatabaseViewWidget()

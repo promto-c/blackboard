@@ -1,0 +1,6 @@
+[submodule "blackboard/theme"]
+	path = blackboard/theme
+	url = https://github.com/promto-c/pyqt-dark-theme.git
+[submodule "code_templates"]
+	path = code_templates
+	url = https://github.com/promto-c/pyqt-code-template.git

@@ -5,7 +5,7 @@ import dateutil.parser as date_parser
 
 from qtpy import QtCore, QtGui, QtWidgets
 
-from utils.color_utils import ColorUtils
+from blackboard.utils.color_utils import ColorUtils
 
 
 def create_pastel_color(color: QtGui.QColor, saturation: float = 0.4, value: float = 0.9) -> QtGui.QColor:

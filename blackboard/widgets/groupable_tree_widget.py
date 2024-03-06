@@ -15,7 +15,7 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-from utils.tree_utils import extract_all_items_from_tree 
+from blackboard.utils.tree_utils import extract_all_items_from_tree 
 
 from blackboard.widgets.item_delegate import HighlightItemDelegate, AdaptiveColorMappingDelegate
 # NOTE: test
@@ -1374,7 +1374,7 @@ def main():
     # Set theme of QApplication to the dark theme
     set_theme(app, 'dark')
 
-    from example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
+    from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
 
     # Create an instance of the widget and set it as the central widget
     tree_widget = GroupableTreeWidget(
