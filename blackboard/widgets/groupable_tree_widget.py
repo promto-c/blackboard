@@ -399,14 +399,12 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.column_name_list = column_name_list
         self.id_to_data_dict = id_to_data_dict
 
-        # Set up the initial values
-        self._setup_attributes()
-        # Set up the UI
-        self._setup_ui()
-        # Set up signal connections
-        self._setup_signal_connections()
+        # Initialize setup
+        self.__init_attributes()
+        self.__init_ui()
+        self.__init_signal_connections()
 
-    def _setup_attributes(self):
+    def __init_attributes(self):
         """Set up the initial values for the widget.
         """
         # Attributes
@@ -438,7 +436,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self._row_height = 24
 
-    def _setup_ui(self):
+        self.menu = QtWidgets.QMenu(self)
+
+    def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
         """
         self.setColumnWidth(0, 10)
@@ -475,7 +475,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self.set_row_height(self._row_height)
 
-    def _setup_signal_connections(self):
+    def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
         """
         # Connect signal of header
@@ -526,54 +526,60 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # If 'scalable_view' is available and is an instance of QtWidgets.QGraphicsView, use it as the parent for the menu
         # This ensures that the context menu is displayed correctly within the view
         # Otherwise, use self as the parent for the menu
-        if hasattr(self, 'scalable_view') and isinstance(self.scalable_view, QtWidgets.QGraphicsView):
-            menu = QtWidgets.QMenu(self.scalable_view)
-        else:
-            menu = QtWidgets.QMenu(self)
+        # if hasattr(self, 'scalable_view') and isinstance(self.scalable_view, QtWidgets.QGraphicsView):
+        #     menu = QtWidgets.QMenu(self.scalable_view)
+        # else:
+        #     menu = QtWidgets.QMenu(self)
 
-        self.add_label_action(menu, 'Grouping')
+        if hasattr(self, 'scalable_view') and isinstance(self.scalable_view, QtWidgets.QGraphicsView):
+            self.menu.setParent(self.scalable_view)
+            self.menu.setGraphicsEffect
+
+        QtWidgets.QWidget.setGraphicsEffect()
+
+        self.add_label_action(self.menu, 'Grouping')
 
         # Create the 'Group by this column' action and connect it to the 'group_by_column' method. Pass in the selected column as an argument.
-        group_by_action = menu.addAction('Group by this column')
+        group_by_action = self.menu.addAction('Group by this column')
         group_by_action.triggered.connect(lambda: self.group_by_column(column))
 
         # Create the 'Ungroup all' action and connect it to the 'ungroup_all' method
-        ungroup_all_action = menu.addAction('Ungroup all')
+        ungroup_all_action = self.menu.addAction('Ungroup all')
         ungroup_all_action.triggered.connect(self.ungroup_all)
 
         # Add a separator
-        menu.addSeparator()
+        self.menu.addSeparator()
 
-        self.add_label_action(menu, 'Visualization')
+        self.add_label_action(self.menu, 'Visualization')
 
         # Create the 'Set Color Adaptive' action and connect it to the 'apply_column_color_adaptive' method
-        apply_color_adaptive_action = menu.addAction('Set Color Adaptive')
+        apply_color_adaptive_action = self.menu.addAction('Set Color Adaptive')
         apply_color_adaptive_action.triggered.connect(lambda: self.apply_column_color_adaptive(column))
 
         # Create the 'Reset All Color Adaptive' action and connect it to the 'reset_all_color_adaptive_column' method
-        reset_all_color_adaptive_action = menu.addAction('Reset All Color Adaptive')
+        reset_all_color_adaptive_action = self.menu.addAction('Reset All Color Adaptive')
         reset_all_color_adaptive_action.triggered.connect(self.reset_all_color_adaptive_column)
 
         # Add a separator
-        menu.addSeparator()
+        self.menu.addSeparator()
 
         # Add the 'Fit in View' action and connect it to the 'fit_column_in_view' method
-        fit_column_in_view_action = menu.addAction('Fit in View')
+        fit_column_in_view_action = self.menu.addAction('Fit in View')
         fit_column_in_view_action.triggered.connect(self.fit_column_in_view)
 
         # Add a separator
-        menu.addSeparator()
+        self.menu.addSeparator()
 
-        self.add_label_action(menu, 'Manage Columns')
-        show_hide_column = menu.addMenu('Show/Hide Columns')
-        menu.addMenu(show_hide_column)
+        self.add_label_action(self.menu, 'Manage Columns')
+        show_hide_column = self.menu.addMenu('Show/Hide Columns')
+        self.menu.addMenu(show_hide_column)
 
         self.column_list_widget = ColumnListWidget(self)
         action = QtWidgets.QWidgetAction(self)
         action.setDefaultWidget(self.column_list_widget)
         show_hide_column.addAction(action)
 
-        hide_this_column = menu.addAction('Hide This Column')
+        hide_this_column = self.menu.addAction('Hide This Column')
         hide_this_column.triggered.connect(lambda: self.hideColumn(column))
 
         # Disable 'Group by this column' on the first column
@@ -581,7 +587,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             group_by_action.setDisabled(True)
 
         # Show the context menu
-        menu.popup(QtGui.QCursor.pos())
+        self.menu.popup(QtGui.QCursor.pos())
 
     def _create_item_groups(self, data: List[str]) -> Dict[str, List[TreeWidgetItem]]:
         """Group the data into a dictionary mapping group names to lists of tree items.

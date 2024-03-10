@@ -28,12 +28,12 @@ class SearchableHeaderView(QtWidgets.QHeaderView):
         super().__init__(orientation, parent, *args, **kwargs)
 
         # Initialize setup
-        self._setup_attributes()
-        self._setup_ui()
-        self._setup_icons()
-        self._setup_signal_connections()
+        self.__init_attributes()
+        self.__init_ui()
+        self.__init_icons()
+        self.__init_signal_connections()
 
-    def _setup_attributes(self):
+    def __init_attributes(self):
         """Set up the initial values for the widget.
         """
         # Attributes
@@ -44,7 +44,7 @@ class SearchableHeaderView(QtWidgets.QHeaderView):
         # ------------------
         ...
 
-    def _setup_ui(self):
+    def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
         """
         # Create widgets and layouts
@@ -57,14 +57,14 @@ class SearchableHeaderView(QtWidgets.QHeaderView):
             self.parent().setHeader(self)
             self.update_positions()
 
-    def _setup_signal_connections(self):
+    def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
         """
         # Connect signals to slots
         self.sectionResized.connect(self.update_positions)
         self.parent().horizontalScrollBar().valueChanged.connect(self.update_positions)
 
-    def _setup_icons(self):
+    def __init_icons(self):
         """Set the icons for the widgets.
         """
         # Set the icons for the widgets

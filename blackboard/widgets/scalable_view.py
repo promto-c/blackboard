@@ -28,17 +28,15 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Call the parent class constructor
         super().__init__(parent)
 
-        # Store argument(s)
+        # Store the arguments
         self.widget = widget
 
-        # Set up the initial values
-        self._setup_attributes()
-        # Set up the UI
-        self._setup_ui()
-        # Set up signal connections
-        self._setup_signal_connections()
+        # Initialize setup
+        self.__init_attributes()
+        self.__init_ui()
+        self.__init_signal_connections()
 
-    def _setup_attributes(self):
+    def __init_attributes(self):
         """Set up the initial values for the widget.
         """
         # Create a reference in the widget to the ScalableView object
@@ -53,7 +51,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Set the current zoom level to 1.0 (no zoom)
         self.current_zoom_level = self.DEFAULT_ZOOM_LEVEL
 
-    def _setup_ui(self):
+    def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
         """
         # Set the scene
@@ -73,7 +71,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Set the vertical scroll bar policy to always off
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-    def _setup_signal_connections(self):
+    def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
         """
         # Connect the wheel event signal to the scaling slot
