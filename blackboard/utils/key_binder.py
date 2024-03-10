@@ -4,7 +4,7 @@ from typing import Callable, Union, List, Dict
 
 # Third Party Imports
 # -------------------
-from PyQt5 import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 
 # Local Imports
 # -------------
