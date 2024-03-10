@@ -23,23 +23,8 @@ from blackboard.widgets.filter_widget import (
 from blackboard.widgets.simple_search_widget import SimpleSearchEdit
 from blackboard.widgets.groupable_tree_widget import GroupableTreeWidget, TreeUtilityToolBar
 from blackboard.widgets.scalable_view import ScalableView
-from blackboard.theme import set_theme
+from blackboard.utils.key_binder import KeyBinder
 
-# NOTE: Workaround
-# ----------------
-class CustomShortcut(QtWidgets.QShortcut):
-    def __init__(self, key_sequence, parent_widget, callback, target_widget=None):
-        super().__init__(QtGui.QKeySequence(key_sequence), parent_widget)
-        self.target_widget = target_widget or parent_widget
-        self.callback = callback
-        self.activated.connect(self.check_focus_and_activate)
-
-    def check_focus_and_activate(self):
-        focused_widget = QtWidgets.QApplication.instance().focus_widget
-
-        if focused_widget == self.target_widget:
-            self.callback()
-# ----------------
 
 class DatabaseViewWidget(QtWidgets.QWidget):
     """
@@ -121,26 +106,7 @@ class DatabaseViewWidget(QtWidgets.QWidget):
         """Set up signal connections between widgets and slots.
         """
         # Connect signals to slots
-        self.bind_key('Ctrl+F', self.search_edit.set_text_as_selection)
-
-    def bind_key(self, key_sequence: Union[str, QtGui.QKeySequence], function: Callable, 
-                 context: QtCore.Qt.ShortcutContext = QtCore.Qt.ShortcutContext.WidgetShortcut):
-        """Binds a given key sequence to a function.
-        
-        Args:
-            key_sequence (Union[str, QtGui.QKeySequence]): The key sequence as a string or QKeySequence, e.g., "Ctrl+F".
-            function (Callable): The function to be called when the key sequence is activated.
-            context (QtCore.Qt.ShortcutContext, optional): The context in which the shortcut is active.
-        """
-        # Create a shortcut with the specified key sequence
-        # NOTE: Workaround
-        # ----------------
-        shortcut = CustomShortcut(QtGui.QKeySequence(key_sequence), self.tree_widget, function)
-        # NOTE: Use CustomShortcut to handle context widget instead of old becuse when use with ScalableView
-        #       ScalableView will handle as qapp.focusWidget
-        # shortcut.setContext(context)
-        # Connect the activated signal of the shortcut to the given function
-        # shortcut.activated.connect(function)
+        KeyBinder.bind_key(self.tree_widget, 'Ctrl+F', self.search_edit.set_text_as_selection)
 
     def add_filter_widget(self, filter_widget: 'FilterWidget'):
         self.filter_bar_widget.add_filter_widget(filter_widget)
@@ -165,41 +131,17 @@ class DatabaseViewWidget(QtWidgets.QWidget):
 
         self.search_edit.update()
 
-# NOTE: Workaround
-# ----------------
-class FocusEventFilter(QtCore.QObject):
-    def eventFilter(self, obj, event):
-        if event.type() == QtCore.QEvent.Type.FocusIn and not isinstance(obj, QtWidgets.QCommonStyle):
-            QtWidgets.QApplication.instance().focus_widget = obj
-            # print(self.focus_widget)
-            # print(f"{obj} has gained focus.")
-        elif event.type() == QtCore.QEvent.Type.FocusOut:
-            if QtWidgets.QApplication.instance().focus_widget == obj:
-                QtWidgets.QApplication.instance().focus_widget = None
-        return super().eventFilter(obj, event)
-# ----------------
 
 def main():
     """Create the application and main window, and show the widget.
     """
+    from blackboard.theme import set_theme
+    from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
+
     # Create the application and the main window
     app = QtWidgets.QApplication(sys.argv)
-    # app.focusChanged.connect(lambda old, new: print(f"Focus changed from {old} to {new}"))
-
-    # NOTE: Workaround
-    # ----------------
-    # NOTE: Use FocusEventFilter to handle focused_widget instead of original focusWidget()
-    #       because it will get only ScalableView that wrapped all inside widgets
-    focus_event_filter = FocusEventFilter()
-    app.focus_widget = None
-    app.installEventFilter(focus_event_filter)
-    # ----------------
-
-
     # Set theme of QApplication to the dark theme
     set_theme(app, 'dark')
-
-    from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
 
     # Create an instance of the widget
     database_view_widget = DatabaseViewWidget()
@@ -239,8 +181,6 @@ def main():
 
     # Create the scalable view and set the tree widget as its central widget
     scalable_view = ScalableView(widget=database_view_widget)
-
-    # database_view_widget.setFocusProxy(scalable_view)
 
     # Show the widget
     scalable_view.show()
