@@ -106,6 +106,7 @@ class DatabaseViewWidget(QtWidgets.QWidget):
         """Set up signal connections between widgets and slots.
         """
         # Connect signals to slots
+        self.tree_utility_tool_bar.refresh_button.clicked.connect(self.activate_filter)
         KeyBinder.bind_key(self.tree_widget, 'Ctrl+F', self.search_edit.set_text_as_selection)
 
     def add_filter_widget(self, filter_widget: 'FilterWidget'):
