@@ -1,6 +1,6 @@
 # Standard Library Imports
 # ------------------------
-import sys, datetime
+import datetime
 
 # Third Party Imports
 # -------------------
@@ -211,6 +211,7 @@ class GanttTreeWidget(QtWidgets.QTreeWidget):
 
 # Example usage
 if __name__ == "__main__":
+    import sys
 
     app = QtWidgets.QApplication(sys.argv)
 

@@ -1,50 +1,51 @@
 # Type Checking Imports
 # ---------------------
-from typing import Callable, Union, List, Dict
+from typing import Callable, Union, List, Dict, DefaultDict, Tuple
+
+# Standard Imports
+# ----------------
+from collections import defaultdict
 
 # Third Party Imports
 # -------------------
 from qtpy import QtCore, QtGui, QtWidgets
 
-# Local Imports
-# -------------
-from blackboard.utils.event_filter import FocusEventFilter
-
-
 # Class Definitions
 # -----------------
 # TODO: Add supported for any QtCore.Qt.ShortcutContext
 class Shortcut(QtWidgets.QShortcut):
-    def __init__(self, key_sequence: Union[str, QtGui.QKeySequence], parent_widget, 
-                 callback: Callable, context:  QtCore.Qt.ShortcutContext = QtCore.Qt.ShortcutContext.WindowShortcut, 
-                 target_widget=None):
-        super().__init__(QtGui.QKeySequence(key_sequence), parent_widget)
-        self.setContext(context)
 
-        self.target_widget = target_widget or parent_widget
-        self.callback = callback
+    _shortcuts: DefaultDict[str, List[Tuple[QtWidgets.QWidget, Callable]]] = defaultdict(list)
+
+    def __init__(self, key_sequence: QtGui.QKeySequence, parent_widget: QtWidgets.QWidget, callback: Callable):
+        # NOTE: ambiguousMember, to handle when multiple widgets binding on same key (when use with ScalableView)
+        context = QtCore.Qt.ShortcutContext.WindowShortcut
+        try:
+            super().__init__(key_sequence, parent_widget, self.activate, self.activate, context)
+        except TypeError:
+            super().__init__(key_sequence, parent_widget, self.activate, context)
+
+        self.key_sequence_str = key_sequence.toString()
+        Shortcut._shortcuts[self.key_sequence_str].append((parent_widget, callback))
 
         # TODO: Check if not wrapped by ScalableView
         # # Connect the activated signal of the shortcut to the given function
         # self.activated.connect(self.callback)
+        # self.activated.connect(self.check_focus_and_activate)
 
-        QtWidgets.QApplication.instance().installEventFilter(KeyBinder.focus_event_filter)
-        self.activated.connect(self.check_focus_and_activate)
-
-    def check_focus_and_activate(self):
-        if self.target_widget in FocusEventFilter.focus_widgets:
-            self.callback()
+    # NOTE: Use activate() to handle focused_widget instead of original app.focusWidget()
+    #       because it will get only ScalableView that wrapped all inside widgets
+    def activate(self):
+        for widget, callback in Shortcut._shortcuts[self.key_sequence_str]:
+            if widget.hasFocus():
+                callback()
 
 class KeyBinder(QtWidgets.QWidget):
     shortcuts: Dict[str, Shortcut] = {}
 
-    # NOTE: Use FocusEventFilter to handle focused_widget instead of original focusWidget()
-    #       because it will get only ScalableView that wrapped all inside widgets
-    focus_event_filter = FocusEventFilter()
-
     @classmethod
-    def bind_key(cls, widget, key_sequence: Union[str, QtGui.QKeySequence], callback: Callable, 
-                 context: QtCore.Qt.ShortcutContext = QtCore.Qt.ShortcutContext.WindowShortcut) -> Shortcut:
+    def bind_key(cls, key_sequence: Union[str, QtGui.QKeySequence], parent_widget: QtWidgets.QWidget, callback: Callable, 
+                 context: QtCore.Qt.ShortcutContext = QtCore.Qt.ShortcutContext.WidgetShortcut) -> Shortcut:
         """Binds a given key sequence to a function.
         
         Args:
@@ -52,10 +53,16 @@ class KeyBinder(QtWidgets.QWidget):
             callback (Callable): The function to be called when the key sequence is activated.
             context (QtCore.Qt.ShortcutContext, optional): The context in which the shortcut is active.
         """
+        key_sequence = QtGui.QKeySequence(key_sequence)
+
         # Create a shortcut with the specified key sequence
-        shortcut = Shortcut(key_sequence, widget, callback, context=context)
+        if context == QtCore.Qt.ShortcutContext.WidgetShortcut:
+            shortcut = Shortcut(key_sequence, parent_widget, callback)
+        else:
+            shortcut = QtGui.QShortcut(key_sequence, parent_widget, callback, context=context)
+
         # Store the shortcut object
-        cls.shortcuts[str(key_sequence)] = shortcut
+        cls.shortcuts[key_sequence.toString()] = shortcut
 
         return shortcut
 

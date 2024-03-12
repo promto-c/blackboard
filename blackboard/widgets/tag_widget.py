@@ -1,14 +1,19 @@
-import sys, time
-from typing import Tuple
+# Standard Library Imports
+# ------------------------
+import time
 
+# Third Party Imports
+# -------------------
 from qtpy import QtWidgets, QtCore, QtGui
 from tablerqicon import TablerQIcon
 
 
+# Class Definitions
+# -----------------
 class TagButton(QtWidgets.QPushButton):
     tag_removed = QtCore.Signal(str)
 
-    def __init__(self, text, parent=None):
+    def __init__(self, text: str, parent=None):
         super().__init__(text, parent)
 
         self.setStyleSheet('''
@@ -86,7 +91,7 @@ class TagWidget(QtWidgets.QWidget):
     def show_tool_tip(self, text: str, msc_show_time: int = 1000):
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text, self, QtCore.QRect(), msc_show_time)
 
-    def add_tag(self, text):
+    def add_tag(self, text: str):
         if text not in self.tags:
             self.tags.add(text)
             tag_label = TagButton(text, self)
@@ -96,10 +101,10 @@ class TagWidget(QtWidgets.QWidget):
 
         self.tag_changed.emit()
 
-    def emit_remove_tag(self, tag_name):
+    def emit_remove_tag(self, tag_name: str):
         self.tag_removed.emit(tag_name)
 
-    def remove_tag(self, text):
+    def remove_tag(self, text: str):
         if text in self.tags:
             self.tags.remove(text)
         for i in reversed(range(self.tag_layout.count())):

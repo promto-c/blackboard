@@ -337,3 +337,78 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
 
         # Paint the item normally using the parent implementation
         super().paint(painter, option, model_index)
+
+class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
+    """A delegate that highlights text matches within items."""
+    
+    def __init__(self, parent=None, highlight_text: str = ''):
+        """Initializes the HighlightDelegate with optional highlighting text.
+        
+        Args:
+            parent: The parent widget.
+            highlight_text: The text to highlight within the delegate's items.
+        """
+        super().__init__(parent)
+        self.highlight_text = highlight_text
+
+        # Get the QApplication instance (creating a new one if necessary) and retrieve the frame margin for highlight positioning.
+        app_instance = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        self.spacing = app_instance.style().pixelMetric(QtWidgets.QStyle.PixelMetric.PM_FocusFrameHMargin)
+
+        # Highlight color
+        self.highlight_color = QtGui.QColor(QtCore.Qt.yellow)
+        self.highlight_color.setAlpha(65)
+    
+        # Create a pen with the custom color and set its style to DashLine
+        pen_color = QtGui.QColor("#777")
+        self.pen = QtGui.QPen(pen_color)
+        self.pen.setStyle(QtCore.Qt.PenStyle.DashLine)
+
+    def set_highlight_text(self, text: str):
+        """Updates the delegate with the current filter text.
+        """
+        self.highlight_text = text
+
+    def paint(self, painter, option, index):
+        """Paints the delegate's items, highlighting matches of the highlight text.
+        
+        Args:
+            painter: The QPainter instance used for painting the item.
+            option: The style options for the item.
+            index: The index of the item in the model.
+        """
+        if self.highlight_text:
+            # Custom painting code here
+            text = index.data(QtCore.Qt.ItemDataRole.DisplayRole)
+            painter.save()
+
+            # Apply the highlight color and pen to the painter
+            painter.setBrush(self.highlight_color)
+            painter.setPen(self.pen)
+
+            # Find all occurrences of the highlight text
+            start_pos = 0
+            while True:
+                start_pos = text.lower().find(self.highlight_text.lower(), start_pos)
+                if start_pos == -1:
+                    break
+                end_pos = start_pos + len(self.highlight_text)
+
+                # Calculate the bounding rect for the highlight text
+                font_metrics = painter.fontMetrics()
+                before_text_width = font_metrics.width(text[:start_pos])
+                highlight_text_width = font_metrics.width(text[start_pos:end_pos])
+
+                # Adjust highlight_rect to include padding
+                highlight_rect = QtCore.QRect(option.rect.left() + before_text_width + self.spacing, option.rect.top(),
+                                            highlight_text_width + self.spacing, option.rect.height())
+        
+                radius = 2
+                # Fill the background of the highlight text
+                painter.drawRoundedRect(highlight_rect, radius, radius)
+                start_pos += len(self.highlight_text)
+
+            painter.restore()
+
+        # Call the base class to do the default painting
+        super().paint(painter, option, index)

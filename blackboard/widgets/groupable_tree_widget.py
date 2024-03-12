@@ -1,10 +1,9 @@
 # Type Checking Imports
 # ---------------------
-from typing import Any, Dict, List, Union, Tuple, Callable, Optional
+from typing import Any, Dict, List, Union, Tuple, Optional
 
 # Standard Library Imports
 # ------------------------
-import sys
 import time
 from numbers import Number
 
@@ -15,13 +14,10 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-from blackboard.utils.tree_utils import extract_all_items_from_tree 
-
-from blackboard.widgets.item_delegate import HighlightItemDelegate, AdaptiveColorMappingDelegate
+import blackboard as bb
+from blackboard import widgets
 # NOTE: test
 from blackboard.widgets.header_view import SearchableHeaderView
-
-from blackboard.theme import set_theme
 
 
 # Class Definitions
@@ -175,11 +171,11 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         # Delegate the retrieval of the value to the `get_value` method
         return self.get_value(key)
 
-    def __lt__(self, other_item: QtWidgets.QTreeWidgetItem) -> bool:
+    def __lt__(self, other_item: 'TreeWidgetItem') -> bool:
         """Sort the items in the tree widget based on their data.
 
         Args:
-            other_item (QtWidgets.QTreeWidgetItem): The item to compare with.
+            other_item (TreeWidgetItem): The item to compare with.
 
         Returns:
             bool: Whether this item is less than the other item.
@@ -219,7 +215,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         return hash(self.id)
 
 class ColumnListWidget(QtWidgets.QListWidget):
-    def __init__(self, tree_widget: QtWidgets.QTreeWidget) -> None:
+    def __init__(self, tree_widget: 'GroupableTreeWidget') -> None:
         super().__init__(tree_widget)
 
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
@@ -361,7 +357,7 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         self.word_wrap_button.toggled.connect(self.tree_widget.setWordWrap)
         self.set_uniform_row_height_button.toggled.connect(self.toggle_uniform_row_height)
         self.uniform_row_height_spin_box.valueChanged.connect(self.tree_widget.set_row_height)
-        # self.refresh_button.clicked.connect(self.tree_widget)
+        # self.refresh_button.clicked.connect(self.tree_widget.refresh)
 
     def toggle_uniform_row_height(self, state: bool):
         height = self.uniform_row_height_spin_box.value() if state else -1
@@ -416,10 +412,10 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         #
         self.id_to_tree_item = dict()
-        # self.color_adaptive_columns = list()
+        self.color_adaptive_columns = list()
 
         # Initialize the HighlightItemDelegate object to highlight items in the tree widget.
-        self.highlight_item_delegate = HighlightItemDelegate()
+        self.highlight_item_delegate = widgets.HighlightItemDelegate()
 
         # Private Attributes
         # ------------------
@@ -435,8 +431,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self._mouse_move_timestamp = float()
 
         self._row_height = 24
-
-        self.menu = QtWidgets.QMenu(self)
 
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
@@ -491,7 +485,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Key Binds
         # ---------
         # Create a shortcut for the copy action and connect its activated signal
-        self.bind_key(QtGui.QKeySequence.StandardKey.Copy, self.copy_selected_cells)
+        bb.utils.KeyBinder.bind_key(QtGui.QKeySequence.StandardKey.Copy, self, self.copy_selected_cells)
 
     # Private Methods
     # ---------------
@@ -522,20 +516,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         column = self.header().logicalIndexAt(pos)
         
         # Create the context menu
-        # NOTE: Check if the widget has a 'scalable_view' attribute and if it is an instance of QtWidgets.QGraphicsView
-        # If 'scalable_view' is available and is an instance of QtWidgets.QGraphicsView, use it as the parent for the menu
-        # This ensures that the context menu is displayed correctly within the view
-        # Otherwise, use self as the parent for the menu
-        # if hasattr(self, 'scalable_view') and isinstance(self.scalable_view, QtWidgets.QGraphicsView):
-        #     menu = QtWidgets.QMenu(self.scalable_view)
-        # else:
-        #     menu = QtWidgets.QMenu(self)
-
-        if hasattr(self, 'scalable_view') and isinstance(self.scalable_view, QtWidgets.QGraphicsView):
-            self.menu.setParent(self.scalable_view)
-            self.menu.setGraphicsEffect
-
-        QtWidgets.QWidget.setGraphicsEffect()
+        self.menu = QtWidgets.QMenu()
 
         self.add_label_action(self.menu, 'Grouping')
 
@@ -760,18 +741,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.highlight_item_delegate.clear()
         self.update()
 
-    def bind_key(self, key_sequence: str, function: Callable):
-        """Binds a given key sequence to a function.
-
-        Args:
-            key_sequence (str): The key sequence as a string, e.g., "Ctrl+C".
-            function (Callable): The function to be called when the key sequence is activated.
-        """
-        # Create a shortcut with the specified key sequence
-        shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(key_sequence), self)
-        # Connect the activated signal of the shortcut to the given function
-        shortcut.activated.connect(function)
-
     # NOTE: for refactoring
     def set_row_height(self, height):
         self._row_height = height
@@ -897,6 +866,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         Args:
             column (int): The index of the column to apply the adaptive color mapping.
         """
+        self.color_adaptive_columns.append(column)
+
         # Determine the child level based on the presence of a grouped column
         child_level = 1 if self.grouped_column_name else 0
 
@@ -904,7 +875,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         min_value, max_value = self.get_column_value_range(column, child_level)
 
         # Create and set the adaptive color mapping delegate for the column
-        delegate = AdaptiveColorMappingDelegate(self, min_value, max_value)
+        delegate = widgets.AdaptiveColorMappingDelegate(self, min_value, max_value)
         self.setItemDelegateForColumn(column, delegate)
 
     def reset_all_color_adaptive_column(self):
@@ -912,6 +883,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         for column in range(self.columnCount()):
             self.setItemDelegateForColumn(column, None)
+
+        self.color_adaptive_columns.clear()
 
     def set_column_name_list(self, column_name_list: List[str]) -> None:
         """Set the names of the columns in the tree widget.
@@ -1102,7 +1075,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         Returns:
             List[TreeWidgetItem]: A list containing all the items in the tree widget.
         """
-        return extract_all_items_from_tree(self)
+        return bb.utils.TreeUtil.extract_all_items_from_tree(self)
 
     def copy_selected_cells(self):
         # NOTE: For refactoring
@@ -1160,7 +1133,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     def paste_cells_from_clipboard(self):
         # NOTE: Further Implementation Required
-        #
+        # TODO: Implement popup window to be confirm paste data on each columns.
         #
         model = self.selectionModel()
         model_indexes = model.selectedIndexes()
@@ -1372,15 +1345,16 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 def main():
     """Create the application and main window, and show the widget.
     """
+    import sys
+    from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
+
     # Create the application and the main window
     app = QtWidgets.QApplication(sys.argv)
     # NOTE: Test window icon
     app.setWindowIcon(QtGui.QIcon('image_not_available_placeholder.png'))
 
     # Set theme of QApplication to the dark theme
-    set_theme(app, 'dark')
-
-    from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
+    bb.theme.set_theme(app, 'dark')
 
     # Create an instance of the widget and set it as the central widget
     tree_widget = GroupableTreeWidget(

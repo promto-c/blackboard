@@ -14,13 +14,9 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-from blackboard.utils.tree_utils import extract_all_items_from_tree
-from blackboard.utils.date_utils import get_date_list
+import blackboard as bb
+from blackboard import widgets
 
-from blackboard.widgets.calendar_widget import RangeCalendarWidget
-from blackboard.widgets.tag_widget import TagWidget
-
-# from blackboard.theme import set_theme
 
 class MatchContainsCompleter(QtWidgets.QCompleter):
     def __init__(self, parent=None):
@@ -118,7 +114,10 @@ class FilterPopupButton(QtWidgets.QComboBox):
 
     def __init_popup_menu(self):
         """Setup the popup menu of the widget."""
-        self.popup_menu = CustomMenu(self.parent())
+        self.popup_menu = CustomMenu()
+
+        bb.utils.KeyBinder.bind_key('Enter', self, self.showPopup)
+        bb.utils.KeyBinder.bind_key('Return', self, self.showPopup)
 
     def __init_ui_properties(self):
         """Setup UI properties like size, cursor, etc."""
@@ -160,13 +159,6 @@ class FilterPopupButton(QtWidgets.QComboBox):
 
     # Event Handling or Override Methods
     # ----------------------------------
-    def keyPressEvent(self, event: QtGui.QKeyEvent):
-        """Handle key press events."""
-        if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
-            self.showPopup()
-        else:
-            super().keyPressEvent(event)
-
     def setCurrentText(self, text: str):
         """Set the current text of the button.
         """
@@ -182,7 +174,10 @@ class FilterPopupButton(QtWidgets.QComboBox):
     def hidePopup(self):
         """Hide the popup menu.
         """
-        self.popup_menu.hide()
+        try:
+            self.popup_menu.hide()
+        except RuntimeError:
+            pass
 
     def paintEvent(self, event: QtGui.QPaintEvent):
         """Handles the painting of the button, including its icon and opacity."""
@@ -336,6 +331,8 @@ class FilterWidget(QtWidgets.QWidget):
         self.label_changed.connect(self.set_button_text)
         self.activated.connect(self._update_button_active_state)
 
+        bb.utils.KeyBinder.bind_key('Enter', self, self.apply_filter)
+
     def __init_button_popup_menu(self):
         # Update the popup menu with the new filter widget
         action = QtWidgets.QWidgetAction(self._button.popup_menu)
@@ -359,9 +356,9 @@ class FilterWidget(QtWidgets.QWidget):
 
     def _emit_clear_signals(self):
         # Emit the label_changed signal with an empty string to indicate that the condition is cleared
-        self.label_changed.emit("")
+        self.label_changed.emit(str())
         # Emit the activated signal with an empty list to indicate no active date range
-        self.activated.emit([])
+        self.activated.emit(list())
 
     # Public Methods
     # --------------
@@ -499,7 +496,7 @@ class DateRangeFilterWidget(FilterWidget):
         self.set_icon(TablerQIcon.calendar)
 
         # Create widgets and layouts here
-        self.calendar = RangeCalendarWidget(self)
+        self.calendar = widgets.RangeCalendarWidget(self)
         self.relative_date_combo_box = QtWidgets.QComboBox(self)
         self.relative_date_combo_box.addItems(self.RELATIVE_DATES)
 
@@ -550,7 +547,7 @@ class DateRangeFilterWidget(FilterWidget):
         end_date_str = self.end_date.toString(QtCore.Qt.DateFormat.ISODate) if self.end_date else str()
 
         if start_date_str or end_date_str:
-            date_list = get_date_list(start_date_str, end_date_str)
+            date_list = bb.utils.DateUtil.get_date_list(start_date_str, end_date_str)
         else:
             date_list = list()
             filter_label = str()
@@ -621,7 +618,7 @@ class MultiSelectFilterWidget(FilterWidget):
         # Create widgets and layouts
         self.set_icon(TablerQIcon.list_check)
 
-        self.tag_widget = TagWidget(self)
+        self.tag_widget = widgets.TagWidget(self)
 
         #
         self.line_edit = QtWidgets.QLineEdit(self)
@@ -673,7 +670,7 @@ class MultiSelectFilterWidget(FilterWidget):
         self.line_edit.style().polish(self.line_edit)
 
     def update_completer(self):
-        item_names = [item.text(0) for item in extract_all_items_from_tree(self.tree_widget)]
+        item_names = [item.text(0) for item in bb.utils.TreeUtil.extract_all_items_from_tree(self.tree_widget)]
         model = QtCore.QStringListModel(item_names)
         self.completer.setModel(model)
 
@@ -852,7 +849,7 @@ class MultiSelectFilterWidget(FilterWidget):
     def get_checked_item_texts(self) -> List[str]:
         """Returns the checked items in the tree.
         """
-        all_items = extract_all_items_from_tree(self.tree_widget)
+        all_items = bb.utils.TreeUtil.extract_all_items_from_tree(self.tree_widget)
         checked_items = []
         for tree_item in all_items:
             if tree_item.childCount() or tree_item.checkState(0) == QtCore.Qt.CheckState.Unchecked:
@@ -1041,7 +1038,7 @@ class BooleanFilterWidget(FilterWidget):
 if __name__ == '__main__':
     app = QtWidgets.QApplication([])
 
-    # set_theme(app, 'dark')
+    bb.theme.set_theme(app, 'dark')
 
     main_window = QtWidgets.QMainWindow()
     main_layout = QtWidgets.QHBoxLayout()

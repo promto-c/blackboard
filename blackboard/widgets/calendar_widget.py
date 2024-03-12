@@ -2,10 +2,6 @@
 # ---------------------
 from typing import Tuple
 
-# Standard Library Imports
-# ------------------------
-import sys
-
 # Third Party Imports
 # -------------------
 from qtpy import QtWidgets, QtCore, QtGui
@@ -197,6 +193,8 @@ class RangeCalendarWidget(QtWidgets.QCalendarWidget):
         self._update_shift_state(event)
 
 if __name__ == "__main__":
+    import sys
+
     app = QtWidgets.QApplication(sys.argv)
     calendar_widget = RangeCalendarWidget()
     calendar_widget.show()

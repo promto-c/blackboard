@@ -1,12 +1,18 @@
-import sys
+# Type Checking Imports
+# ---------------------
 from typing import Callable, Optional
 
+# Third Party Imports
+# -------------------
 from qtpy import QtWidgets, QtCore, QtGui
 
-from blackboard.theme import set_theme
+# Local Imports
+# -------------
+from blackboard.utils import KeyBinder
 
-from blackboard.widgets.groupable_tree_widget import GroupableTreeWidget
 
+# Class Definitions
+# -----------------
 class ScalableView(QtWidgets.QGraphicsView):
     """A QGraphicsView subclass that allows the user to scale the contents of the view 
     using the mouse wheel and keyboard.
@@ -23,8 +29,7 @@ class ScalableView(QtWidgets.QGraphicsView):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent: Optional[QtWidgets.QWidget] = None,
-                       widget: Optional[QtWidgets.QWidget] = None):
+    def __init__(self, widget: QtWidgets.QWidget, parent: Optional[QtWidgets.QWidget] = None):
         # Call the parent class constructor
         super().__init__(parent)
 
@@ -39,11 +44,6 @@ class ScalableView(QtWidgets.QGraphicsView):
     def __init_attributes(self):
         """Set up the initial values for the widget.
         """
-        # Create a reference in the widget to the ScalableView object
-        # NOTE: This reference ensures that context menus are displayed correctly within the view
-        # Also, use this reference as an argument when creating context menu (QMenu) instances in the widget
-        self.widget.scalable_view = self
-
         # Set the minimum and maximum scale values
         self.min_zoom_level = self.DEFAULT_MIN_ZOOM_LEVEL
         self.max_zoom_level = self.DEFAULT_MAX_ZOOM_LEVEL
@@ -57,7 +57,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Set the scene
         self.setScene(QtWidgets.QGraphicsScene(self))
         # Set the widget as the central widget of the scene
-        self.scene().addWidget(self.widget)
+        self.graphic_proxy_widget = self.scene().addWidget(self.widget)
         # Set the alignment of the widget to the top left corner
         self.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft)
 
@@ -81,7 +81,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Key Binds
         # ---------
         # Create a QShortcut for the F key to reset the scaling of the view.
-        self.bind_key('F', self.reset_scale)
+        KeyBinder.bind_key('F', self, self.reset_scale, QtCore.Qt.ShortcutContext.WindowShortcut)
 
     # Extended Methods
     # ----------------
@@ -135,13 +135,25 @@ class ScalableView(QtWidgets.QGraphicsView):
 
     # Event Handling or Override Methods
     # ----------------------------------
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        if event.type() == QtCore.QEvent.Type.ContextMenu and obj is not None:
+            # TODO: Modify the context menu to allow it to popup and overlap the ScalableView instead of being constrained within it.
+            ...
+
+            # Show the menu
+            self.contextMenuEvent(event)
+
+            # Return True indicating the event has been handled
+            return True
+
+        # Default case: Pass the event on to the parent class
+        return super().eventFilter(obj, event)
+
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
         """Handle resize events to resize the widget to the full size of the view, reserved for scaling.
         """
         # Get the size of the view
         view_size = self.size()
-        # Get the QGraphicItem containing the widget
-        graphic_item = self.scene().itemAt(0, 0, QtGui.QTransform())
 
         # Create a QRectF object with the size of the view reserved for scaling
         rect = QtCore.QRectF(
@@ -150,7 +162,7 @@ class ScalableView(QtWidgets.QGraphicsView):
             view_size.height() / self.current_zoom_level-2)
 
         # Set the size of the widget to the size of the view
-        graphic_item.setGeometry(rect)
+        self.graphic_proxy_widget.setGeometry(rect)
         self.scene().setSceneRect(rect)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
@@ -175,16 +187,20 @@ class ScalableView(QtWidgets.QGraphicsView):
             super().wheelEvent(event)
 
 def main():
+    import sys
+    import blackboard as bb
+    from blackboard import widgets
+
     # Create the Qt application
     app = QtWidgets.QApplication(sys.argv)
 
     # Set theme of QApplication to the dark theme
-    set_theme(app, 'dark')
+    bb.theme.set_theme(app, 'dark')
 
     from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
 
     # Create the tree widget with example data
-    tree_widget = GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST, id_to_data_dict=ID_TO_DATA_DICT)
+    tree_widget = widgets.GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST, id_to_data_dict=ID_TO_DATA_DICT)
 
     # Create the scalable view and set the tree widget as its central widget
     scalable_tree_widget_view = ScalableView(widget=tree_widget)

@@ -1,10 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Any, Union, Callable, Dict, Iterable
-
-# Standard Library Imports
-# ------------------------
-import sys
+from typing import Any, Dict, Iterable
 
 # Third Party Imports
 # -------------------
@@ -13,19 +9,12 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-from blackboard.widgets.filter_widget import (
-    FilterBarWidget, FilterWidget,
-    DateRangeFilterWidget,
-    MultiSelectFilterWidget,
-    FileTypeFilterWidget,
-    BooleanFilterWidget
-)
-from blackboard.widgets.simple_search_widget import SimpleSearchEdit
-from blackboard.widgets.groupable_tree_widget import GroupableTreeWidget, TreeUtilityToolBar
-from blackboard.widgets.scalable_view import ScalableView
-from blackboard.utils.key_binder import KeyBinder
+import blackboard as bb
+from blackboard import widgets
 
 
+# Class Definitions
+# -----------------
 class DatabaseViewWidget(QtWidgets.QWidget):
     """
     """
@@ -79,14 +68,14 @@ class DatabaseViewWidget(QtWidgets.QWidget):
         # Create Widgets
         # --------------
         # [W1]: Create top left filter bar
-        self.filter_bar_widget = FilterBarWidget(self)
+        self.filter_bar_widget = widgets.FilterBarWidget(self)
 
         # [W3]: Create asset tree widget
-        self.tree_widget = GroupableTreeWidget(parent=self)
-        self.tree_utility_tool_bar = TreeUtilityToolBar(self.tree_widget)
+        self.tree_widget = widgets.GroupableTreeWidget(parent=self)
+        self.tree_utility_tool_bar = widgets.TreeUtilityToolBar(self.tree_widget)
 
         # [W2]: Search field
-        self.search_edit = SimpleSearchEdit(tree_widget=self.tree_widget, parent=self)
+        self.search_edit = widgets.SimpleSearchEdit(tree_widget=self.tree_widget, parent=self)
         self.search_edit.setMinimumWidth(200)
 
         # Add Widgets to Layouts
@@ -107,9 +96,11 @@ class DatabaseViewWidget(QtWidgets.QWidget):
         """
         # Connect signals to slots
         self.tree_utility_tool_bar.refresh_button.clicked.connect(self.activate_filter)
-        KeyBinder.bind_key(self.tree_widget, 'Ctrl+F', self.search_edit.set_text_as_selection)
+        bb.utils.KeyBinder.bind_key('Ctrl+F', self.tree_widget, self.search_edit.set_text_as_selection)
 
-    def add_filter_widget(self, filter_widget: 'FilterWidget'):
+    # Public Methods
+    # --------------
+    def add_filter_widget(self, filter_widget: 'widgets.FilterWidget'):
         self.filter_bar_widget.add_filter_widget(filter_widget)
         filter_widget.activated.connect(self.activate_filter)
 
@@ -122,6 +113,12 @@ class DatabaseViewWidget(QtWidgets.QWidget):
     def activate_filter(self):
         # Logic to filter data then populate
         ...
+        # Example Implementation:
+        # ---
+        # id_to_data_dict = ...
+        # self.populate(id_to_data_dict)
+
+        raise NotImplementedError(f"{self.__class__.__name__}.activate_filter must be implemented by subclasses.")
 
     def populate(self, id_to_data_dict: Dict[Iterable, Dict[str, Any]]):
         # Clear old items
@@ -133,16 +130,18 @@ class DatabaseViewWidget(QtWidgets.QWidget):
         self.search_edit.update()
 
 
+# Main Function
+# -------------
 def main():
     """Create the application and main window, and show the widget.
     """
-    from blackboard.theme import set_theme
+    import sys
     from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
 
     # Create the application and the main window
     app = QtWidgets.QApplication(sys.argv)
     # Set theme of QApplication to the dark theme
-    set_theme(app, 'dark')
+    bb.theme.set_theme(app, 'dark')
 
     # Create an instance of the widget
     database_view_widget = DatabaseViewWidget()
@@ -150,10 +149,10 @@ def main():
     database_view_widget.populate(ID_TO_DATA_DICT)
 
     # Date Filter Setup
-    date_filter_widget = DateRangeFilterWidget(filter_name="Date")
+    date_filter_widget = widgets.DateRangeFilterWidget(filter_name="Date")
     date_filter_widget.activated.connect(print)
     # Shot Filter Setup
-    shot_filter_widget = MultiSelectFilterWidget(filter_name="Shot")
+    shot_filter_widget = widgets.MultiSelectFilterWidget(filter_name="Shot")
     sequence_to_shots = {
         "100": [
             "100_010_001", 
@@ -168,10 +167,10 @@ def main():
     shot_filter_widget.activated.connect(print)
 
     # File Type Filter Setup
-    file_type_filter_widget = FileTypeFilterWidget(filter_name="File Type")
+    file_type_filter_widget = widgets.FileTypeFilterWidget(filter_name="File Type")
     file_type_filter_widget.activated.connect(print)
 
-    show_hidden_filter_widget = BooleanFilterWidget(filter_name='Show Hidden')
+    show_hidden_filter_widget = widgets.BooleanFilterWidget(filter_name='Show Hidden')
     show_hidden_filter_widget.activated.connect(print)
 
     # Filter bar
@@ -181,7 +180,7 @@ def main():
     database_view_widget.add_filter_widget(show_hidden_filter_widget)
 
     # Create the scalable view and set the tree widget as its central widget
-    scalable_view = ScalableView(widget=database_view_widget)
+    scalable_view = widgets.ScalableView(widget=database_view_widget)
 
     # Show the widget
     scalable_view.show()
