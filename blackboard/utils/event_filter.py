@@ -1,3 +1,5 @@
+# Type Checking Imports
+# ---------------------
 from typing import List
 
 # Third Party Imports
@@ -12,7 +14,8 @@ class FocusEventFilter(QtCore.QObject):
     focus_widgets: List[QtWidgets.QWidget] = list()
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
-        """Custom event filter to track focus changes."""
+        """Custom event filter to track focus changes.
+        """
         if event.type() == QtCore.QEvent.Type.FocusIn:
             FocusEventFilter.focus_widgets.append(obj)
 
