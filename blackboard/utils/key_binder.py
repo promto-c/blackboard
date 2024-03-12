@@ -32,7 +32,7 @@ class Shortcut(QtWidgets.QShortcut):
         self.activated.connect(self.check_focus_and_activate)
 
     def check_focus_and_activate(self):
-        if FocusEventFilter.focus_widget == self.target_widget:
+        if self.target_widget in FocusEventFilter.focus_widgets:
             self.callback()
 
 class KeyBinder(QtWidgets.QWidget):

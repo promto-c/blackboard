@@ -20,7 +20,7 @@ from blackboard.utils.date_utils import get_date_list
 from blackboard.widgets.calendar_widget import RangeCalendarWidget
 from blackboard.widgets.tag_widget import TagWidget
 
-from blackboard.theme import set_theme
+# from blackboard.theme import set_theme
 
 class MatchContainsCompleter(QtWidgets.QCompleter):
     def __init__(self, parent=None):
@@ -178,6 +178,11 @@ class FilterPopupButton(QtWidgets.QComboBox):
         """Show the popup menu.
         """
         self.popup_menu.popup(self.mapToGlobal(QtCore.QPoint(0, self.height())))
+
+    def hidePopup(self):
+        """Hide the popup menu.
+        """
+        self.popup_menu.hide()
 
     def paintEvent(self, event: QtGui.QPaintEvent):
         """Handles the painting of the button, including its icon and opacity."""
@@ -1036,7 +1041,7 @@ class BooleanFilterWidget(FilterWidget):
 if __name__ == '__main__':
     app = QtWidgets.QApplication([])
 
-    set_theme(app, 'dark')
+    # set_theme(app, 'dark')
 
     main_window = QtWidgets.QMainWindow()
     main_layout = QtWidgets.QHBoxLayout()
