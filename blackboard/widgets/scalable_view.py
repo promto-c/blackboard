@@ -186,6 +186,23 @@ class ScalableView(QtWidgets.QGraphicsView):
         else:
             super().wheelEvent(event)
 
+    def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
+        event.accept()
+
+    def dragMoveEvent(self, event: QtGui.QDragMoveEvent) -> None:
+        event.accept()
+
+    def dropEvent(self, event: QtGui.QDropEvent) -> None:
+        # Map the event position to the scalable view's coordinate system
+        scene_pos = self.mapToScene(event.pos()).toPoint()
+
+        # forward the event to the contained widget
+        try:
+            target_widget = self.widget.childAt(scene_pos).parent()
+            target_widget.dropEvent(event)
+        except (AttributeError, RuntimeError):
+            pass
+
 def main():
     import sys
     import blackboard as bb
