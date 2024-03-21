@@ -268,7 +268,8 @@ def main():
     bb.theme.set_theme(app, 'dark')
 
     # Create the tree widget with example data
-    tree_widget = widgets.GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST, id_to_data_dict=ID_TO_DATA_DICT)
+    tree_widget = widgets.GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST)
+    tree_widget.add_items(ID_TO_DATA_DICT)
 
     # Create an instance of the widget and set it as the central widget
     search_edit = SimpleSearchEdit(tree_widget, parent=window)

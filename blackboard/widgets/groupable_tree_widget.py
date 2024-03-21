@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Union, Tuple, Optional
 
 # Standard Library Imports
 # ------------------------
-import time
+import time, uuid
 from numbers import Number
 
 # Third Party Imports
@@ -368,7 +368,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     Attributes:
         column_name_list (List[str]): The list of column names to be displayed in the tree widget.
-        id_to_data_dict (Dict[int, Dict[str, str]]): A dictionary mapping item IDs to their data as a dictionary.
         groups (Dict[str, TreeWidgetItem]): A dictionary mapping group names to their tree widget items.
         _is_middle_button_pressed (bool): Indicates if the middle mouse button is pressed.
             It's used for scrolling functionality when the middle button is pressed and the mouse is moved.
@@ -386,14 +385,12 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     # Initialization and Setup
     # ------------------------
     def __init__(self, parent: QtWidgets.QWidget = None, 
-                       column_name_list: List[str] = list(), 
-                       id_to_data_dict: Dict[int, Dict[str, str]] = dict()):
+                       column_name_list: List[str] = list()):
         # Call the parent class constructor
         super().__init__(parent)
 
         # Store the column names and data dictionary for later use
         self.column_name_list = column_name_list
-        self.id_to_data_dict = id_to_data_dict
 
         # Initialize setup
         self.__init_attributes()
@@ -449,8 +446,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Set up the columns
         self.set_column_name_list(self.column_name_list)
-        # Add the data to the widget
-        self.add_items(self.id_to_data_dict)
 
         # Enable sorting in the tree widget
         self.setSortingEnabled(True)
@@ -931,11 +926,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         Args:
             id_to_data_dict (Dict[int, Dict[str, str]]): A dictionary mapping item IDs to their data as a dictionary.
         """
-        # Store the data dictionary for later use
-        self.id_to_data_dict = id_to_data_dict
-
         # Iterate through the dictionary of items
-        for item_id, item_data in self.id_to_data_dict.items():
+        for item_id, item_data in id_to_data_dict.items():
             # Create a new custom QTreeWidgetItem for sorting by type of the item data, and add to the self tree widget
             tree_item = TreeWidgetItem(self, item_data=item_data, item_id=item_id)
             # 
@@ -943,6 +935,51 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Resize all columns to fit their contents
         self.resize_to_contents()
+
+    def add_items(self, item_names: Union[Dict[str, List[str]], List[str]], parent: Optional[QtWidgets.QTreeWidgetItem] = None):
+        """Adds items to the tree widget.
+
+        Args:
+            item_names (Union[Dict[str, List[str]], List[str]]): If a dictionary is provided, it represents parent-child relationships where keys are parent item names and values are lists of child item names. If a list is provided, it contains item names to be added at the root level.
+        """
+        if isinstance(item_names, dict):
+            self._add_items_from_id_to_data_dict(item_names, parent)
+        elif isinstance(item_names, list):
+            self._add_items_from_data_dicts(item_names, parent)
+        else:
+            raise ValueError("Invalid type for item_names. Expected a list or a dictionary.")
+
+    def add_item(self, data_dict, item_id=None, parent=None):
+        parent = parent or self.invisibleRootItem()
+        item_id = item_id or uuid.uuid1()
+        # Create a new custom QTreeWidgetItem for sorting by type of the item data, and add to the self tree widget
+        tree_item = TreeWidgetItem(parent, item_data=data_dict, item_id=item_id)
+        # 
+        self.id_to_tree_item[item_id] = tree_item
+
+        return tree_item
+
+    def _add_items_from_id_to_data_dict(self, id_to_data_dict: Dict[str, Dict[str, Any]],  parent: Optional[QtWidgets.QTreeWidgetItem]):
+        """Add items to the tree widget.
+
+        Args:
+            id_to_data_dict (Dict[int, Dict[str, str]]): A dictionary mapping item IDs to their data as a dictionary.
+        """
+        # Iterate through the dictionary of items
+        for item_id, data_dict in id_to_data_dict.items():
+            # Create a new custom QTreeWidgetItem for sorting by type of the item data, and add to the self tree widget
+            self.add_item(data_dict, item_id, parent)
+
+    # TODO: Handle id or primary key
+    def _add_items_from_data_dicts(self, data_dicts: List[str], parent: Optional[QtWidgets.QTreeWidgetItem] = None):
+        """Adds items to the tree widget at the root level from a list of item names.
+
+        Args:
+            item_list (List[str]): A list of item names to be added at the root level.
+        """
+        ...
+        for data_dict in data_dicts:
+            self.add_item(data_dict)
 
     def group_by_column(self, column: int) -> None:
         """Group the items in the tree widget by the values in the specified column.
@@ -1357,10 +1394,8 @@ def main():
     bb.theme.set_theme(app, 'dark')
 
     # Create an instance of the widget and set it as the central widget
-    tree_widget = GroupableTreeWidget(
-        column_name_list=COLUMN_NAME_LIST,
-        id_to_data_dict=ID_TO_DATA_DICT
-    )
+    tree_widget = GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST)
+    tree_widget.add_items(ID_TO_DATA_DICT)
 
     # Show the window and run the application
     tree_widget.show()
