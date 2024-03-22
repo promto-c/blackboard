@@ -1,11 +1,12 @@
 # Type Checking Imports
 # ---------------------
-from typing import Any, Dict, List, Union, Tuple, Optional
+from typing import Any, Dict, List, Union, Tuple, Optional, Generator, Iterable
 
 # Standard Library Imports
 # ------------------------
-import time, uuid
+import time, uuid, os
 from numbers import Number
+from itertools import islice
 
 # Third Party Imports
 # -------------------
@@ -49,6 +50,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
 
         # If the data for the item is in dictionary form
         if isinstance(item_data, dict):
+
             # Get the header item from the parent tree widget
             header_item = parent.headerItem() if isinstance(parent, QtWidgets.QTreeWidget) else parent.treeWidget().headerItem()
 
@@ -81,27 +83,6 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
 
     # Extended Methods
     # ----------------
-    def get_child_level(self) -> int:
-        """Get the child level of TreeWidgetItem
-
-        Returns:
-            int: The child level of the TreeWidgetItem
-        """
-        # Set the current item as self
-        item = self
-        # Initialize child level
-        child_level = 0
-
-        # Iterate through the parent items to determine the child level
-        while item.parent():
-            # Increment child level for each parent
-            child_level += 1
-            # Update item to be its parent
-            item = item.parent()
-
-        # Return the final child level
-        return child_level
-
     def get_model_indexes(self) -> List[QtCore.QModelIndex]:
         """Get the model index for each column in the tree widget.
 
@@ -109,7 +90,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
             List[QtCore.QModelIndex]: A list of model index for each column in the tree widget.
         """
         # Get a list of the shown column indices
-        shown_column_indexes = self.treeWidget().get_shown_column_indexes()
+        shown_column_indexes = bb.utils.TreeUtil.get_shown_column_indexes(self.treeWidget())
 
         # Create a list to store the model index
         model_indexes = list()
@@ -384,13 +365,12 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent: QtWidgets.QWidget = None, 
-                       column_name_list: List[str] = list()):
+    def __init__(self, parent: QtWidgets.QWidget = None):
         # Call the parent class constructor
         super().__init__(parent)
 
-        # Store the column names and data dictionary for later use
-        self.column_name_list = column_name_list
+        self.batch_size = 50
+        self.threshold_to_load_more = 50
 
         # Initialize setup
         self.__init_attributes()
@@ -443,9 +423,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Set up the context menu for the header
         self.header().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
-
-        # Set up the columns
-        self.set_column_name_list(self.column_name_list)
 
         # Enable sorting in the tree widget
         self.setSortingEnabled(True)
@@ -796,7 +773,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             or (None, None) if no valid values are found.
         """
         # Get the items at the specified child level
-        items = self.get_all_items_at_child_level(child_level)
+        items = bb.utils.TreeUtil.get_items_at_child_level(self, child_level)
 
         # Collect the values from the specified column in the items
         values = [
@@ -815,41 +792,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Return the value range
         return min_value, max_value
-
-    def get_all_items_at_child_level(self, child_level: int = 0) -> List[TreeWidgetItem]:
-        """Retrieve all items at a specific child level in the tree widget.
-
-        Args:
-            child_level (int): The child level to retrieve items from. Defaults to 0 (top-level items).
-
-        Returns:
-            List[TreeWidgetItem]: List of `QTreeWidgetItem` objects at the specified child level.
-        """
-        # If child level is 0, return top-level items
-        if not child_level:
-            # return top-level items
-            return [self.topLevelItem(row) for row in range(self.topLevelItemCount())]
-
-        # Get all items in the tree widget
-        all_items = self.get_all_items()
-
-        # Filter items to only those at the specified child level
-        return [item for item in all_items if item.get_child_level() == child_level]
-
-    def get_shown_column_indexes(self) -> List[int]:
-        """Returns a list of indices for the columns that are shown (i.e., not hidden) in the tree widget.
-
-        Returns:
-            List[int]: A list of integers, where each integer is the index of a shown column in the tree widget.
-        """
-        # Get the header of the tree widget
-        header = self.header()
-
-        # Generate a list of the indices of the columns that are not hidden
-        column_indexes = [column_index for column_index in range(header.count()) if not header.isSectionHidden(column_index)]
-
-        # Return the list of the index of a shown column in the tree widget.
-        return column_indexes
 
     def apply_column_color_adaptive(self, column: int):
         """Apply adaptive color mapping to a specific column at the appropriate child level determined by the group column.
@@ -880,19 +822,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             self.setItemDelegateForColumn(column, None)
 
         self.color_adaptive_columns.clear()
-
-    def set_column_name_list(self, column_name_list: List[str]) -> None:
-        """Set the names of the columns in the tree widget.
-
-        Args:
-            column_name_list (List[str]): The list of column names to be set.
-        """
-        # Store the column names for later use
-        self.column_name_list = column_name_list
-
-        # Set the number of columns and the column labels
-        self.setColumnCount(len(self.column_name_list))
-        self.setHeaderLabels(self.column_name_list)
 
     def get_column_index(self, column_name: str) -> int:
         """Retrieves the index of the specified column name.
@@ -1112,7 +1041,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         Returns:
             List[TreeWidgetItem]: A list containing all the items in the tree widget.
         """
-        return bb.utils.TreeUtil.extract_all_items_from_tree(self)
+        return bb.utils.TreeUtil.get_child_items(self)
 
     def copy_selected_cells(self):
         # NOTE: For refactoring
@@ -1234,6 +1163,19 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     # Event Handling or Override Methods
     # ----------------------------------
+    def setHeaderLabels(self, labels: Iterable[str]):
+        """Set the names of the columns in the tree widget.
+
+        Args:
+            labels (Iterable[str]): The iterable of column names to be set.
+        """
+        # Store the column names for later use
+        self.column_name_list = labels
+
+        # Set the number of columns and the column labels
+        self.setColumnCount(len(self.column_name_list))
+        super().setHeaderLabels(self.column_name_list)
+
     def hideColumn(self, column: Union[int, str]):
         column_index = self.get_column_index(column) if isinstance(column, str) else column
         super().hideColumn(column_index)
@@ -1370,12 +1312,77 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # TODO: Add support to get input as str
         self.group_by_column(grouped_column_name)
 
+    def set_generator(self, generator: Generator):
+        self.clear()
+
+        first_batch_size = self.calculate_dynamic_batch_size()
+
+        self.generator = generator
+        if self.generator:
+            self.verticalScrollBar().valueChanged.connect(self._check_scroll_position)
+        
+        self._load_more_data(first_batch_size)
+
     def _restore_color_adaptive_column(self, columns):
         self.reset_all_color_adaptive_column()
 
         for column in columns:
             self.apply_column_color_adaptive(column)
 
+    def _load_more_data(self, batch_size: int = None):
+        """Loads more data into the tree widget based on the batch size."""
+        batch_size = batch_size or self.batch_size
+        items_to_load = islice(self.generator, self.batch_size)
+        loaded_any = False
+        for data_dict in items_to_load:
+            self.add_item(data_dict)
+            loaded_any = True
+        if not loaded_any:
+            # No more data to load, could disable further loading if desired
+            self.verticalScrollBar().valueChanged.disconnect(self._check_scroll_position)
+
+    def _check_scroll_position(self, value):
+        """Checks the scroll position and loads more data if the threshold is reached."""
+        scroll_bar = self.verticalScrollBar()
+        if value >= scroll_bar.maximum() - self.threshold_to_load_more:
+            self._load_more_data()
+
+    def calculate_dynamic_batch_size(self):
+        """Estimates the number of items that can fit in the current view.
+
+        Returns:
+            int: Estimated number of items that can fit in the view.
+        """
+        # Add a temporary item to calculate its size
+        temp_item = QtWidgets.QTreeWidgetItem(["Temporary Item"])
+        self.addTopLevelItem(temp_item)
+        item_height = self.visualItemRect(temp_item).height()
+        # Remove the temporary item
+        self.takeTopLevelItem(0)
+
+        # Calculate the visible area height
+        visible_height = self.viewport().height()
+
+        # Calculate and return the number of items that can fit in the view
+        estimated_items = (visible_height // item_height) + 1 if item_height > 0 else self.batch_size
+        
+        # Adjust the batch size based on the estimate
+        # You may want to add some buffer (e.g., 10% more items) to ensure the view is fully populated
+        return max(estimated_items, self.batch_size)
+
+# NOTE: Test generator
+def generate_file_paths(start_path):
+    """Generates file paths in the given directory and its subdirectories.
+
+    Args:
+        start_path: A string representing the starting directory path.
+
+    Yields:
+        Full path of each file found in the directory and subdirectories.
+    """
+    for root, dirs, files in os.walk(start_path):
+        for file in files:
+            yield {'file_path': os.path.join(root, file)}
 
 # Main Function
 # -------------
@@ -1393,9 +1400,14 @@ def main():
     # Set theme of QApplication to the dark theme
     bb.theme.set_theme(app, 'dark')
 
-    # Create an instance of the widget and set it as the central widget
-    tree_widget = GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST)
-    tree_widget.add_items(ID_TO_DATA_DICT)
+    # Create an instance of the widget
+    generator = generate_file_paths('/')
+    tree_widget = GroupableTreeWidget()
+    tree_widget.setHeaderLabels(['id', 'file_path'])
+    tree_widget.set_generator(generator)
+
+    # tree_widget = GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST)
+    # tree_widget.add_items(ID_TO_DATA_DICT)
 
     # Show the window and run the application
     tree_widget.show()

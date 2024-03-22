@@ -41,13 +41,14 @@ class InfiniteScrollTreeWidget(QtWidgets.QTreeWidget):
         temp_item = QtWidgets.QTreeWidgetItem(["Temporary Item"])
         self.addTopLevelItem(temp_item)
         item_height = self.visualItemRect(temp_item).height()
-        self.removeItemWidget(temp_item, 0)  # Remove the temporary item
+        # Remove the temporary item
+        self.takeTopLevelItem(0)
 
         # Calculate the visible area height
         visible_height = self.viewport().height()
 
         # Calculate and return the number of items that can fit in the view
-        estimated_items = visible_height // item_height if item_height > 0 else 0
+        estimated_items = (visible_height // item_height) + 1 if item_height > 0 else self.batch_size
         
         # Adjust the batch size based on the estimate
         # You may want to add some buffer (e.g., 10% more items) to ensure the view is fully populated
