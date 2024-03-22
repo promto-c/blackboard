@@ -145,7 +145,7 @@ def main():
 
     # Create an instance of the widget
     database_view_widget = DatabaseViewWidget()
-    database_view_widget.tree_widget.set_column_name_list(COLUMN_NAME_LIST)
+    database_view_widget.tree_widget.setHeaderLabels(COLUMN_NAME_LIST)
     database_view_widget.populate(ID_TO_DATA_DICT)
 
     # Date Filter Setup

@@ -670,7 +670,7 @@ class MultiSelectFilterWidget(FilterWidget):
         self.line_edit.style().polish(self.line_edit)
 
     def update_completer(self):
-        item_names = [item.text(0) for item in bb.utils.TreeUtil.extract_all_items_from_tree(self.tree_widget)]
+        item_names = [item.text(0) for item in bb.utils.TreeUtil.get_child_items(self.tree_widget)]
         model = QtCore.QStringListModel(item_names)
         self.completer.setModel(model)
 
@@ -849,7 +849,7 @@ class MultiSelectFilterWidget(FilterWidget):
     def get_checked_item_texts(self) -> List[str]:
         """Returns the checked items in the tree.
         """
-        all_items = bb.utils.TreeUtil.extract_all_items_from_tree(self.tree_widget)
+        all_items = bb.utils.TreeUtil.get_child_items(self.tree_widget)
         checked_items = []
         for tree_item in all_items:
             if tree_item.childCount() or tree_item.checkState(0) == QtCore.Qt.CheckState.Unchecked:

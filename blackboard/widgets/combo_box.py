@@ -86,7 +86,8 @@ class FilterLineEdit(QtWidgets.QLineEdit):
         else:
             selected_text = self.text()
 
-        self.combo_box.setCurrentText(selected_text)
+        index = self.combo_box.findText(selected_text)
+        self.combo_box.setCurrentIndex(index)
         self.combo_box.hidePopup()
 
 class CustomLineEdit(QtWidgets.QLineEdit):
@@ -125,6 +126,7 @@ class PopupComboBox(QtWidgets.QComboBox):
         """
         line_edit = CustomLineEdit(self)
         self.setLineEdit(line_edit)
+        line_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         # Custom popup widget
         self.popup_widget = QtWidgets.QWidget()
         self.popup_layout = QtWidgets.QVBoxLayout(self.popup_widget)
@@ -174,7 +176,8 @@ class PopupComboBox(QtWidgets.QComboBox):
         """
         # Set the combo box current item and hide the popup
         text = self.proxy_model.data(index)
-        self.setCurrentText(text)
+        index = self.findText(text)
+        self.setCurrentIndex(index)
         self.hidePopup()
 
 if __name__ == '__main__':
