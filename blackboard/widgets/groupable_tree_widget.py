@@ -206,9 +206,18 @@ class ColumnListWidget(QtWidgets.QListWidget):
 
         self.tree_widget.header().sectionMoved.connect(self.update_list)
         self.model().rowsMoved.connect(self.update_tree_widget)
+
+        self.itemClicked.connect(self.toggle_check_state)
         self.itemChanged.connect(self.set_column_visibility)
 
         self.update_list()
+
+    def toggle_check_state(self, item: QtWidgets.QListWidgetItem):
+        # Toggle the check state
+        if item.checkState() == QtCore.Qt.CheckState.Checked:
+            item.setCheckState(QtCore.Qt.CheckState.Unchecked)
+        else:
+            item.setCheckState(QtCore.Qt.CheckState.Checked)
 
     def update_tree_widget(self):
         item_texts = [self.item(i).text() for i in range(self.tree_widget.columnCount())]
@@ -217,7 +226,7 @@ class ColumnListWidget(QtWidgets.QListWidget):
             column_index = self.tree_widget.get_column_index(item_text)
             self.tree_widget.header().moveSection(self.tree_widget.header().visualIndex(column_index), i)
 
-    def set_column_visibility(self, item: QtWidgets.QTreeWidgetItem):
+    def set_column_visibility(self, item: QtWidgets.QListWidgetItem):
         column_name = item.text()
         is_hidden = item.checkState() == QtCore.Qt.CheckState.Unchecked
         column_index = self.tree_widget.get_column_index(column_name)
@@ -1151,7 +1160,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         badge_radius = max(badge_radius, int(text_width / 2))
         badge_diameter = badge_radius * 2
 
-        painter.setBrush(QtGui.QBrush(QtGui.QColor('red')))
+        painter.setBrush(QtGui.QColor('red'))
         painter.setPen(QtGui.QColor('white'))
         painter.drawEllipse(pixmap.width() - badge_diameter - 2, 0, badge_diameter, badge_diameter)
         painter.drawText(pixmap.width() - badge_diameter - 2, 0, badge_diameter, badge_diameter, 
