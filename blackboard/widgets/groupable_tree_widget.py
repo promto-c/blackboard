@@ -196,21 +196,34 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         return hash(self.id)
 
 class ColumnListWidget(QtWidgets.QListWidget):
+
+    # Initialization and Setup
+    # ------------------------
     def __init__(self, tree_widget: 'GroupableTreeWidget') -> None:
         super().__init__(tree_widget)
 
+        # Store the arguments
+        self.tree_widget = tree_widget
+
+        # Initialize setup
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Set up the UI for the widget, including creating widgets, layouts.
+        """
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
 
-        self.tree_widget = tree_widget
-        self.name_to_item = dict()
-
-        self.tree_widget.header().sectionMoved.connect(self.update_list)
-        self.model().rowsMoved.connect(self.update_tree_widget)
+    def __init_signal_connections(self):
+        """Set up signal connections between widgets and slots.
+        """
+        self.tree_widget.header().sectionMoved.connect(self.update_columns)
+        self.tree_widget.model().headerDataChanged.connect(self.update_columns)
+        
+        self.model().rowsMoved.connect(self.sync_column_order)
 
         self.itemClicked.connect(self.toggle_check_state)
         self.itemChanged.connect(self.set_column_visibility)
-
-        self.update_list()
 
     def toggle_check_state(self, item: QtWidgets.QListWidgetItem):
         # Toggle the check state
@@ -219,12 +232,11 @@ class ColumnListWidget(QtWidgets.QListWidget):
         else:
             item.setCheckState(QtCore.Qt.CheckState.Checked)
 
-    def update_tree_widget(self):
-        item_texts = [self.item(i).text() for i in range(self.tree_widget.columnCount())]
-
-        for i, item_text in enumerate(item_texts):
-            column_index = self.tree_widget.get_column_index(item_text)
-            self.tree_widget.header().moveSection(self.tree_widget.header().visualIndex(column_index), i)
+    def sync_column_order(self):
+        for i in range(self.count()):
+            column_name = self.item(i).text()
+            visual_index = self.tree_widget.get_column_visual_index(column_name)
+            self.tree_widget.header().moveSection(visual_index, i)
 
     def set_column_visibility(self, item: QtWidgets.QListWidgetItem):
         column_name = item.text()
@@ -233,33 +245,30 @@ class ColumnListWidget(QtWidgets.QListWidget):
         
         self.tree_widget.setColumnHidden(column_index, is_hidden)
 
-    def update_list(self):
+    def update_columns(self):
         self.clear()
-        logical_indexes = [self.get_logical_index(i) for i in range(self.tree_widget.columnCount())]
+
+        if not self.tree_widget.column_name_list:
+            return
+
+        logical_indexes = [self.tree_widget.get_column_logical_index(i) for i in range(self.tree_widget.columnCount())]
         header_names = [self.tree_widget.column_name_list[i] for i in logical_indexes]
 
         self.addItems(header_names)
 
-    def get_logical_index(self, index):
-        return self.tree_widget.header().logicalIndex(index)
-    
-    def addItems(self, items):
-        for column_index, item in enumerate(items):
-            if not isinstance(item, str):
-                continue
+    def addItem(self, label: str, check_state: QtCore.Qt.CheckState = QtCore.Qt.CheckState.Unchecked) -> None:
+        item = QtWidgets.QListWidgetItem(label)
 
-            list_item = QtWidgets.QListWidgetItem(item)
-            list_item.setFlags(list_item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+        item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+        item.setCheckState(check_state)
+        super().addItem(item)
 
-            check_state = QtCore.Qt.CheckState.Unchecked if self.tree_widget.isColumnHidden(self.get_logical_index(column_index)) else QtCore.Qt.CheckState.Checked
+    def addItems(self, labels: Iterable[str]):
+        for column_visual_index, label in enumerate(labels):
+            column_logical_index = self.tree_widget.get_column_logical_index(column_visual_index)
+            check_state = QtCore.Qt.CheckState.Unchecked if self.tree_widget.isColumnHidden(column_logical_index) else QtCore.Qt.CheckState.Checked
 
-            list_item.setCheckState(check_state)
-            self.addItem(list_item)
-
-            self.name_to_item[item] = list_item
-
-    def get_item(self, item_name: str) -> QtWidgets.QListWidgetItem:
-        return self.name_to_item.get(item_name, None)
+            self.addItem(label, check_state)
 
 class TreeUtilityToolBar(QtWidgets.QToolBar):
     def __init__(self, tree_widget: 'GroupableTreeWidget'):
@@ -394,6 +403,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Store the current grouped column name
         self.grouped_column_name = str()
 
+        self.column_name_list = list()
+
         self._drag_data_column = self.DEFAULT_DRAG_DATA_COLUMN
 
         #
@@ -417,6 +428,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self._mouse_move_timestamp = float()
 
         self._row_height = 24
+
+        self._current_column_index = 0
 
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
@@ -449,6 +462,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # self.searchable_header = SearchableHeaderView(self)
 
         self.set_row_height(self._row_height)
+        self._create_header_menu()
 
     def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
@@ -470,8 +484,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     # Private Methods
     # ---------------
-    def _on_header_context_menu(self, pos: QtCore.QPoint) -> None:
-        """Show a context menu for the header of the tree widget.
+    def _create_header_menu(self):
+        """Create a context menu for the header of the tree widget.
 
         Context Menu:
             +-------------------------------+
@@ -489,21 +503,15 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             | - Show/Hide Columns >         |
             | - Hide This Column            |
             +-------------------------------+
-
-        Args:
-            pos (QtCore.QPoint): The position where the right click occurred.
         """
-        # Get the index of the column where the right click occurred
-        column = self.header().logicalIndexAt(pos)
-        
         # Create the context menu
         self.menu = QtWidgets.QMenu()
 
         self.add_label_action(self.menu, 'Grouping')
 
         # Create the 'Group by this column' action and connect it to the 'group_by_column' method. Pass in the selected column as an argument.
-        group_by_action = self.menu.addAction('Group by this column')
-        group_by_action.triggered.connect(lambda: self.group_by_column(column))
+        self.group_by_action = self.menu.addAction('Group by this column')
+        self.group_by_action.triggered.connect(lambda: self.group_by_column(self._current_column_index))
 
         # Create the 'Ungroup all' action and connect it to the 'ungroup_all' method
         ungroup_all_action = self.menu.addAction('Ungroup all')
@@ -516,7 +524,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Create the 'Set Color Adaptive' action and connect it to the 'apply_column_color_adaptive' method
         apply_color_adaptive_action = self.menu.addAction('Set Color Adaptive')
-        apply_color_adaptive_action.triggered.connect(lambda: self.apply_column_color_adaptive(column))
+        apply_color_adaptive_action.triggered.connect(lambda: self.apply_column_color_adaptive(self._current_column_index))
 
         # Create the 'Reset All Color Adaptive' action and connect it to the 'reset_all_color_adaptive_column' method
         reset_all_color_adaptive_action = self.menu.addAction('Reset All Color Adaptive')
@@ -542,11 +550,22 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         show_hide_column.addAction(action)
 
         hide_this_column = self.menu.addAction('Hide This Column')
-        hide_this_column.triggered.connect(lambda: self.hideColumn(column))
+        hide_this_column.triggered.connect(lambda: self.hideColumn(self._current_column_index))
+
+    def _on_header_context_menu(self, pos: QtCore.QPoint) -> None:
+        """Show a context menu for the header of the tree widget.
+
+        Args:
+            pos (QtCore.QPoint): The position where the right click occurred.
+        """
+        # Get the index of the column where the right click occurred
+        self._current_column_index = self.header().logicalIndexAt(pos)
 
         # Disable 'Group by this column' on the first column
-        if not column:
-            group_by_action.setDisabled(True)
+        if not self._current_column_index:
+            self.group_by_action.setDisabled(True)
+        else:
+            self.group_by_action.setDisabled(False)
 
         # Show the context menu
         self.menu.popup(QtGui.QCursor.pos())
@@ -852,12 +871,18 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Return the index of the column if found
         return self.column_name_list.index(column_name)
 
-    def get_column_visual_index(self, column_name: str) -> int:
+    def get_column_visual_index(self, column: Union[str, int]) -> int:
         """
         """
-        #
-        return self.header().visualIndex(self.column_name_list.index(column_name))
+        if isinstance(column, str):
+            column = self.get_column_index(column)
 
+        #
+        return self.header().visualIndex(column)
+
+    def get_column_logical_index(self, visual_index: int) -> int:
+        return self.header().logicalIndex(visual_index)
+    
     def add_items(self, id_to_data_dict: Dict[int, Dict[str, str]]) -> None:
         """Add items to the tree widget.
 
