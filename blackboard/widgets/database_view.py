@@ -136,7 +136,7 @@ def main():
     """Create the application and main window, and show the widget.
     """
     import sys
-    from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
+    from blackboard.examples.example_data_dict import COLUMN_NAME_VFX_ASSET_LIST, ID_TO_VFX_DATA_DICT
 
     # Create the application and the main window
     app = QtWidgets.QApplication(sys.argv)
@@ -145,8 +145,9 @@ def main():
 
     # Create an instance of the widget
     database_view_widget = DatabaseViewWidget()
-    database_view_widget.tree_widget.setHeaderLabels(COLUMN_NAME_LIST)
-    database_view_widget.populate(ID_TO_DATA_DICT)
+    database_view_widget.tree_widget.setHeaderLabels(COLUMN_NAME_VFX_ASSET_LIST)
+    database_view_widget.tree_widget.create_thumbnail_column('file_path')
+    database_view_widget.populate(ID_TO_VFX_DATA_DICT)
 
     # Date Filter Setup
     date_filter_widget = widgets.DateRangeFilterWidget(filter_name="Date")

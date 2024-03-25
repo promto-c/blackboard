@@ -413,6 +413,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Initialize the HighlightItemDelegate object to highlight items in the tree widget.
         self.highlight_item_delegate = widgets.HighlightItemDelegate()
+        self.thumbnail_delegate = widgets.ThumbnailDelegate()
 
         # Private Attributes
         # ------------------
@@ -677,6 +678,19 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     # Extended Methods
     # ----------------
+    def create_thumbnail_column(self, column_name: str):
+
+        self.column_name_list.append('thumbnail')
+        self.setHeaderLabels(self.column_name_list)
+
+        source_column = self.column_name_list.index(column_name)
+        thumbnail_column = self.column_name_list.index('thumbnail')
+
+        self.thumbnail_delegate.set_thumbnail_column(thumbnail_column)
+        self.thumbnail_delegate.set_source_column(source_column)
+
+        self.setItemDelegateForColumn(thumbnail_column, self.thumbnail_delegate)
+
     def add_label_action(self, parent_menu: QtWidgets.QMenu, text: str):
         label = QtWidgets.QLabel(text, parent_menu)
         label.setDisabled(True)
@@ -882,22 +896,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     def get_column_logical_index(self, visual_index: int) -> int:
         return self.header().logicalIndex(visual_index)
-    
-    def add_items(self, id_to_data_dict: Dict[int, Dict[str, str]]) -> None:
-        """Add items to the tree widget.
-
-        Args:
-            id_to_data_dict (Dict[int, Dict[str, str]]): A dictionary mapping item IDs to their data as a dictionary.
-        """
-        # Iterate through the dictionary of items
-        for item_id, item_data in id_to_data_dict.items():
-            # Create a new custom QTreeWidgetItem for sorting by type of the item data, and add to the self tree widget
-            tree_item = TreeWidgetItem(self, item_data=item_data, item_id=item_id)
-            # 
-            self.id_to_tree_item[item_id] = tree_item
-
-        # Resize all columns to fit their contents
-        self.resize_to_contents()
 
     def add_items(self, item_names: Union[Dict[str, List[str]], List[str]], parent: Optional[QtWidgets.QTreeWidgetItem] = None):
         """Adds items to the tree widget.
@@ -1435,9 +1433,10 @@ def main():
     bb.theme.set_theme(app, 'dark')
 
     # Create an instance of the widget
-    generator = generate_file_paths('/')
+    generator = generate_file_paths('blackboard')
     tree_widget = GroupableTreeWidget()
     tree_widget.setHeaderLabels(['id', 'file_path'])
+    tree_widget.create_thumbnail_column('file_path')
     tree_widget.set_generator(generator)
 
     # tree_widget = GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST)

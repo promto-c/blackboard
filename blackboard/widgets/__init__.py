@@ -3,13 +3,13 @@ from .filter_widget import (
     DateRangeFilterWidget,
     MultiSelectFilterWidget,
     FileTypeFilterWidget,
-    BooleanFilterWidget
+    BooleanFilterWidget,
 )
 from .calendar_widget import RangeCalendarWidget
 from .simple_search_widget import SimpleSearchEdit
 from .groupable_tree_widget import GroupableTreeWidget, TreeUtilityToolBar
 from .scalable_view import ScalableView
-from .item_delegate import HighlightItemDelegate, AdaptiveColorMappingDelegate, HighlightTextDelegate
+from .item_delegate import HighlightItemDelegate, AdaptiveColorMappingDelegate, HighlightTextDelegate, ThumbnailDelegate
 from .tag_widget import TagWidget
 
 __all__ = [
@@ -21,7 +21,7 @@ __all__ = [
     'SimpleSearchEdit',
     'GroupableTreeWidget', 'TreeUtilityToolBar',
     'ScalableView',
-    'HighlightItemDelegate', 'AdaptiveColorMappingDelegate', 'HighlightTextDelegate',
+    'HighlightItemDelegate', 'AdaptiveColorMappingDelegate', 'HighlightTextDelegate', 'ThumbnailDelegate',
     'TagWidget',
     'RangeCalendarWidget',
 ]

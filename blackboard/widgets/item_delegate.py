@@ -6,6 +6,7 @@ import dateutil.parser as date_parser
 from qtpy import QtCore, QtGui, QtWidgets
 
 from blackboard.utils.color_utils import ColorUtils
+from blackboard.utils.qimage_utils import ThumbnailUtils
 
 
 def create_pastel_color(color: QtGui.QColor, saturation: float = 0.4, value: float = 0.9) -> QtGui.QColor:
@@ -412,3 +413,37 @@ class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
 
         # Call the base class to do the default painting
         super().paint(painter, option, index)
+
+class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
+    def __init__(self, parent=None, thumbnail_height: int = 64):
+        super().__init__(parent)
+
+        self.thumbnail_height = thumbnail_height
+
+        self._thumbnail_column = None
+        self._source_column = None
+
+    def set_source_column(self, column):
+        self._source_column = column
+
+    def set_thumbnail_column(self, _thumbnail_column):
+        self._thumbnail_column = _thumbnail_column
+
+    def paint(self, painter, option, index):
+        # Check if this column should have a thumbnail
+        if index.column() == self._thumbnail_column:            # image_path = index.data(Qt.UserRole + 1)
+
+            file_path_index = index.sibling(index.row(), self._source_column)
+            image_path = file_path_index.data(QtCore.Qt.DisplayRole)
+
+            pixmap = ThumbnailUtils.get_pixmap_thumbnail(image_path, desired_height=self.thumbnail_height)
+
+            if not pixmap.isNull():
+                # Scale the pixmap to fit within the cell, maintaining aspect ratio
+                scaled_pixmap = pixmap.scaledToHeight(option.rect.height(), QtCore.Qt.SmoothTransformation)
+                # Calculate the center position
+                x = option.rect.x() + (option.rect.width() - scaled_pixmap.width()) / 2
+                y = option.rect.y() + (option.rect.height() - scaled_pixmap.height()) / 2
+                painter.drawPixmap(int(x), int(y), scaled_pixmap)
+        else:
+            super().paint(painter, option, index)
