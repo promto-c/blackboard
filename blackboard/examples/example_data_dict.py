@@ -11,6 +11,18 @@ COLUMN_NAME_LIST = [
     'department',
 ]
 
+COLUMN_NAME_VFX_ASSET_LIST = [
+    'asset_id',
+    'asset_name',
+    'status',
+    'start_date',
+    'due_date',
+    'priority',
+    'artist',
+    'department',
+    'file_path',  # Added to include the path where the asset files are stored
+]
+
 ID_TO_DATA_DICT = {
     1: {
         'shot_id': 'SHOT001',
@@ -123,3 +135,129 @@ ID_TO_DATA_DICT = {
         'department': 'Modeling'
     },
 }
+
+ID_TO_VFX_DATA_DICT = {
+    1: {
+        'asset_id': 'MODEL001',
+        'asset_name': 'Dragon_Model',
+        'status': 'In Progress',
+        'start_date': '2023-06-17',
+        'due_date': '2023-07-15',
+        'priority': 2,
+        'artist': 'John Smith',
+        'department': 'Modeling',
+        'file_path': '/projects/seq001/shots/shot001/modeling/dragon_model_v001.ma'
+    },
+    2: {
+        'asset_id': 'TEXTURE002',
+        'asset_name': 'Dragon_Texture',
+        'status': 'Completed',
+        'start_date': '2023-06-20',
+        'due_date': '2023-07-10',
+        'priority': 1,
+        'artist': 'Jane Doe',
+        'department': 'Texturing',
+        'file_path': 'blackboard/examples/image_not_available_placeholder.png'
+    },
+    3: {
+        'asset_id': 'ANIM003',
+        'asset_name': 'Dragon_Animation',
+        'status': 'Not Started',
+        'start_date': '2023-06-25',
+        'due_date': '2023-07-20',
+        'priority': 3,
+        'artist': 'Alex Johnson',
+        'department': 'Animation',
+        'file_path': '/projects/seq001/shots/shot001/animation/dragon_anim_v001.ma'
+    },
+    4: {
+        'asset_id': 'COMP004',
+        'asset_name': 'Dragon_Composite',
+        'status': 'In Progress',
+        'start_date': '2023-06-18',
+        'due_date': '2023-07-25',
+        'priority': 2,
+        'artist': 'Emily Brown',
+        'department': 'Compositing',
+        'file_path': '/projects/seq001/shots/shot001/compositing/dragon_comp_v001.nk'
+    },
+    5: {
+        'asset_id': 'RIG005',
+        'asset_name': 'Dragon_Rig',
+        'status': 'Completed',
+        'start_date': '2023-06-22',
+        'due_date': '2023-07-12',
+        'priority': 1,
+        'artist': 'Michael Johnson',
+        'department': 'Rigging',
+        'file_path': '/projects/seq001/shots/shot001/rigging/dragon_rig_v002.ma'
+    },
+    6: {
+        'asset_id': 'LIGHT006',
+        'asset_name': 'Dragon_Lighting',
+        'status': 'In Progress',
+        'start_date': '2023-06-30',
+        'due_date': '2023-07-30',
+        'priority': 3,
+        'artist': 'Sophia Wilson',
+        'department': 'Lighting',
+        'file_path': '/projects/seq001/shots/shot001/lighting/dragon_light_v001.abc'
+    }
+}
+
+VFX_DATA_DICTS = [
+    {'artist': 'John Smith',
+    'asset_id': 'MODEL001',
+    'asset_name': 'Dragon_Model',
+    'department': 'Modeling',
+    'due_date': '2023-07-15',
+    'file_path': '/projects/seq001/shots/shot001/modeling/dragon_model_v001.ma',
+    'priority': 2,
+    'start_date': '2023-06-17',
+    'status': 'In Progress'},
+    {'artist': 'Jane Doe',
+    'asset_id': 'TEXTURE002',
+    'asset_name': 'Dragon_Texture',
+    'department': 'Texturing',
+    'due_date': '2023-07-10',
+    'file_path': 'blackboard/examples/image_not_available_placeholder.png',
+    'priority': 1,
+    'start_date': '2023-06-20',
+    'status': 'Completed'},
+    {'artist': 'Alex Johnson',
+    'asset_id': 'ANIM003',
+    'asset_name': 'Dragon_Animation',
+    'department': 'Animation',
+    'due_date': '2023-07-20',
+    'file_path': '/projects/seq001/shots/shot001/animation/dragon_anim_v001.ma',
+    'priority': 3,
+    'start_date': '2023-06-25',
+    'status': 'Not Started'},
+    {'artist': 'Emily Brown',
+    'asset_id': 'COMP004',
+    'asset_name': 'Dragon_Composite',
+    'department': 'Compositing',
+    'due_date': '2023-07-25',
+    'file_path': '/projects/seq001/shots/shot001/compositing/dragon_comp_v001.nk',
+    'priority': 2,
+    'start_date': '2023-06-18',
+    'status': 'In Progress'},
+    {'artist': 'Michael Johnson',
+    'asset_id': 'RIG005',
+    'asset_name': 'Dragon_Rig',
+    'department': 'Rigging',
+    'due_date': '2023-07-12',
+    'file_path': '/projects/seq001/shots/shot001/rigging/dragon_rig_v002.ma',
+    'priority': 1,
+    'start_date': '2023-06-22',
+    'status': 'Completed'},
+    {'artist': 'Sophia Wilson',
+    'asset_id': 'LIGHT006',
+    'asset_name': 'Dragon_Lighting',
+    'department': 'Lighting',
+    'due_date': '2023-07-30',
+    'file_path': '/projects/seq001/shots/shot001/lighting/dragon_light_v001.abc',
+    'priority': 3,
+    'start_date': '2023-06-30',
+    'status': 'In Progress'},
+]

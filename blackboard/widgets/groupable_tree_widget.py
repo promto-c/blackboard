@@ -195,7 +195,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
     def __hash__(self):
         return hash(self.id)
 
-class ColumnListWidget(QtWidgets.QListWidget):
+class ColumnMangementWidget(QtWidgets.QTreeWidget):
 
     # Initialization and Setup
     # ------------------------
@@ -210,37 +210,44 @@ class ColumnListWidget(QtWidgets.QListWidget):
         self.__init_signal_connections()
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts.
-        """
+        """Set up the UI for the widget, including creating widgets, layouts."""
+        self.setHeaderHidden(True)
+        self.setColumnCount(2)
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
+        self.setItemsExpandable(False)
+        self.setRootIsDecorated(False)
+
+        # Set the minimum width for the first column
+        self.header().setMinimumSectionSize(20)
+        self.setColumnWidth(0, 20)  # Adjust the size of the first column
 
     def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
         """
         self.tree_widget.header().sectionMoved.connect(self.update_columns)
         self.tree_widget.model().headerDataChanged.connect(self.update_columns)
-        
-        self.model().rowsMoved.connect(self.sync_column_order)
 
         self.itemClicked.connect(self.toggle_check_state)
         self.itemChanged.connect(self.set_column_visibility)
 
-    def toggle_check_state(self, item: QtWidgets.QListWidgetItem):
-        # Toggle the check state
-        if item.checkState() == QtCore.Qt.CheckState.Checked:
-            item.setCheckState(QtCore.Qt.CheckState.Unchecked)
-        else:
-            item.setCheckState(QtCore.Qt.CheckState.Checked)
+    def toggle_check_state(self, tree_item, column):
+        # Toggles the checkbox state when an item's text (second column) is clicked
+        if column != 1:
+            return
+
+        current_state = tree_item.checkState(0)
+        new_state = QtCore.Qt.Checked if current_state == QtCore.Qt.Unchecked else QtCore.Qt.Unchecked
+        tree_item.setCheckState(0, new_state)  # Toggle the check state
 
     def sync_column_order(self):
-        for i in range(self.count()):
-            column_name = self.item(i).text()
+        for i in range(self.topLevelItemCount()):
+            column_name = self.topLevelItem(i).text(1)
             visual_index = self.tree_widget.get_column_visual_index(column_name)
             self.tree_widget.header().moveSection(visual_index, i)
 
-    def set_column_visibility(self, item: QtWidgets.QListWidgetItem):
-        column_name = item.text()
-        is_hidden = item.checkState() == QtCore.Qt.CheckState.Unchecked
+    def set_column_visibility(self, item: QtWidgets.QTreeWidgetItem, column: int):
+        column_name = item.text(1)
+        is_hidden = item.checkState(0) == QtCore.Qt.Unchecked
         column_index = self.tree_widget.get_column_index(column_name)
         
         self.tree_widget.setColumnHidden(column_index, is_hidden)
@@ -256,24 +263,42 @@ class ColumnListWidget(QtWidgets.QListWidget):
 
         self.addItems(header_names)
 
-    def addItem(self, label: str, check_state: QtCore.Qt.CheckState = QtCore.Qt.CheckState.Unchecked) -> None:
-        item = QtWidgets.QListWidgetItem(label)
-
-        item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
-        item.setCheckState(check_state)
-        super().addItem(item)
+    def addItem(self, label: str, is_checked: bool = False):
+        tree_item = QtWidgets.QTreeWidgetItem(self, ['', label])
+        check_state = QtCore.Qt.CheckState.Checked if is_checked else QtCore.Qt.CheckState.Unchecked
+        tree_item.setCheckState(0, check_state)
 
     def addItems(self, labels: Iterable[str]):
         for column_visual_index, label in enumerate(labels):
             column_logical_index = self.tree_widget.get_column_logical_index(column_visual_index)
-            check_state = QtCore.Qt.CheckState.Unchecked if self.tree_widget.isColumnHidden(column_logical_index) else QtCore.Qt.CheckState.Checked
+            is_checked = not self.tree_widget.isColumnHidden(column_logical_index)
+            self.addItem(label, is_checked)
 
-            self.addItem(label, check_state)
+    def dropEvent(self, event: QtGui.QDropEvent):
+        # Attempt to find the item at the drop position.
+        target_item = self.itemAt(event.pos())
+
+        if self.dropIndicatorPosition() == QtWidgets.QAbstractItemView.DropIndicatorPosition.OnItem:
+
+            new_row_index = self.indexFromItem(target_item).row()
+
+            # Perform the move operation within the same level.
+            for selected_item in self.selectedItems():
+                # Take the item out of its current position.
+                taken_item = self.takeTopLevelItem(self.indexOfTopLevelItem(selected_item))
+                # Insert it at the determined position.
+                self.insertTopLevelItem(new_row_index, taken_item)
+            
+            event.ignore()
+        else:
+            # If not reparenting, use the default behavior which is already correct for same-level moves.
+            super().dropEvent(event)
+
+        self.sync_column_order()
 
 class TreeUtilityToolBar(QtWidgets.QToolBar):
     def __init__(self, tree_widget: 'GroupableTreeWidget'):
         # Initialize the super class
-        # QtWidgets.QToolBar().setLayoutDirection()
         super().__init__(parent=tree_widget)
 
         # Store the arguments
@@ -329,6 +354,7 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         self.set_uniform_row_height_button.setToolTip("Toggle uniform row height")  # Tooltip added
 
         self.uniform_row_height_spin_box = QtWidgets.QSpinBox(self)
+        self.uniform_row_height_spin_box.setRange(16, 200)
         self.uniform_row_height_spin_box.setFixedHeight(20)
         self.uniform_row_height_spin_box.setSingleStep(4)
         self.uniform_row_height_spin_box.setValue(24)
@@ -413,6 +439,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Initialize the HighlightItemDelegate object to highlight items in the tree widget.
         self.highlight_item_delegate = widgets.HighlightItemDelegate()
+        self.thumbnail_delegate = widgets.ThumbnailDelegate(self)
 
         # Private Attributes
         # ------------------
@@ -473,7 +500,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.itemExpanded.connect(self.toggle_expansion_for_selected)
         self.itemCollapsed.connect(self.toggle_expansion_for_selected)
 
-        self.header().sortIndicatorChanged.connect(lambda _: self.set_row_height(self._row_height))
+        self.header().sortIndicatorChanged.connect(lambda _: self.set_row_height())
 
         self.itemSelectionChanged.connect(self._highlight_selected_items)
 
@@ -544,7 +571,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         show_hide_column = self.menu.addMenu('Show/Hide Columns')
         self.menu.addMenu(show_hide_column)
 
-        self.column_list_widget = ColumnListWidget(self)
+        self.column_list_widget = ColumnMangementWidget(self)
         action = QtWidgets.QWidgetAction(self)
         action.setDefaultWidget(self.column_list_widget)
         show_hide_column.addAction(action)
@@ -677,6 +704,19 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     # Extended Methods
     # ----------------
+    def create_thumbnail_column(self, column_name: str):
+
+        self.column_name_list.append('thumbnail')
+        self.setHeaderLabels(self.column_name_list)
+
+        source_column = self.column_name_list.index(column_name)
+        thumbnail_column = self.column_name_list.index('thumbnail')
+
+        self.thumbnail_delegate.set_thumbnail_column(thumbnail_column)
+        self.thumbnail_delegate.set_source_column(source_column)
+
+        self.setItemDelegateForColumn(thumbnail_column, self.thumbnail_delegate)
+
     def add_label_action(self, parent_menu: QtWidgets.QMenu, text: str):
         label = QtWidgets.QLabel(text, parent_menu)
         label.setDisabled(True)
@@ -742,10 +782,10 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.update()
 
     # NOTE: for refactoring
-    def set_row_height(self, height):
-        self._row_height = height
+    def set_row_height(self, height: Optional[int] = None):
+        self._row_height = height or self._row_height
 
-        if height == -1:
+        if self._row_height == -1:
             self.reset_row_height()
             return
 
@@ -756,7 +796,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         for column_index in range(self.columnCount()):
             size_hint = self.sizeHintForColumn(column_index)
-            self.topLevelItem(0).setSizeHint(column_index, QtCore.QSize(size_hint, height))
+            self.topLevelItem(0).setSizeHint(column_index, QtCore.QSize(size_hint, self._row_height))
 
     def reset_row_height(self):
 
@@ -846,7 +886,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     def reset_all_color_adaptive_column(self):
         """Reset the color adaptive for all columns in the tree widget.
         """
-        for column in range(self.columnCount()):
+        for column in self.color_adaptive_columns:
             self.setItemDelegateForColumn(column, None)
 
         self.color_adaptive_columns.clear()
@@ -882,22 +922,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     def get_column_logical_index(self, visual_index: int) -> int:
         return self.header().logicalIndex(visual_index)
-    
-    def add_items(self, id_to_data_dict: Dict[int, Dict[str, str]]) -> None:
-        """Add items to the tree widget.
-
-        Args:
-            id_to_data_dict (Dict[int, Dict[str, str]]): A dictionary mapping item IDs to their data as a dictionary.
-        """
-        # Iterate through the dictionary of items
-        for item_id, item_data in id_to_data_dict.items():
-            # Create a new custom QTreeWidgetItem for sorting by type of the item data, and add to the self tree widget
-            tree_item = TreeWidgetItem(self, item_data=item_data, item_id=item_id)
-            # 
-            self.id_to_tree_item[item_id] = tree_item
-
-        # Resize all columns to fit their contents
-        self.resize_to_contents()
 
     def add_items(self, item_names: Union[Dict[str, List[str]], List[str]], parent: Optional[QtWidgets.QTreeWidgetItem] = None):
         """Adds items to the tree widget.
@@ -913,12 +937,22 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             raise ValueError("Invalid type for item_names. Expected a list or a dictionary.")
 
     def add_item(self, data_dict, item_id=None, parent=None):
+        # Capture the current first top-level item, if any
+        previous_first_item = self.topLevelItem(0) if self.topLevelItemCount() > 0 else None
+        
         parent = parent or self.invisibleRootItem()
         item_id = item_id or uuid.uuid1()
-        # Create a new custom QTreeWidgetItem for sorting by type of the item data, and add to the self tree widget
+        
+        # Create a new TreeWidgetItem and add to the tree widget
         tree_item = TreeWidgetItem(parent, item_data=data_dict, item_id=item_id)
-        # 
         self.id_to_tree_item[item_id] = tree_item
+
+        # Check the current first top-level item after the potential sort
+        current_first_item = self.topLevelItem(0)
+
+        # If the first item has changed (by comparing object references), emit the signal
+        if current_first_item != previous_first_item:
+            self.set_row_height()
 
         return tree_item
 
@@ -944,12 +978,15 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for data_dict in data_dicts:
             self.add_item(data_dict)
 
-    def group_by_column(self, column: int) -> None:
+    def group_by_column(self, column: Union[int, str]) -> None:
         """Group the items in the tree widget by the values in the specified column.
 
         Args:
             column (int): The index of the column to group by.
         """
+        if not isinstance(column, int):
+            column = self.get_column_index(column)
+
         # Ungroup all items in the tree widget
         self.ungroup_all()
 
@@ -1329,6 +1366,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # TODO: Store self.color_adaptive_columns when apply color adaptive
         settings.setValue('color_adaptive_columns', self.color_adaptive_columns)
         settings.setValue('group_column_name', self.grouped_column_name)
+        settings.setValue('uniform_row_height', self._row_height)
         settings.endGroup()
 
     def load_state(self, settings: QtCore.QSettings, group_name='tree_widget'):
@@ -1336,6 +1374,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         header_state = settings.value('header_state', QtCore.QByteArray)
         color_adaptive_columns = settings.value('color_adaptive_columns', list())
         grouped_column_name = settings.value('grouped_column_name', str())
+        uniform_row_height = int(settings.value('uniform_row_height', -1))
         settings.endGroup()
 
         if not header_state:
@@ -1343,8 +1382,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self.header().restoreState(header_state)
         self._restore_color_adaptive_column(color_adaptive_columns)
-        # TODO: Add support to get input as str
         self.group_by_column(grouped_column_name)
+        self.set_row_height(uniform_row_height)
 
     def set_generator(self, generator: Generator):
         self.clear()
@@ -1425,6 +1464,7 @@ def main():
     """
     import sys
     from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
+    from blackboard.examples.example_generator import generate_file_paths
 
     # Create the application and the main window
     app = QtWidgets.QApplication(sys.argv)
@@ -1435,9 +1475,10 @@ def main():
     bb.theme.set_theme(app, 'dark')
 
     # Create an instance of the widget
-    generator = generate_file_paths('/')
+    generator = generate_file_paths('blackboard')
     tree_widget = GroupableTreeWidget()
     tree_widget.setHeaderLabels(['id', 'file_path'])
+    tree_widget.create_thumbnail_column('file_path')
     tree_widget.set_generator(generator)
 
     # tree_widget = GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST)

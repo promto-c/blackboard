@@ -1,6 +1,10 @@
 # Type Checking Imports
 # ---------------------
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, Optional
+
+# Standard Library Imports
+# ------------------------
+import uuid
 
 # Third Party Imports
 # -------------------
@@ -18,14 +22,18 @@ from blackboard import widgets
 class DatabaseViewWidget(QtWidgets.QWidget):
     """
     """
+    LABEL: str = 'Database View'
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent: QtWidgets.QWidget = None):
+    def __init__(self, parent: QtWidgets.QWidget = None, identifier: Optional[str] = None):
         """Initialize the widget and set up the UI, signal connections.
         """
         # Initialize the super class
         super().__init__(parent)
+
+        # Generate a unique identifier if none is provided
+        self.identifier = identifier or str(uuid.uuid4())
 
         # Initialize setup
         self.__init_ui()
@@ -41,10 +49,10 @@ class DatabaseViewWidget(QtWidgets.QWidget):
             +---------------------------------------------------+ -+
             | [Filter 1][Filter 2][+]       [[W2]: search_edit] |  | -> [L1]: top_bar_area_layout
             +---------------------------------------------------+ -+
-            | - - - - - - - - - - - |[W4]: tree_utility_tool_bar|  |
+            | [W3]: general_tool_bar| - - | [W4]: view_tool_bar |  | -> [L2]: utility_area_layout
             |                                                   |  |
             |                                                   |  |
-            |               [[W3]: tree_widget]                 |  | -> [L2]: main_tree_layout
+            |               [[W5]: tree_widget]                 |  | -> [L3]: main_view_layout
             |                                                   |  |
             |                                                   |  |
             +---------------------------------------------------+ -+
@@ -59,24 +67,31 @@ class DatabaseViewWidget(QtWidgets.QWidget):
         self.top_bar_area_layout = QtWidgets.QHBoxLayout()
         self.main_layout.addLayout(self.top_bar_area_layout)
 
-        # [L2]: Add main tree layout
-        self.main_tree_layout = QtWidgets.QVBoxLayout()
-        self.main_layout.addLayout(self.main_tree_layout)
+        # [L2]: Add utility layout
+        self.utility_area_layout = QtWidgets.QHBoxLayout()
+        self.main_layout.addLayout(self.utility_area_layout)
+
+        # [L3]: Add main tree layout
+        self.main_view_layout = QtWidgets.QVBoxLayout()
+        self.main_layout.addLayout(self.main_view_layout)
         self.main_layout.setSpacing(0)
-        self.main_tree_layout.setSpacing(0)
+        self.main_view_layout.setSpacing(0)
 
         # Create Widgets
         # --------------
         # [W1]: Create top left filter bar
         self.filter_bar_widget = widgets.FilterBarWidget(self)
 
-        # [W3]: Create asset tree widget
+        # [W5]: Create asset tree widget
         self.tree_widget = widgets.GroupableTreeWidget(parent=self)
-        self.tree_utility_tool_bar = widgets.TreeUtilityToolBar(self.tree_widget)
 
         # [W2]: Search field
         self.search_edit = widgets.SimpleSearchEdit(tree_widget=self.tree_widget, parent=self)
         self.search_edit.setMinimumWidth(200)
+
+        # [W3], [W4]: General tool bar and view utility bar
+        self.general_tool_bar = QtWidgets.QToolBar(self)
+        self.view_tool_bar = widgets.TreeUtilityToolBar(self.tree_widget)
 
         # Add Widgets to Layouts
         # ----------------------
@@ -87,15 +102,20 @@ class DatabaseViewWidget(QtWidgets.QWidget):
         self.top_bar_area_layout.addWidget(self.search_edit)
 
         # Add [W3], [W4] to [L2]
+        # Add left general tool bar and right view tool bar
+        self.utility_area_layout.addWidget(self.general_tool_bar)
+        self.utility_area_layout.addStretch()
+        self.utility_area_layout.addWidget(self.view_tool_bar)
+
+        # Add [W5] to [L3]
         # Add tree widget to main tree widget
-        self.main_tree_layout.addWidget(self.tree_utility_tool_bar)
-        self.main_tree_layout.addWidget(self.tree_widget)
+        self.main_view_layout.addWidget(self.tree_widget)
 
     def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
         """
         # Connect signals to slots
-        self.tree_utility_tool_bar.refresh_button.clicked.connect(self.activate_filter)
+        self.view_tool_bar.refresh_button.clicked.connect(self.activate_filter)
         bb.utils.KeyBinder.bind_key('Ctrl+F', self.tree_widget, self.search_edit.set_text_as_selection)
 
     # Public Methods
@@ -129,6 +149,11 @@ class DatabaseViewWidget(QtWidgets.QWidget):
 
         self.search_edit.update()
 
+    # Special Methods
+    # ---------------
+    def __hash__(self):
+        return hash(self.identifier)
+
 
 # Main Function
 # -------------
@@ -136,7 +161,7 @@ def main():
     """Create the application and main window, and show the widget.
     """
     import sys
-    from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
+    from blackboard.examples.example_data_dict import COLUMN_NAME_VFX_ASSET_LIST, ID_TO_VFX_DATA_DICT
 
     # Create the application and the main window
     app = QtWidgets.QApplication(sys.argv)
@@ -145,8 +170,9 @@ def main():
 
     # Create an instance of the widget
     database_view_widget = DatabaseViewWidget()
-    database_view_widget.tree_widget.setHeaderLabels(COLUMN_NAME_LIST)
-    database_view_widget.populate(ID_TO_DATA_DICT)
+    database_view_widget.tree_widget.setHeaderLabels(COLUMN_NAME_VFX_ASSET_LIST)
+    database_view_widget.tree_widget.create_thumbnail_column('file_path')
+    database_view_widget.populate(ID_TO_VFX_DATA_DICT)
 
     # Date Filter Setup
     date_filter_widget = widgets.DateRangeFilterWidget(filter_name="Date")

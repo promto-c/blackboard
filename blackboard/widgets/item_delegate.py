@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from numbers import Number
 import datetime
 import dateutil.parser as date_parser
@@ -6,6 +6,8 @@ import dateutil.parser as date_parser
 from qtpy import QtCore, QtGui, QtWidgets
 
 from blackboard.utils.color_utils import ColorUtils
+from blackboard.utils.qimage_utils import ThumbnailUtils
+from blackboard.utils.thread_pool import ThreadPoolManager
 
 
 def create_pastel_color(color: QtGui.QColor, saturation: float = 0.4, value: float = 0.9) -> QtGui.QColor:
@@ -43,6 +45,19 @@ def parse_date(date_string: str) -> Optional[datetime.datetime]:
     except ValueError:
         return None
 
+class ThumbnailLoader(QtCore.QObject):
+    thumbnail_loaded = QtCore.Signal(str, QtGui.QPixmap)
+
+    def __init__(self, image_path, thumbnail_height):
+        super().__init__()
+        self.image_path = image_path
+        self.thumbnail_height = thumbnail_height
+
+    def run(self):
+        # Assuming ThumbnailUtils.get_pixmap_thumbnail is a static method
+        pixmap = ThumbnailUtils.get_pixmap_thumbnail(self.image_path, self.thumbnail_height)
+        if not pixmap.isNull():
+            self.thumbnail_loaded.emit(self.image_path, pixmap)
 
 class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
     """Custom item delegate class that highlights the rows specified by the `target_model_indexes` list.
@@ -412,3 +427,122 @@ class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
 
         # Call the base class to do the default painting
         super().paint(painter, option, index)
+
+class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
+
+    # Initialization and Setup
+    # ------------------------
+    def __init__(self, parent=None, thumbnail_height: int = 64, top_margin: int = 4, rounded_rect_height_threshold: int = 20):
+        # Initialize the super class
+        super().__init__(parent)
+
+        # Store the arguments
+        self.thumbnail_height = thumbnail_height
+        self.top_margin = top_margin
+        self.rounded_rect_height_threshold = rounded_rect_height_threshold
+
+        # Initialize setup
+        self.__init_attributes()
+
+    def __init_attributes(self):
+        """Set up the initial values for the widget.
+        """
+        # Private Attributes
+        # ------------------
+        self._thumbnail_column = None
+        self._source_column = None
+        self._loading_threads = dict()
+        self._loaded_thumbnails = dict()
+
+    # Public Methods
+    # --------------
+    def set_source_column(self, column: int):
+        self._source_column = column
+
+    def set_thumbnail_column(self, column: int):
+        self._thumbnail_column = column
+
+    def load_thumbnail(self, file_path: str, is_background_process: bool = True) -> QtGui.QPixmap:
+        if is_background_process:
+            pixmap = self._load_thumbnail_using_worker(file_path)
+        else:
+            pixmap = ThumbnailUtils.get_pixmap_thumbnail(file_path, self.thumbnail_height)
+
+        return pixmap
+
+    # Utility Methods
+    # ---------------
+    @staticmethod
+    def create_pixmap_round_rect_path(start_point: Union[QtCore.QPoint, QtCore.QPointF], pixmap: QtGui.QPixmap, corner_radius: int = 4):
+        painter_path = QtGui.QPainterPath(start_point)
+        painter_path.addRoundedRect(
+            QtCore.QRectF(start_point, QtCore.QSizeF(pixmap.size())), 
+            corner_radius, corner_radius
+        )
+
+        return painter_path
+
+    # Private Methods
+    # ---------------
+    def _load_thumbnail_using_worker(self, file_path: str):
+        if file_path in self._loading_threads:
+            return
+
+        elif file_path not in self._loaded_thumbnails:
+            worker = ThumbnailLoader(file_path, self.thumbnail_height)
+            worker.thumbnail_loaded.connect(self.on_thumbnail_loaded)
+            self._loading_threads[file_path] = worker
+
+            # Use the shared thread pool to start the worker
+            ThreadPoolManager.thread_pool().start(worker.run)
+            return
+
+        return self._loaded_thumbnails[file_path]
+
+    def _paint_pixmap(self, painter: QtGui.QPainter, rect: QtCore.QRect, pixmap: QtGui.QPixmap):
+        scaled_pixmap = pixmap.scaled(
+            int(rect.width() - 2 * self.top_margin), 
+            int(rect.height() - 2 * self.top_margin), 
+            QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation
+        )
+
+        # Calculate the center position
+        x = rect.x() + (rect.width() - scaled_pixmap.width()) / 2
+        y = rect.y() + (rect.height() - scaled_pixmap.height()) / 2
+        start_point = QtCore.QPointF(x, y)
+
+        # Save the painter's current state
+        painter.save()
+
+        # Draw rounded rect
+        if scaled_pixmap.height() >= self.rounded_rect_height_threshold:
+            # Create a rounded rectangle path
+            path = self.create_pixmap_round_rect_path(start_point, scaled_pixmap)
+            # Set the path as the clip path
+            painter.setClipPath(path)
+
+        # Draw the pixmap within the clipped region
+        painter.drawPixmap(start_point, scaled_pixmap)
+
+        # Restore the painter's state
+        painter.restore()
+
+    def on_thumbnail_loaded(self, image_path, pixmap):
+        self._loaded_thumbnails[image_path] = pixmap
+        del self._loading_threads[image_path]
+        self.parent().viewport().update()  # Request a repaint
+
+    # Overridden Methods
+    # ------------------
+    def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex):
+        super().paint(painter, option, index)
+
+        file_path_index = index.sibling(index.row(), self._source_column)
+        file_path = file_path_index.data(QtCore.Qt.ItemDataRole.DisplayRole)
+        pixmap = self.load_thumbnail(file_path)
+
+        if pixmap is None or pixmap.isNull():
+            # TODO: Paint loading pixmap
+            return
+
+        self._paint_pixmap(painter, option.rect, pixmap)
