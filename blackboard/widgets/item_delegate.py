@@ -415,10 +415,11 @@ class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
         super().paint(painter, option, index)
 
 class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
-    def __init__(self, parent=None, thumbnail_height: int = 64):
+    def __init__(self, parent=None, thumbnail_height: int = 64, top_margin: int = 4):
         super().__init__(parent)
 
         self.thumbnail_height = thumbnail_height
+        self.top_margin = top_margin
 
         self._thumbnail_column = None
         self._source_column = None
@@ -430,6 +431,7 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         self._thumbnail_column = _thumbnail_column
 
     def paint(self, painter, option, index):
+        super().paint(painter, option, index)
         # Check if this column should have a thumbnail
         if index.column() == self._thumbnail_column:            # image_path = index.data(Qt.UserRole + 1)
 
@@ -438,12 +440,14 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
 
             pixmap = ThumbnailUtils.get_pixmap_thumbnail(image_path, desired_height=self.thumbnail_height)
 
-            if not pixmap.isNull():
-                # Scale the pixmap to fit within the cell, maintaining aspect ratio
-                scaled_pixmap = pixmap.scaledToHeight(option.rect.height(), QtCore.Qt.SmoothTransformation)
-                # Calculate the center position
-                x = option.rect.x() + (option.rect.width() - scaled_pixmap.width()) / 2
-                y = option.rect.y() + (option.rect.height() - scaled_pixmap.height()) / 2
-                painter.drawPixmap(int(x), int(y), scaled_pixmap)
-        else:
-            super().paint(painter, option, index)
+            if pixmap.isNull():
+                return
+
+            # Scale the pixmap to fit within the cell, maintaining aspect ratio
+            scaled_pixmap = pixmap.scaledToHeight(option.rect.height() - (self.top_margin*2), QtCore.Qt.SmoothTransformation)
+
+            # Calculate the center position
+            x = option.rect.x() + (option.rect.width() - scaled_pixmap.width()) / 2
+            y = option.rect.y() + self.top_margin
+
+            painter.drawPixmap(int(x), int(y), scaled_pixmap)
