@@ -860,7 +860,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     def reset_all_color_adaptive_column(self):
         """Reset the color adaptive for all columns in the tree widget.
         """
-        for column in range(self.columnCount()):
+        for column in self.color_adaptive_columns:
             self.setItemDelegateForColumn(column, None)
 
         self.color_adaptive_columns.clear()

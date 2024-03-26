@@ -432,22 +432,38 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         super().paint(painter, option, index)
-        # Check if this column should have a thumbnail
-        if index.column() == self._thumbnail_column:            # image_path = index.data(Qt.UserRole + 1)
 
-            file_path_index = index.sibling(index.row(), self._source_column)
-            image_path = file_path_index.data(QtCore.Qt.DisplayRole)
+        file_path_index = index.sibling(index.row(), self._source_column)
+        image_path = file_path_index.data(QtCore.Qt.DisplayRole)
 
-            pixmap = ThumbnailUtils.get_pixmap_thumbnail(image_path, desired_height=self.thumbnail_height)
+        pixmap = ThumbnailUtils.get_pixmap_thumbnail(image_path, desired_height=self.thumbnail_height)
 
-            if pixmap.isNull():
-                return
+        if pixmap.isNull():
+            return
 
-            # Scale the pixmap to fit within the cell, maintaining aspect ratio
-            scaled_pixmap = pixmap.scaledToHeight(option.rect.height() - (self.top_margin*2), QtCore.Qt.SmoothTransformation)
+        # Scale the pixmap to fit within the cell, maintaining aspect ratio
+        scaled_pixmap = pixmap.scaledToHeight(option.rect.height() - (self.top_margin*2), QtCore.Qt.SmoothTransformation)
 
-            # Calculate the center position
-            x = option.rect.x() + (option.rect.width() - scaled_pixmap.width()) / 2
-            y = option.rect.y() + self.top_margin
+        # Calculate the center position
+        x = option.rect.x() + (option.rect.width() - scaled_pixmap.width()) / 2
+        y = option.rect.y() + self.top_margin
 
-            painter.drawPixmap(int(x), int(y), scaled_pixmap)
+        # Save the painter's current state
+        painter.save()
+
+        # Draw Rounded Rect
+        # -----------------
+        # Create a rounded rectangle path
+        path = QtGui.QPainterPath()
+        cornerRadius = 4  # Adjust the corner radius here
+        path.addRoundedRect(QtCore.QRectF(x, y, scaled_pixmap.width(), scaled_pixmap.height()), cornerRadius, cornerRadius)
+
+        # Set the path as the clip path
+        painter.setClipPath(path)
+        # -----------------
+
+        # Draw the pixmap within the clipped region
+        painter.drawPixmap(int(x), int(y), scaled_pixmap)
+
+        # Restore the painter's state
+        painter.restore()
