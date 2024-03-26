@@ -1,3 +1,5 @@
+from typing import Optional
+
 import os, math
 import numpy as np
 from numbers import Number
@@ -22,9 +24,14 @@ class ImageReader:
                 'exr': cls.read_exr,
                 'dpx': cls.read_dpx,
             }
+        # Determine if the video file type supports
+        video_formats = ['mov', 'mp4', 'avi']
                 
         file_extension = file_path.split('.')[-1].lower()
         
+        if file_extension in video_formats:
+            return cls.read_video(file_path)
+
         # Lookup read method for given file extension
         read_method = file_type_handlers.get(file_extension, cls.cv2_read_image)
 
@@ -121,6 +128,14 @@ class ImageReader:
 
     @classmethod
     def read_dpx(cls, image_path: str) -> np.ndarray:
+        # TODO: Check from metadata
+        try:
+            return cls.read_dpx_12bit_packed(image_path)
+        except ValueError:
+            return cls.read_dpx_10bit_filled(image_path)
+
+    @classmethod
+    def read_dpx_10bit_filled(cls, image_path: str) -> np.ndarray:
         with open(image_path, "rb") as file:
 
             meta = cls.read_dpx_header(file)
@@ -192,6 +207,28 @@ class ImageReader:
 
         return image_data
 
+    @staticmethod
+    def read_video(file_path: str, frame_number: Optional[int] = None):
+        """Generalized method to read a specific frame from a video file.
+
+        Args:
+            file_path (str): Path to the video file.
+            frame_number (int): Frame number to read, defaults to 0 (first frame).
+
+        Returns:
+            np.ndarray: Image data as a NumPy array.
+        """
+        cap = cv2.VideoCapture(file_path)
+        if frame_number is not None:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+        ret, frame = cap.read()
+        
+        if not ret:
+            print("Failed to read frame")
+            return None
+        
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        return frame
 
 class ImageSequence:
 
