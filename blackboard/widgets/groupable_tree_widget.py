@@ -474,7 +474,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.itemExpanded.connect(self.toggle_expansion_for_selected)
         self.itemCollapsed.connect(self.toggle_expansion_for_selected)
 
-        self.header().sortIndicatorChanged.connect(lambda _: self.set_row_height(self._row_height))
+        self.header().sortIndicatorChanged.connect(lambda _: self.set_row_height())
 
         self.itemSelectionChanged.connect(self._highlight_selected_items)
 
@@ -756,10 +756,10 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.update()
 
     # NOTE: for refactoring
-    def set_row_height(self, height):
-        self._row_height = height
+    def set_row_height(self, height: Optional[int] = None):
+        self._row_height = height or self._row_height
 
-        if height == -1:
+        if self._row_height == -1:
             self.reset_row_height()
             return
 
@@ -770,7 +770,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         for column_index in range(self.columnCount()):
             size_hint = self.sizeHintForColumn(column_index)
-            self.topLevelItem(0).setSizeHint(column_index, QtCore.QSize(size_hint, height))
+            self.topLevelItem(0).setSizeHint(column_index, QtCore.QSize(size_hint, self._row_height))
 
     def reset_row_height(self):
 
@@ -911,12 +911,22 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             raise ValueError("Invalid type for item_names. Expected a list or a dictionary.")
 
     def add_item(self, data_dict, item_id=None, parent=None):
+        # Capture the current first top-level item, if any
+        previous_first_item = self.topLevelItem(0) if self.topLevelItemCount() > 0 else None
+        
         parent = parent or self.invisibleRootItem()
         item_id = item_id or uuid.uuid1()
-        # Create a new custom QTreeWidgetItem for sorting by type of the item data, and add to the self tree widget
+        
+        # Create a new TreeWidgetItem and add to the tree widget
         tree_item = TreeWidgetItem(parent, item_data=data_dict, item_id=item_id)
-        # 
         self.id_to_tree_item[item_id] = tree_item
+
+        # Check the current first top-level item after the potential sort
+        current_first_item = self.topLevelItem(0)
+
+        # If the first item has changed (by comparing object references), emit the signal
+        if current_first_item != previous_first_item:
+            self.set_row_height()
 
         return tree_item
 
@@ -942,12 +952,15 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for data_dict in data_dicts:
             self.add_item(data_dict)
 
-    def group_by_column(self, column: int) -> None:
+    def group_by_column(self, column: Union[int, str]) -> None:
         """Group the items in the tree widget by the values in the specified column.
 
         Args:
             column (int): The index of the column to group by.
         """
+        if not isinstance(column, int):
+            column = self.get_column_index(column)
+
         # Ungroup all items in the tree widget
         self.ungroup_all()
 
@@ -1327,6 +1340,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # TODO: Store self.color_adaptive_columns when apply color adaptive
         settings.setValue('color_adaptive_columns', self.color_adaptive_columns)
         settings.setValue('group_column_name', self.grouped_column_name)
+        settings.setValue('uniform_row_height', self._row_height)
         settings.endGroup()
 
     def load_state(self, settings: QtCore.QSettings, group_name='tree_widget'):
@@ -1334,6 +1348,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         header_state = settings.value('header_state', QtCore.QByteArray)
         color_adaptive_columns = settings.value('color_adaptive_columns', list())
         grouped_column_name = settings.value('grouped_column_name', str())
+        uniform_row_height = int(settings.value('uniform_row_height', -1))
         settings.endGroup()
 
         if not header_state:
@@ -1341,8 +1356,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self.header().restoreState(header_state)
         self._restore_color_adaptive_column(color_adaptive_columns)
-        # TODO: Add support to get input as str
         self.group_by_column(grouped_column_name)
+        self.set_row_height(uniform_row_height)
 
     def set_generator(self, generator: Generator):
         self.clear()
