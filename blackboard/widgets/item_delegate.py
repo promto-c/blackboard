@@ -441,26 +441,30 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         if pixmap.isNull():
             return
 
-        # Scale the pixmap to fit within the cell, maintaining aspect ratio
-        scaled_pixmap = pixmap.scaledToHeight(option.rect.height() - (self.top_margin*2), QtCore.Qt.SmoothTransformation)
+        scaled_pixmap = pixmap.scaled(
+            int(option.rect.width() - 2 * self.top_margin), 
+            int(option.rect.height() - 2 * self.top_margin), 
+            QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation
+        )
 
         # Calculate the center position
         x = option.rect.x() + (option.rect.width() - scaled_pixmap.width()) / 2
-        y = option.rect.y() + self.top_margin
+        y = option.rect.y() + (option.rect.height() - scaled_pixmap.height()) / 2
 
         # Save the painter's current state
         painter.save()
 
         # Draw Rounded Rect
         # -----------------
-        # Create a rounded rectangle path
-        path = QtGui.QPainterPath()
-        cornerRadius = 4  # Adjust the corner radius here
-        path.addRoundedRect(QtCore.QRectF(x, y, scaled_pixmap.width(), scaled_pixmap.height()), cornerRadius, cornerRadius)
+        if scaled_pixmap.height() >= 20:
+            # Create a rounded rectangle path
+            path = QtGui.QPainterPath()
+            corner_radius = 4
+            path.addRoundedRect(QtCore.QRectF(x, y, scaled_pixmap.width(), scaled_pixmap.height()), corner_radius, corner_radius)
 
-        # Set the path as the clip path
-        painter.setClipPath(path)
-        # -----------------
+            # Set the path as the clip path
+            painter.setClipPath(path)
+            # -----------------
 
         # Draw the pixmap within the clipped region
         painter.drawPixmap(int(x), int(y), scaled_pixmap)
