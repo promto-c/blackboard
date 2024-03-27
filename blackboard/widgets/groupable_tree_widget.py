@@ -195,7 +195,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
     def __hash__(self):
         return hash(self.id)
 
-class ColumnListWidget(QtWidgets.QListWidget):
+class ColumnMangementWidget(QtWidgets.QTreeWidget):
 
     # Initialization and Setup
     # ------------------------
@@ -210,37 +210,44 @@ class ColumnListWidget(QtWidgets.QListWidget):
         self.__init_signal_connections()
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts.
-        """
+        """Set up the UI for the widget, including creating widgets, layouts."""
+        self.setHeaderHidden(True)
+        self.setColumnCount(2)
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
+        self.setItemsExpandable(False)
+        self.setRootIsDecorated(False)
+
+        # Set the minimum width for the first column
+        self.header().setMinimumSectionSize(20)
+        self.setColumnWidth(0, 20)  # Adjust the size of the first column
 
     def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
         """
         self.tree_widget.header().sectionMoved.connect(self.update_columns)
         self.tree_widget.model().headerDataChanged.connect(self.update_columns)
-        
-        self.model().rowsMoved.connect(self.sync_column_order)
 
         self.itemClicked.connect(self.toggle_check_state)
         self.itemChanged.connect(self.set_column_visibility)
 
-    def toggle_check_state(self, item: QtWidgets.QListWidgetItem):
-        # Toggle the check state
-        if item.checkState() == QtCore.Qt.CheckState.Checked:
-            item.setCheckState(QtCore.Qt.CheckState.Unchecked)
-        else:
-            item.setCheckState(QtCore.Qt.CheckState.Checked)
+    def toggle_check_state(self, tree_item, column):
+        # Toggles the checkbox state when an item's text (second column) is clicked
+        if column != 1:
+            return
+
+        current_state = tree_item.checkState(0)
+        new_state = QtCore.Qt.Checked if current_state == QtCore.Qt.Unchecked else QtCore.Qt.Unchecked
+        tree_item.setCheckState(0, new_state)  # Toggle the check state
 
     def sync_column_order(self):
-        for i in range(self.count()):
-            column_name = self.item(i).text()
+        for i in range(self.topLevelItemCount()):
+            column_name = self.topLevelItem(i).text(1)
             visual_index = self.tree_widget.get_column_visual_index(column_name)
             self.tree_widget.header().moveSection(visual_index, i)
 
-    def set_column_visibility(self, item: QtWidgets.QListWidgetItem):
-        column_name = item.text()
-        is_hidden = item.checkState() == QtCore.Qt.CheckState.Unchecked
+    def set_column_visibility(self, item: QtWidgets.QTreeWidgetItem, column: int):
+        column_name = item.text(1)
+        is_hidden = item.checkState(0) == QtCore.Qt.Unchecked
         column_index = self.tree_widget.get_column_index(column_name)
         
         self.tree_widget.setColumnHidden(column_index, is_hidden)
@@ -256,19 +263,38 @@ class ColumnListWidget(QtWidgets.QListWidget):
 
         self.addItems(header_names)
 
-    def addItem(self, label: str, check_state: QtCore.Qt.CheckState = QtCore.Qt.CheckState.Unchecked) -> None:
-        item = QtWidgets.QListWidgetItem(label)
-
-        item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
-        item.setCheckState(check_state)
-        super().addItem(item)
+    def addItem(self, label: str, is_checked: bool = False):
+        tree_item = QtWidgets.QTreeWidgetItem(self, ['', label])
+        check_state = QtCore.Qt.CheckState.Checked if is_checked else QtCore.Qt.CheckState.Unchecked
+        tree_item.setCheckState(0, check_state)
 
     def addItems(self, labels: Iterable[str]):
         for column_visual_index, label in enumerate(labels):
             column_logical_index = self.tree_widget.get_column_logical_index(column_visual_index)
-            check_state = QtCore.Qt.CheckState.Unchecked if self.tree_widget.isColumnHidden(column_logical_index) else QtCore.Qt.CheckState.Checked
+            is_checked = not self.tree_widget.isColumnHidden(column_logical_index)
+            self.addItem(label, is_checked)
 
-            self.addItem(label, check_state)
+    def dropEvent(self, event: QtGui.QDropEvent):
+        # Attempt to find the item at the drop position.
+        target_item = self.itemAt(event.pos())
+
+        if self.dropIndicatorPosition() == QtWidgets.QAbstractItemView.DropIndicatorPosition.OnItem:
+
+            new_row_index = self.indexFromItem(target_item).row()
+
+            # Perform the move operation within the same level.
+            for selected_item in self.selectedItems():
+                # Take the item out of its current position.
+                taken_item = self.takeTopLevelItem(self.indexOfTopLevelItem(selected_item))
+                # Insert it at the determined position.
+                self.insertTopLevelItem(new_row_index, taken_item)
+            
+            event.ignore()
+        else:
+            # If not reparenting, use the default behavior which is already correct for same-level moves.
+            super().dropEvent(event)
+
+        self.sync_column_order()
 
 class TreeUtilityToolBar(QtWidgets.QToolBar):
     def __init__(self, tree_widget: 'GroupableTreeWidget'):
@@ -545,7 +571,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         show_hide_column = self.menu.addMenu('Show/Hide Columns')
         self.menu.addMenu(show_hide_column)
 
-        self.column_list_widget = ColumnListWidget(self)
+        self.column_list_widget = ColumnMangementWidget(self)
         action = QtWidgets.QWidgetAction(self)
         action.setDefaultWidget(self.column_list_widget)
         show_hide_column.addAction(action)
