@@ -40,7 +40,6 @@ class ImageReader:
             Supported image formats include 'exr' and 'dpx'. Supported video formats include 'mov',
             'mp4', and 'avi'. If an unsupported format is provided, the method defaults to using OpenCV's
             image reading capabilities, which supports a wide range of image formats.
-
         """
         if isinstance(file_path, Path):
             file_path_str = file_path.as_posix()

@@ -6,8 +6,8 @@ import dateutil.parser as date_parser
 from qtpy import QtCore, QtGui, QtWidgets
 
 from blackboard.utils.color_utils import ColorUtils
-from blackboard.utils.qimage_utils import ThumbnailUtils
-from blackboard.utils.thread_pool import ThreadPoolManager
+from blackboard.utils.qimage_utils import ThumbnailUtils, ThumbnailLoader
+from blackboard.utils.thread_pool import ThreadPoolManager, RunnableTask
 
 
 def create_pastel_color(color: QtGui.QColor, saturation: float = 0.4, value: float = 0.9) -> QtGui.QColor:
@@ -44,20 +44,6 @@ def parse_date(date_string: str) -> Optional[datetime.datetime]:
         return parsed_date
     except ValueError:
         return None
-
-class ThumbnailLoader(QtCore.QObject):
-    thumbnail_loaded = QtCore.Signal(str, QtGui.QPixmap)
-
-    def __init__(self, image_path, thumbnail_height):
-        super().__init__()
-        self.image_path = image_path
-        self.thumbnail_height = thumbnail_height
-
-    def run(self):
-        # Assuming ThumbnailUtils.get_pixmap_thumbnail is a static method
-        pixmap = ThumbnailUtils.get_pixmap_thumbnail(self.image_path, self.thumbnail_height)
-        if not pixmap.isNull():
-            self.thumbnail_loaded.emit(self.image_path, pixmap)
 
 class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
     """Custom item delegate class that highlights the rows specified by the `target_model_indexes` list.
@@ -490,11 +476,13 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
 
         elif file_path not in self._loaded_thumbnails:
             worker = ThumbnailLoader(file_path, self.thumbnail_height)
+            # runnable = RunnableTask(worker)
             worker.thumbnail_loaded.connect(self.on_thumbnail_loaded)
             self._loading_threads[file_path] = worker
 
             # Use the shared thread pool to start the worker
             ThreadPoolManager.thread_pool().start(worker.run)
+            # ThreadPoolManager.thread_pool().start(runnable)
             return
 
         return self._loaded_thumbnails[file_path]
@@ -527,9 +515,9 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         # Restore the painter's state
         painter.restore()
 
-    def on_thumbnail_loaded(self, image_path, pixmap):
-        self._loaded_thumbnails[image_path] = pixmap
-        del self._loading_threads[image_path]
+    def on_thumbnail_loaded(self, file_path, pixmap):
+        self._loaded_thumbnails[file_path] = pixmap
+        del self._loading_threads[file_path]
         self.parent().viewport().update()  # Request a repaint
 
     # Overridden Methods
@@ -539,6 +527,10 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
 
         file_path_index = index.sibling(index.row(), self._source_column)
         file_path = file_path_index.data(QtCore.Qt.ItemDataRole.DisplayRole)
+
+        if not file_path:
+            return
+
         pixmap = self.load_thumbnail(file_path)
 
         if pixmap is None or pixmap.isNull():

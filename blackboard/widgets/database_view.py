@@ -161,18 +161,27 @@ def main():
     """Create the application and main window, and show the widget.
     """
     import sys
-    from blackboard.examples.example_data_dict import COLUMN_NAME_VFX_ASSET_LIST, ID_TO_VFX_DATA_DICT
+    from blackboard.utils.file_query import FilePatternQuery
 
     # Create the application and the main window
     app = QtWidgets.QApplication(sys.argv)
     # Set theme of QApplication to the dark theme
     bb.theme.set_theme(app, 'dark')
 
+    # Mock up data
+    pattern = "blackboard/examples/projects/{project_name}/seq_{sequence_name}/{shot_name}/{asset_type}"
+    work_file_query = FilePatternQuery(pattern)
+    filters = {
+        'project_name': ['ProjectA'],
+        'shot_name': ['shot01', 'shot02'],
+    }
+    generator = work_file_query.query_files(filters)
+
     # Create an instance of the widget
     database_view_widget = DatabaseViewWidget()
-    database_view_widget.tree_widget.setHeaderLabels(COLUMN_NAME_VFX_ASSET_LIST)
-    database_view_widget.tree_widget.create_thumbnail_column('file_path')
-    database_view_widget.populate(ID_TO_VFX_DATA_DICT)
+    database_view_widget.tree_widget.setHeaderLabels(work_file_query.fields)
+    database_view_widget.tree_widget.create_thumbnail_column('_file_path')
+    database_view_widget.tree_widget.set_generator(generator)
 
     # Date Filter Setup
     date_filter_widget = widgets.DateRangeFilterWidget(filter_name="Date")

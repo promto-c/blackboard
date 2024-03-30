@@ -55,7 +55,7 @@ class ThumbnailUtils:
 
     @classmethod
     @lru_cache(maxsize=1024)
-    def get_pixmap_thumbnail(cls, file_path, desired_height: int = 64):
+    def get_pixmap_thumbnail(cls, file_path: str, desired_height: int = 64):
         """
         Generates a thumbnail QPixmap for a given image file path.
 
@@ -87,3 +87,17 @@ class ThumbnailUtils:
             pixmap = pixmap.scaledToHeight(desired_height, QtCore.Qt.TransformationMode.FastTransformation)
 
         return pixmap
+
+class ThumbnailLoader(QtCore.QObject):
+
+    thumbnail_loaded = QtCore.Signal(str, QtGui.QPixmap)
+
+    def __init__(self, file_path: str, thumbnail_height: int = 64):
+        super().__init__()
+        self.file_path = file_path
+        self.thumbnail_height = thumbnail_height
+
+    def run(self):
+        pixmap = ThumbnailUtils.get_pixmap_thumbnail(self.file_path, self.thumbnail_height)
+        if not pixmap.isNull():
+            self.thumbnail_loaded.emit(self.file_path, pixmap)
