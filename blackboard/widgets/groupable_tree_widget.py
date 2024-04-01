@@ -19,7 +19,31 @@ import blackboard as bb
 from blackboard import widgets
 # NOTE: test
 from blackboard.widgets.header_view import SearchableHeaderView
+from blackboard.utils.thread_pool import ThreadPoolManager
 
+
+class LoadDataTask(QtCore.QObject):
+    data_loaded = QtCore.Signal(dict)
+    # placeholder_needed = QtCore.Signal(int)
+    all_data_loaded = QtCore.Signal()
+
+    def __init__(self, generator, batch_size):
+        super().__init__()  # QObject init for signal-slot mechanism
+        self.generator = generator
+        self.batch_size = batch_size
+
+    def run(self):
+
+        items_to_load = islice(self.generator, self.batch_size)
+        loaded_any = False
+        try:
+            for data_dict in items_to_load:
+                self.data_loaded.emit(data_dict)
+                loaded_any = True
+            if not loaded_any:
+                self.all_data_loaded.emit()
+        except ValueError:
+            pass
 
 # Class Definitions
 # -----------------
@@ -1403,16 +1427,18 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             self.apply_column_color_adaptive(column)
 
     def _load_more_data(self, batch_size: int = None):
-        """Loads more data into the tree widget based on the batch size."""
         batch_size = batch_size or self.batch_size
-        items_to_load = islice(self.generator, self.batch_size)
-        loaded_any = False
-        for data_dict in items_to_load:
-            self.add_item(data_dict)
-            loaded_any = True
-        if not loaded_any:
-            # No more data to load, could disable further loading if desired
-            self.verticalScrollBar().valueChanged.disconnect(self._check_scroll_position)
+        # Create the task
+        task = LoadDataTask(self.generator, batch_size)
+        # Connect signals to slots for handling placeholders and real data
+        task.data_loaded.connect(self.add_item)
+        # task.placeholder_needed.connect(self.add_placeholder_item)
+        task.all_data_loaded.connect(self._disconnect_check_scroll_possition)
+        # Start the task using ThreadPoolManager
+        ThreadPoolManager.thread_pool().start(task.run)
+
+    def _disconnect_check_scroll_possition(self):
+        self.verticalScrollBar().valueChanged.disconnect(self._check_scroll_position)
 
     def _check_scroll_position(self, value):
         """Checks the scroll position and loads more data if the threshold is reached."""
@@ -1442,6 +1468,13 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Adjust the batch size based on the estimate
         # You may want to add some buffer (e.g., 10% more items) to ensure the view is fully populated
         return max(estimated_items, self.batch_size)
+
+    # def add_placeholder_item(self, index):
+    #     # Placeholder item logic here
+    #     ...
+    #     # For example, add a temporary item with text indicating loading
+    #     placeholder_item = QtWidgets.QTreeWidgetItem(["Loading..."])
+    #     self.addTopLevelItem(placeholder_item)
 
 # NOTE: Test generator
 def generate_file_paths(start_path):
