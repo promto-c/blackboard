@@ -22,28 +22,43 @@ from blackboard.widgets.header_view import SearchableHeaderView
 from blackboard.utils.thread_pool import ThreadPoolManager
 
 
-class LoadDataTask(QtCore.QObject):
-    data_loaded = QtCore.Signal(dict)
-    # placeholder_needed = QtCore.Signal(int)
-    all_data_loaded = QtCore.Signal()
+class FetchDataTask(QtCore.QObject):
+    data_fetched = QtCore.Signal(dict)
+    started = QtCore.Signal()   # Emit to indicate fetching has started
+    finished = QtCore.Signal()  
+    _all_data_fetched = QtCore.Signal()   # Emit when no more data is available to fetch
 
     def __init__(self, generator, batch_size):
         super().__init__()  # QObject init for signal-slot mechanism
         self.generator = generator
         self.batch_size = batch_size
+        self.stopped = False
 
     def run(self):
+        # Notify that fetching has started
+        self.started.emit()
 
-        items_to_load = islice(self.generator, self.batch_size)
-        loaded_any = False
+        items_to_fetch = islice(self.generator, self.batch_size)
+        fetched_any = False
+  
         try:
-            for data_dict in items_to_load:
-                self.data_loaded.emit(data_dict)
-                loaded_any = True
-            if not loaded_any:
-                self.all_data_loaded.emit()
+            for data_dict in items_to_fetch:
+
+                if self.stopped:
+                    break  # Exit the loop if stopped
+                # NOTE: For test
+                time.sleep(0.1)
+                self.data_fetched.emit(data_dict)
+                fetched_any = True
+            if not fetched_any:
+                self._all_data_fetched.emit()
         except ValueError:
             pass
+
+        self.finished.emit()
+
+    def stop(self):
+        self.stopped = True
 
 # Class Definitions
 # -----------------
@@ -438,7 +453,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         super().__init__(parent)
 
         self.batch_size = 50
-        self.threshold_to_load_more = 50
+        self.threshold_to_fetch_more = 50
 
         # Initialize setup
         self.__init_attributes()
@@ -482,6 +497,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self._current_column_index = 0
 
+        self._current_task = None
+
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
         """
@@ -514,6 +531,22 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self.set_row_height(self._row_height)
         self._create_header_menu()
+
+
+        # NOTE: Fetch more data
+        # Initialize the Fetch More button with the "Fetch More" text
+        self.fetch_more_button = QtWidgets.QPushButton("Fetch More", self)
+        self.fetch_more_button.resize(100, 30)  # Set a fixed size for the button
+        self.fetch_more_button.clicked.connect(self.on_fetch_more_button_clicked)
+        self.fetch_more_button.hide()
+
+        self.stop_fetch_button =QtWidgets.QPushButton('Fetching', self)
+        self.stop_fetch_button.resize(100, 30)  # Set a fixed size for the button
+        self.stop_fetch_button.clicked.connect(self.on_stop_button_clicked)
+        self.stop_fetch_button.hide()
+
+        # Position the button and make it hidden by default
+        self.position_fetch_more_button()
 
     def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
@@ -1411,14 +1444,19 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     def set_generator(self, generator: Generator):
         self.clear()
+        self.generator = generator
+
+        if not self.generator:
+            return
+        
+        self._all_data_fetched = False
+        self.verticalScrollBar().valueChanged.connect(self._check_scroll_position)
 
         first_batch_size = self.calculate_dynamic_batch_size()
+        self._fetch_more_data(first_batch_size)
 
-        self.generator = generator
-        if self.generator:
-            self.verticalScrollBar().valueChanged.connect(self._check_scroll_position)
-        
-        self._load_more_data(first_batch_size)
+        # NOTE: Fetch more data
+        self.fetch_more_button.show()
 
     def _restore_color_adaptive_column(self, columns):
         self.reset_all_color_adaptive_column()
@@ -1426,25 +1464,33 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for column in columns:
             self.apply_column_color_adaptive(column)
 
-    def _load_more_data(self, batch_size: int = None):
+    def _fetch_more_data(self, batch_size: int = None):
+        if self._current_task is not None:
+            return
         batch_size = batch_size or self.batch_size
-        # Create the task
-        task = LoadDataTask(self.generator, batch_size)
+        # Create the self._current_task
+        self._current_task = FetchDataTask(self.generator, batch_size)
         # Connect signals to slots for handling placeholders and real data
-        task.data_loaded.connect(self.add_item)
-        # task.placeholder_needed.connect(self.add_placeholder_item)
-        task.all_data_loaded.connect(self._disconnect_check_scroll_possition)
-        # Start the task using ThreadPoolManager
-        ThreadPoolManager.thread_pool().start(task.run)
+        self._current_task.data_fetched.connect(self.add_item)
+        # NOTE: Fetch more data button
+        self._current_task.started.connect(self.show_fetching_indicator)  # Optional: Show a fetching indicator
+        self._current_task.finished.connect(self.finished)
+
+        self._current_task._all_data_fetched.connect(self._disconnect_check_scroll_possition)
+        self._current_task._all_data_fetched.connect(self.fetch_more_button.hide)
+        self._current_task._all_data_fetched.connect(self.stop_fetch_button.hide)
+        # Start the self._current_task using ThreadPoolManager
+        ThreadPoolManager.thread_pool().start(self._current_task.run)
 
     def _disconnect_check_scroll_possition(self):
         self.verticalScrollBar().valueChanged.disconnect(self._check_scroll_position)
+        self._all_data_fetched = True
 
     def _check_scroll_position(self, value):
-        """Checks the scroll position and loads more data if the threshold is reached."""
+        """Checks the scroll position and fetchs more data if the threshold is reached."""
         scroll_bar = self.verticalScrollBar()
-        if value >= scroll_bar.maximum() - self.threshold_to_load_more:
-            self._load_more_data()
+        if value >= scroll_bar.maximum() - self.threshold_to_fetch_more:
+            self._fetch_more_data()
 
     def calculate_dynamic_batch_size(self):
         """Estimates the number of items that can fit in the current view.
@@ -1469,12 +1515,43 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # You may want to add some buffer (e.g., 10% more items) to ensure the view is fully populated
         return max(estimated_items, self.batch_size)
 
-    # def add_placeholder_item(self, index):
-    #     # Placeholder item logic here
-    #     ...
-    #     # For example, add a temporary item with text indicating loading
-    #     placeholder_item = QtWidgets.QTreeWidgetItem(["Loading..."])
-    #     self.addTopLevelItem(placeholder_item)
+    def on_stop_button_clicked(self):
+        self.stop_fetch_button.hide()
+        # Assuming `current_task` is your currently running FetchDataTask instance
+        if self._current_task:
+            self._current_task.stop()
+
+    # NOTE: Fetch more data button
+    def on_fetch_more_button_clicked(self):
+        # Change the button text to "Fetching..." and disable it to prevent multiple clicks
+        self.fetch_more_button.hide()
+        self.stop_fetch_button.show()
+
+        # Fetch more data
+        self._fetch_more_data()
+
+    def show_fetching_indicator(self):
+        # Position and show the fetching indicator
+        self.fetch_more_button.hide()
+        self.stop_fetch_button.show()
+
+    def finished(self):
+        # Once fetching is finished, change the button text back to "Fetch More" and enable it
+        self.fetch_more_button.setHidden(self._all_data_fetched)
+        self.stop_fetch_button.hide()
+        self._current_task = None
+
+    def position_fetch_more_button(self):
+        # Position the Fetch More button at the center bottom of the tree widget
+        x = (self.width() - self.fetch_more_button.width()) / 2
+        y = self.height() - self.fetch_more_button.height() - 30  # 10 pixels from the bottom
+        self.fetch_more_button.move(int(x), int(y))
+        self.stop_fetch_button.move(int(x), int(y))
+
+    def resizeEvent(self, event):
+        # Override resize event to reposition the Fetch More button when the widget is resized
+        self.position_fetch_more_button()
+        super().resizeEvent(event)
 
 # NOTE: Test generator
 def generate_file_paths(start_path):
@@ -1508,7 +1585,7 @@ def main():
     bb.theme.set_theme(app, 'dark')
 
     # Create an instance of the widget
-    generator = generate_file_paths('blackboard')
+    generator = generate_file_paths('/home/prom/git/blackboard')
     tree_widget = GroupableTreeWidget()
     tree_widget.setHeaderLabels(['id', 'file_path'])
     tree_widget.create_thumbnail_column('file_path')
