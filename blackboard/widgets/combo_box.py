@@ -121,6 +121,9 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.proxy_model.setSourceModel(self.model())
         self.proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
 
+        # Set the sort order and column.
+        self.proxy_model.sort(0, QtCore.Qt.SortOrder.AscendingOrder)
+
     def __init_ui(self):
         """Setup UI components.
         """
@@ -148,15 +151,24 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.list_view.clicked.connect(self.apply_selection)
 
     def showPopup(self):
-        """Displays the custom popup widget and clears the filter line edit.
+        """Displays the custom popup widget and pre-selects the current item.
         """
         self.popup_widget.show()
         self.filter_line_edit.clear()  # Clear the text to be ready for new input
-        self.list_view.selectionModel().clearSelection()
+        
+        # Pre-select the current item in the list view
+        current_text = self.currentText()
+        matching_index = self.proxy_model.match(self.proxy_model.index(0, 0), QtCore.Qt.DisplayRole, current_text, 1, QtCore.Qt.MatchExactly)
+        if matching_index:
+            self.list_view.setCurrentIndex(matching_index[0])
+            self.list_view.scrollTo(matching_index[0], QtWidgets.QAbstractItemView.ScrollHint.PositionAtTop)
+        else:
+            self.list_view.clearSelection()
+
         self.filter_line_edit.setFocus()  # Focus on the line edit when popup is shown
         popup_position = self.mapToGlobal(QtCore.QPoint(0, self.height()))
         self.popup_widget.move(popup_position)
-        
+
     def hidePopup(self):
         """Hides the custom popup widget.
         """
@@ -184,7 +196,12 @@ if __name__ == '__main__':
     app = QtWidgets.QApplication([])
     combo = PopupComboBox()
 
-    items = ["apple", "banana", "cherry", "date", "elderberry", "fig", "grape"]
+    items = ["honeydew", "indian fig", "jackfruit", "kiwi", "lemon", "mango", "nectarine", "orange", "papaya", "quince",
+              "raspberry", "strawberry", "tangerine", "ugli fruit", "vanilla bean", "watermelon", "xigua", "yellow watermelon",
+              "zucchini", "apricot", "blackberry", "cantaloupe", "dragon fruit", "elderflower", "feijoa", "gooseberry", "huckleberry",
+              "itch plum", "jaboticaba", "kumquat", "lime", "mulberry", "navel orange", "olallieberry", "persimmon", "quenepa",
+              "rambutan", "soursop", "tomato", "uva ursi", "voavanga", "wolfberry", "ximenia", "yuzu", "zapote"]
+
     combo.addItems(items)
 
     combo.show()

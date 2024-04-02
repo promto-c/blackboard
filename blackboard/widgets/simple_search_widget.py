@@ -21,6 +21,7 @@ class MatchCountButton(QtWidgets.QPushButton):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self._current_label = str()
         self.setProperty('widget-style', 'action-clear')
         self.setFixedHeight(16)
         # Setting a default tooltip

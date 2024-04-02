@@ -75,18 +75,43 @@ class FilterBarWidget(QtWidgets.QWidget):
     def add_filter_widget(self, filter_widget: 'FilterWidget'):
         self.filter_area_layout.addWidget(filter_widget.button)
 
-class CustomMenu(QtWidgets.QMenu):
+class MoreOptionsButton(QtWidgets.QToolButton):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-    def keyPressEvent(self, event: QtGui.QKeyEvent):
-        if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
-            # Do nothing, preventing the popup from closing
-            pass  
-        else:
-            super().keyPressEvent(event)
+        self.setIcon(TablerQIcon(opacity=0.6).dots_vertical)
 
-class FilterPopupButton(QtWidgets.QComboBox):
+        # Create the menu
+        self.popup_menu = QtWidgets.QMenu()
+
+        self.clicked.connect(self.show_menu)
+
+    def addAction(self, text: str, icon: QtGui.QIcon = None):
+        """Add an action to the menu."""
+        action = self.popup_menu.addAction(text)
+        if icon is not None:
+            action.setIcon(icon)
+
+        return action
+
+    def show_menu(self):
+        """Display the menu at the button's position."""
+        self.popup_menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
+
+class CustomMenu(QtWidgets.QMenu):
+    def __init__(self, button: Optional[QtWidgets.QPushButton] = None):
+        super().__init__()
+        self.button = button
+
+    def showEvent(self, event: QtGui.QShowEvent):
+        """ Override exec_ to modify the position of the menu popup """
+        if self.button:
+            # Adjust the position
+            pos = self.button.mapToGlobal(QtCore.QPoint(0, self.button.height()))
+            self.move(pos)
+        super().showEvent(event)
+
+class FilterPopupButton(QtWidgets.QPushButton):
 
     MINIMUM_WIDTH, MINIMUM_HEIGHT  = 42, 24
     LEFT_PADDING = 8
@@ -114,17 +139,14 @@ class FilterPopupButton(QtWidgets.QComboBox):
 
     def __init_popup_menu(self):
         """Setup the popup menu of the widget."""
-        self.popup_menu = CustomMenu()
-
-        bb.utils.KeyBinder.bind_key('Enter', self, self.showPopup)
-        bb.utils.KeyBinder.bind_key('Return', self, self.showPopup)
+        self.popup_menu = CustomMenu(button=self)
+        self.setMenu(self.popup_menu)
 
     def __init_ui_properties(self):
         """Setup UI properties like size, cursor, etc."""
         self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.setMinimumSize(self.MINIMUM_WIDTH, self.MINIMUM_HEIGHT)
         self.setFixedHeight(self.MINIMUM_HEIGHT)
-        self.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
 
     def __init_style(self):
         """Setup the style of the widget."""
@@ -152,33 +174,8 @@ class FilterPopupButton(QtWidgets.QComboBox):
         self.style().unpolish(self)
         self.style().polish(self)
 
-    def set_icon(self, icon: QtGui.QIcon):
-        """Set the icon of the button.
-        """
-        self.icon = icon
-
     # Event Handling or Override Methods
     # ----------------------------------
-    def setCurrentText(self, text: str):
-        """Set the current text of the button.
-        """
-        self.clear()
-        self.addItem(text)
-        super().setCurrentText(text)
-
-    def showPopup(self):
-        """Show the popup menu.
-        """
-        self.popup_menu.popup(self.mapToGlobal(QtCore.QPoint(0, self.height())))
-
-    def hidePopup(self):
-        """Hide the popup menu.
-        """
-        try:
-            self.popup_menu.hide()
-        except RuntimeError:
-            pass
-
     def paintEvent(self, event: QtGui.QPaintEvent):
         """Handles the painting of the button, including its icon and opacity."""
         super().paintEvent(event)
@@ -284,10 +281,14 @@ class FilterWidget(QtWidgets.QWidget):
         self.clear_button.setIcon(self.tabler_icon.clear_all)
         self.clear_button.setToolTip("Clear all")
 
-        self.remove_button = QtWidgets.QToolButton(self)
-        self.remove_button.setProperty('color', 'red')
-        self.remove_button.setIcon(self.tabler_icon.trash)
-        self.remove_button.setToolTip("Remove this filter from Quick Access")
+        # Vertical ellipsis button with menu
+        self.more_options_button = MoreOptionsButton(self)
+
+        # Add "Remove Filter" action
+        self.remove_action = self.more_options_button.addAction("Remove Filter", self.tabler_icon.trash)
+        
+        self.remove_action.setProperty('color', 'red')
+        self.remove_action.setToolTip("Remove this filter from Quick Access")
 
         # Add Confirm and Cancel buttons
         self.cancel_button = QtWidgets.QPushButton("Cancel")
@@ -301,7 +302,7 @@ class FilterWidget(QtWidgets.QWidget):
         self.title_layout.addWidget(self.condition_combo_box)
         self.title_layout.addStretch()
         self.title_layout.addWidget(self.clear_button)
-        self.title_layout.addWidget(self.remove_button)
+        self.title_layout.addWidget(self.more_options_button)
 
         # Add Confirm and Cancel buttons
         self.buttons_layout.addStretch()
@@ -323,7 +324,7 @@ class FilterWidget(QtWidgets.QWidget):
         self.clear_button.clicked.connect(self._emit_clear_signals)
         self.clear_button.clicked.connect(self.hide_popup)
 
-        self.remove_button.clicked.connect(self.remove_filter)
+        self.remove_action.triggered.connect(self.remove_filter)
 
         self.activated.connect(self._update_filtered_list)
 
@@ -362,6 +363,14 @@ class FilterWidget(QtWidgets.QWidget):
 
     # Public Methods
     # --------------
+    def update_style(self, widget: Optional[QtWidgets.QWidget] = None):
+        if not isinstance(widget, QtWidgets.QWidget):
+            widget = None
+        widget = widget or self.sender() or self
+
+        self.style().unpolish(widget)
+        self.style().polish(widget)
+
     def hide_popup(self):
         self._button.popup_menu.hide()
 
@@ -376,11 +385,11 @@ class FilterWidget(QtWidgets.QWidget):
         # Format the text based on the 'use_format' flag.
         text = self._format_text(text) if use_format else text
         # Update the button's text
-        self._button.setCurrentText(text)
+        self._button.setText(text)
 
-    def set_icon(self, icon: QtGui.QIcon):
+    def setIcon(self, icon: QtGui.QIcon):
         self.setWindowIcon(icon)
-        self._button.set_icon(icon)
+        self._button.setIcon(icon)
 
     def set_filter_applied(self):
         self._is_filter_applied = True
@@ -493,7 +502,7 @@ class DateRangeFilterWidget(FilterWidget):
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
         """
-        self.set_icon(TablerQIcon.calendar)
+        self.setIcon(TablerQIcon.calendar)
 
         # Create widgets and layouts here
         self.calendar = widgets.RangeCalendarWidget(self)
@@ -616,7 +625,7 @@ class MultiSelectFilterWidget(FilterWidget):
         # Setup Widgets 
         # -------------
         # Create widgets and layouts
-        self.set_icon(TablerQIcon.list_check)
+        self.setIcon(TablerQIcon.list_check)
 
         self.tag_widget = widgets.TagWidget(self)
 
@@ -664,10 +673,6 @@ class MultiSelectFilterWidget(FilterWidget):
 
     def uncheck_item(self, tag_name):
         self.set_check_items([tag_name], False)
-
-    def update_style(self):
-        self.line_edit.style().unpolish(self.line_edit)
-        self.line_edit.style().polish(self.line_edit)
 
     def update_completer(self):
         item_names = [item.text(0) for item in bb.utils.TreeUtil.get_child_items(self.tree_widget)]
@@ -883,7 +888,7 @@ class FileTypeFilterWidget(FilterWidget):
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
         """
-        self.set_icon(TablerQIcon.file)
+        self.setIcon(TablerQIcon.file)
 
         # Custom file type input
         self.custom_input = QtWidgets.QLineEdit()
@@ -911,10 +916,6 @@ class FileTypeFilterWidget(FilterWidget):
             checkbox.extensions = extensions  # Store the extensions with the checkbox
             self.widget_layout.addWidget(checkbox)
             self.checkboxes[group] = checkbox
-
-    def update_style(self):
-        self.custom_input.style().unpolish(self.custom_input)
-        self.custom_input.style().polish(self.custom_input)
 
     def __init_signal_connections(self):
         """Set up signal connections.
@@ -1019,7 +1020,7 @@ class BooleanFilterWidget(FilterWidget):
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
         """
-        self.set_icon(TablerQIcon.checkbox)
+        self.setIcon(TablerQIcon.checkbox)
         self.button.showPopup = self.toggle_active
 
     def toggle_active(self):
@@ -1084,4 +1085,3 @@ if __name__ == '__main__':
 
     main_window.show()
     app.exec_()
-
