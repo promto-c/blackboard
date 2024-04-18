@@ -10,16 +10,67 @@ from blackboard import widgets
 
 # Class Definitions
 # -----------------
-class FilterLineEdit(QtWidgets.QLineEdit):
-    """Line edit with navigation and selection capabilities for a QListView."""
+class FlatProxyModel(QtCore.QSortFilterProxyModel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._flat_map = []
 
-    def __init__(self, list_view: QtWidgets.QListView, combo_box: QtWidgets.QComboBox, *args, **kwargs):
+    def setSourceModel(self, source_model):
+        super().setSourceModel(source_model)
+        self._create_flat_map()
+
+    def _create_flat_map(self):
+        """Create a flat map of all items in the source model."""
+        self._flat_map.clear()
+        self._populate_flat_map(self.sourceModel(), QtCore.QModelIndex())
+
+    def _populate_flat_map(self, model, parent_index):
+        """Recursively populate the flat map with item data and indices."""
+        for row in range(model.rowCount(parent_index)):
+            index = model.index(row, 0, parent_index)
+            self._flat_map.append(index)
+            # Assuming we don't deal with hierarchical data in QAbstractListModel
+            # Removed the check for children
+
+    def mapFromSource(self, source_index):
+        """Map from source model index to proxy model index."""
+        try:
+            return self.index(self._flat_map.index(source_index), 0)
+        except ValueError:
+            return QtCore.QModelIndex()
+
+    def mapToSource(self, proxy_index):
+        """Map from proxy model index to source model index."""
+        if 0 <= proxy_index.row() < len(self._flat_map):
+            return self._flat_map[proxy_index.row()]
+        return QtCore.QModelIndex()
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        """Return the number of items in the flat model."""
+        if parent.isValid():
+            return 0  # Ensure this is a flat list with no children
+        return len(self._flat_map)
+
+    def index(self, row, column, parent=QtCore.QModelIndex()):
+        """Create an index in the proxy model."""
+        if parent.isValid() or column != 0 or not (0 <= row < len(self._flat_map)):
+            return QtCore.QModelIndex()
+        return self.createIndex(row, column)
+
+    def parent(self, index):
+        """Ensure that this model behaves as a flat list (no parent)."""
+        return QtCore.QModelIndex()
+
+class FilterLineEdit(QtWidgets.QLineEdit):
+    """Line edit with navigation and selection capabilities for a QTreeView."""
+
+    def __init__(self, tree_view: QtWidgets.QTreeView, combo_box: QtWidgets.QComboBox, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.list_view = list_view
+        self.tree_view = tree_view
         self.combo_box = combo_box
 
-        self.delegate = widgets.HighlightTextDelegate(self.list_view)
-        self.list_view.setItemDelegate(self.delegate)
+        self.delegate = widgets.HighlightTextDelegate(self.tree_view)
+        self.tree_view.setItemDelegate(self.delegate)
 
         self.__init_signal_connections()
 
@@ -43,46 +94,29 @@ class FilterLineEdit(QtWidgets.QLineEdit):
         """Updates the delegate with the current filter text.
         """
         self.delegate.set_highlight_text(text)
-        self.list_view.viewport().update()  # Refresh the view
+        self.tree_view.viewport().update()
 
     def navigate_up(self):
-        """Navigates selection up in the list view, looping to the last item if the current item is the first.
-        """
-        current_index = self.list_view.currentIndex()
-        row_count = self.list_view.model().rowCount()
-        
-        if not current_index.isValid() or current_index.row() == 0:
-            # If no current selection or the first item is selected,
-            # select the last item to loop back
-            new_index = self.list_view.model().index(row_count - 1, 0)
-        else:
-            # Otherwise, move selection up
-            new_index = self.list_view.model().index(current_index.row() - 1, 0)
-        
-        self.list_view.setCurrentIndex(new_index)
+        """Navigates selection up in the tree view, taking hierarchy into account."""
+        current_index = self.tree_view.currentIndex()
+        if current_index.isValid():
+            previous_index = self.tree_view.indexAbove(current_index)
+            if previous_index.isValid():
+                self.tree_view.setCurrentIndex(previous_index)
 
     def navigate_down(self):
-        """Navigates selection down in the list view.
-        """
-        current_index = self.list_view.currentIndex()
-        row_count = self.list_view.model().rowCount()
-
-        if not current_index.isValid():
-            # If no current selection, select the first item
-            new_index = self.list_view.model().index(0, 0)
-        else:
-            # Move selection down, wrap around if necessary
-            new_index = self.list_view.model().index((current_index.row() + 1) % row_count, 0)
-
-        self.list_view.setCurrentIndex(new_index)
+        """Navigates selection down in the tree view."""
+        current_index = self.tree_view.currentIndex()
+        if current_index.isValid():
+            next_index = self.tree_view.indexBelow(current_index)
+            if next_index.isValid():
+                self.tree_view.setCurrentIndex(next_index)
 
     def apply_selection(self):
-        """Applies the current selection in the list view to the combo box.
-        """
-        # First, check if the current index is valid and apply that selection.
-        current_index = self.list_view.currentIndex()
+        """Applies the current selection in the tree view to the combo box."""
+        current_index = self.tree_view.currentIndex()
         if current_index.isValid():
-            selected_text = self.list_view.model().data(current_index, QtCore.Qt.DisplayRole)
+            selected_text = self.tree_view.model().data(current_index, QtCore.Qt.DisplayRole)
         else:
             selected_text = self.text()
 
@@ -104,7 +138,6 @@ class CustomLineEdit(QtWidgets.QLineEdit):
 class PopupComboBox(QtWidgets.QComboBox):
     """Custom combo box with a filterable popup list view.
     """
-    POPUP_HEIGHT = 200
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -119,10 +152,16 @@ class PopupComboBox(QtWidgets.QComboBox):
         # Proxy model for filtering
         self.proxy_model = QtCore.QSortFilterProxyModel(self)
         self.proxy_model.setSourceModel(self.model())
-        self.proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+        self.proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        self.proxy_model.sort(0, QtCore.Qt.AscendingOrder)
 
-        # Set the sort order and column.
-        self.proxy_model.sort(0, QtCore.Qt.SortOrder.AscendingOrder)
+        self.proxy_model.setRecursiveFilteringEnabled(True)
+        self.proxy_model.setFilterKeyColumn(0) 
+
+        self.flat_proxy_model = FlatProxyModel(self)
+        self.flat_proxy_model.setSourceModel(self.model())
+        self.flat_proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        self.flat_proxy_model.sort(0, QtCore.Qt.AscendingOrder)
 
     def __init_ui(self):
         """Setup UI components.
@@ -136,38 +175,67 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.popup_layout.setContentsMargins(0, 0, 0, 0)
         self.popup_layout.setSpacing(0)
         self.popup_widget.setWindowFlags(QtCore.Qt.WindowType.Popup)
-        # Line edit for filtering with list_view linked
-        self.list_view = QtWidgets.QListView(self.popup_widget)
-        self.filter_line_edit = FilterLineEdit(self.list_view, self, self.popup_widget)
+        # Tree view to display filtered items
+        self.tree_view = QtWidgets.QTreeView(self.popup_widget)
+        self.configure_tree_view()
+        self.filter_line_edit = FilterLineEdit(self.tree_view, self, self.popup_widget)
         self.popup_layout.addWidget(self.filter_line_edit)
-        # List view to display filtered items
-        self.list_view.setModel(self.proxy_model)
-        self.popup_layout.addWidget(self.list_view)
+        self.tree_view.setModel(self.proxy_model)
+        self.tree_view.setHeaderHidden(True)
+        self.popup_layout.addWidget(self.tree_view)
+    
+    def configure_tree_view(self):
+        """Configure the tree view to expand all items and hide the expand/collapse buttons."""
+        self.tree_view.setHeaderHidden(True)
+        self.tree_view.expandAll()
+        self.tree_view.setItemsExpandable(False)
+        self.tree_view.setRootIsDecorated(False)
+        self.tree_view.setIndentation(12)
+
+    def setModel(self, model):
+        """Sets the model for the combo box and updates the proxy model.
+        """
+        self.proxy_model.setSourceModel(model)
+        self.flat_proxy_model.setSourceModel(model)
+        self.tree_view.expandAll()
+
+        super().setModel(self.flat_proxy_model)
 
     def __init_signal_connections(self):
         """Connect signals and slots.
         """
         self.filter_line_edit.textChanged.connect(self.apply_filter)
-        self.list_view.clicked.connect(self.apply_selection)
+        self.tree_view.clicked.connect(self.apply_selection)
 
     def showPopup(self):
-        """Displays the custom popup widget and pre-selects the current item.
-        """
+        """Displays the custom popup widget and pre-selects the current item in a QTreeView."""
         self.popup_widget.show()
-        self.filter_line_edit.clear()  # Clear the text to be ready for new input
-        
-        # Pre-select the current item in the list view
-        current_text = self.currentText()
-        matching_index = self.proxy_model.match(self.proxy_model.index(0, 0), QtCore.Qt.DisplayRole, current_text, 1, QtCore.Qt.MatchExactly)
-        if matching_index:
-            self.list_view.setCurrentIndex(matching_index[0])
-            self.list_view.scrollTo(matching_index[0], QtWidgets.QAbstractItemView.ScrollHint.PositionAtTop)
-        else:
-            self.list_view.clearSelection()
+        self.filter_line_edit.clear()
 
-        self.filter_line_edit.setFocus()  # Focus on the line edit when popup is shown
+        # Pre-select the current item in the tree view based on the current text in the combo box
+        current_text = self.currentText()
+        matching_index = self.find_matching_index(self.proxy_model, current_text)
+        if matching_index.isValid():
+            self.tree_view.setCurrentIndex(matching_index)
+            self.tree_view.scrollTo(matching_index, QtWidgets.QAbstractItemView.PositionAtTop)
+        else:
+            self.tree_view.clearSelection()
+
+        self.filter_line_edit.setFocus()
         popup_position = self.mapToGlobal(QtCore.QPoint(0, self.height()))
         self.popup_widget.move(popup_position)
+
+    def find_matching_index(self, model, text, parent=QtCore.QModelIndex()):
+        """Recursively searches for an item that matches the text."""
+        for row in range(model.rowCount(parent)):
+            index = model.index(row, 0, parent)
+            if text == model.data(index, QtCore.Qt.DisplayRole):
+                return index
+            if model.hasChildren(index):
+                found_index = self.find_matching_index(model, text, index)
+                if found_index.isValid():
+                    return found_index
+        return QtCore.QModelIndex()
 
     def hidePopup(self):
         """Hides the custom popup widget.
@@ -182,6 +250,20 @@ class PopupComboBox(QtWidgets.QComboBox):
         """
         # Update the proxy model filter
         self.proxy_model.setFilterWildcard(f'*{text}*')
+        self.tree_view.expandAll()
+        # Find the first index that matches the filter and is visible
+        first_index = self.find_first_filtered_index()
+        if first_index.isValid():
+            self.tree_view.setCurrentIndex(first_index)
+            self.tree_view.scrollTo(first_index, QtWidgets.QAbstractItemView.ScrollHint.EnsureVisible)
+
+    def find_first_filtered_index(self):
+        """Finds the first index in the proxy model that is visible and matches the filter."""
+        for row in range(self.proxy_model.rowCount()):
+            index = self.proxy_model.index(row, 0)
+            if index.isValid():
+                return index
+        return QtCore.QModelIndex()
 
     def apply_selection(self, index):
         """Sets the combo box's current item based on the selection.
@@ -196,13 +278,37 @@ if __name__ == '__main__':
     app = QtWidgets.QApplication([])
     combo = PopupComboBox()
 
-    items = ["honeydew", "indian fig", "jackfruit", "kiwi", "lemon", "mango", "nectarine", "orange", "papaya", "quince",
-              "raspberry", "strawberry", "tangerine", "ugli fruit", "vanilla bean", "watermelon", "xigua", "yellow watermelon",
-              "zucchini", "apricot", "blackberry", "cantaloupe", "dragon fruit", "elderflower", "feijoa", "gooseberry", "huckleberry",
-              "itch plum", "jaboticaba", "kumquat", "lime", "mulberry", "navel orange", "olallieberry", "persimmon", "quenepa",
-              "rambutan", "soursop", "tomato", "uva ursi", "voavanga", "wolfberry", "ximenia", "yuzu", "zapote"]
+    # Creating a QStandardItemModel
+    model = QtGui.QStandardItemModel()
 
-    combo.addItems(items)
+    # Defining parent nodes (fruit categories)
+    citrus = QtGui.QStandardItem('Citrus Fruits')
+    tropical = QtGui.QStandardItem('Tropical Fruits')
+    berries = QtGui.QStandardItem('Berries')
+
+    # Adding child nodes to citrus
+    citrus.appendRow(QtGui.QStandardItem('Lemon'))
+    citrus.appendRow(QtGui.QStandardItem('Orange'))
+    citrus.appendRow(QtGui.QStandardItem('Lime'))
+    citrus.appendRow(QtGui.QStandardItem('Tangerine'))
+
+    # Adding child nodes to tropical
+    tropical.appendRow(QtGui.QStandardItem('Mango'))
+    tropical.appendRow(QtGui.QStandardItem('Papaya'))
+    tropical.appendRow(QtGui.QStandardItem('Kiwi'))
+    tropical.appendRow(QtGui.QStandardItem('Dragon Fruit'))
+
+    # Adding child nodes to berries
+    berries.appendRow(QtGui.QStandardItem('Strawberry'))
+    berries.appendRow(QtGui.QStandardItem('Raspberry'))
+    berries.appendRow(QtGui.QStandardItem('Blackberry'))
+
+    # Adding parent nodes to the model
+    model.appendRow(citrus)
+    model.appendRow(tropical)
+    model.appendRow(berries)
+
+    combo.setModel(model)
 
     combo.show()
     app.exec_()
