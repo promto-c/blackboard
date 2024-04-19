@@ -174,8 +174,8 @@ class FilterPopupButton(QtWidgets.QPushButton):
         self.style().unpolish(self)
         self.style().polish(self)
 
-    # Event Handling or Override Methods
-    # ----------------------------------
+    # Override Methods
+    # ----------------
     def paintEvent(self, event: QtGui.QPaintEvent):
         """Handles the painting of the button, including its icon and opacity."""
         super().paintEvent(event)
@@ -442,8 +442,8 @@ class FilterWidget(QtWidgets.QWidget):
         """
         raise NotImplementedError("Subclasses must implement clear_filter")
 
-    # Event Handling or Override Methods
-    # ----------------------------------
+    # Override Methods
+    # ----------------
     def showEvent(self, event):
         """Override the show event to set the focus on the initial widget.
         """
@@ -649,6 +649,9 @@ class MultiSelectFilterWidget(FilterWidget):
         self.tree_widget.setHeaderHidden(True)
         self.tree_widget.setRootIsDecorated(False)
 
+        self.flat_proxy = bb.utils.FlatProxyModel(self.tree_widget.model())
+        self.completer.setModel(self.flat_proxy)
+
         # Setup Layouts
         # -------------
         # Set the layout for the widget
@@ -668,16 +671,9 @@ class MultiSelectFilterWidget(FilterWidget):
         self.completer.activated.connect(self.update_checked_state)
         # Tree widget
         self.tree_widget.itemChanged.connect(self.update_tag_as_checked)
-        self.tree_widget.model().rowsInserted.connect(self.update_completer)
-        self.tree_widget.model().rowsRemoved.connect(self.update_completer)
 
     def uncheck_item(self, tag_name):
         self.set_check_items([tag_name], False)
-
-    def update_completer(self):
-        item_names = [item.text(0) for item in bb.utils.TreeUtil.get_child_items(self.tree_widget)]
-        model = QtCore.QStringListModel(item_names)
-        self.completer.setModel(model)
 
     def update_checked_state(self):
         text = self.line_edit.text()
@@ -711,20 +707,20 @@ class MultiSelectFilterWidget(FilterWidget):
     def split_keyswords(text, splitter: str = '\t\n,|'):
         return re.split(f'[{splitter}]+', text)
 
-    def set_check_items(self, tag_names: List[str], check_state: bool = True):
+    def set_check_items(self, keywords: List[str], is_checked: bool = True):
+        check_state = QtCore.Qt.Checked if is_checked else QtCore.Qt.Unchecked
         flags = QtCore.Qt.MatchFlag.MatchWildcard | QtCore.Qt.MatchFlag.MatchRecursive
-        check_state = QtCore.Qt.CheckState.Checked if check_state else QtCore.Qt.CheckState.Unchecked
 
-        for tag in tag_names:
+        for keyword in keywords:
             # Check if the tag is a wildcard
-            is_wildcard = '*' in tag
+            is_wildcard = '*' in keyword
 
             # Find items that match the text in the specified column (0 in this case)
-            matching_items = self.tree_widget.findItems(tag, flags, 0)
+            matching_items = self.tree_widget.findItems(keyword, flags, 0)
             
             if not matching_items and not is_wildcard:
                 # If no matching items and tag is not a wildcard, add as a new tag
-                new_tag_item = self.add_new_tag_to_tree(tag)
+                new_tag_item = self.add_new_tag_to_tree(keyword)
                 matching_items.append(new_tag_item)
 
             for item in matching_items:

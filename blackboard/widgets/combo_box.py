@@ -10,57 +10,6 @@ from blackboard import widgets
 
 # Class Definitions
 # -----------------
-class FlatProxyModel(QtCore.QSortFilterProxyModel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._flat_map = []
-
-    def setSourceModel(self, source_model):
-        super().setSourceModel(source_model)
-        self._create_flat_map()
-
-    def _create_flat_map(self):
-        """Create a flat map of all items in the source model."""
-        self._flat_map.clear()
-        self._populate_flat_map(self.sourceModel(), QtCore.QModelIndex())
-
-    def _populate_flat_map(self, model, parent_index):
-        """Recursively populate the flat map with item data and indices."""
-        for row in range(model.rowCount(parent_index)):
-            index = model.index(row, 0, parent_index)
-            self._flat_map.append(index)
-            # Assuming we don't deal with hierarchical data in QAbstractListModel
-            # Removed the check for children
-
-    def mapFromSource(self, source_index):
-        """Map from source model index to proxy model index."""
-        try:
-            return self.index(self._flat_map.index(source_index), 0)
-        except ValueError:
-            return QtCore.QModelIndex()
-
-    def mapToSource(self, proxy_index):
-        """Map from proxy model index to source model index."""
-        if 0 <= proxy_index.row() < len(self._flat_map):
-            return self._flat_map[proxy_index.row()]
-        return QtCore.QModelIndex()
-
-    def rowCount(self, parent=QtCore.QModelIndex()):
-        """Return the number of items in the flat model."""
-        if parent.isValid():
-            return 0  # Ensure this is a flat list with no children
-        return len(self._flat_map)
-
-    def index(self, row, column, parent=QtCore.QModelIndex()):
-        """Create an index in the proxy model."""
-        if parent.isValid() or column != 0 or not (0 <= row < len(self._flat_map)):
-            return QtCore.QModelIndex()
-        return self.createIndex(row, column)
-
-    def parent(self, index):
-        """Ensure that this model behaves as a flat list (no parent)."""
-        return QtCore.QModelIndex()
-
 class FilterLineEdit(QtWidgets.QLineEdit):
     """Line edit with navigation and selection capabilities for a QTreeView."""
 
@@ -158,7 +107,7 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.proxy_model.setRecursiveFilteringEnabled(True)
         self.proxy_model.setFilterKeyColumn(0) 
 
-        self.flat_proxy_model = FlatProxyModel(self)
+        self.flat_proxy_model =  bb.utils.FlatProxyModel(self)
         self.flat_proxy_model.setSourceModel(self.model())
         self.flat_proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseInsensitive)
         self.flat_proxy_model.sort(0, QtCore.Qt.AscendingOrder)

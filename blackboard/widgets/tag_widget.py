@@ -183,3 +183,36 @@ class InertiaScrollArea(QtWidgets.QScrollArea):
         if (h_scroll_bar.value() == h_scroll_bar.maximum() or
             h_scroll_bar.value() == h_scroll_bar.minimum()):
             self.inertia_timer.stop()
+
+
+# Example usage
+if __name__ == "__main__":
+    import sys
+
+    # Create an instance of QApplication
+    app = QtWidgets.QApplication(sys.argv)
+
+    # Create the main window
+    main_window = QtWidgets.QMainWindow()
+    main_window.setWindowTitle("Tag Management Example")
+    main_window.resize(400, 100)
+
+    # Create an instance of TagWidget
+    tag_widget = TagWidget()
+    tag_widget.add_tag("Sample Tag 1")
+    tag_widget.add_tag("Sample Tag 2")
+
+    # Connect the tag_removed signal to a custom function
+    def on_tag_removed(tag_name):
+        print(f"Removed Tag: {tag_name}")
+
+    tag_widget.tag_removed.connect(on_tag_removed)
+
+    # Set the central widget of the main window to TagWidget
+    main_window.setCentralWidget(tag_widget)
+
+    # Show the main window
+    main_window.show()
+
+    # Start the application's main loop
+    sys.exit(app.exec_())
