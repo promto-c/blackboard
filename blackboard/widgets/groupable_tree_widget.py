@@ -551,6 +551,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         # Create the context menu
         self.menu = QtWidgets.QMenu()
+        self.menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.add_label_action(self.menu, 'Grouping')
 
@@ -587,7 +588,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self.add_label_action(self.menu, 'Manage Columns')
         show_hide_column = self.menu.addMenu('Show/Hide Columns')
-        self.menu.addMenu(show_hide_column)
+        show_hide_column.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.column_list_widget = ColumnMangementWidget(self)
         action = QtWidgets.QWidgetAction(self)
@@ -720,8 +721,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self.update()
 
-    # Extended Methods
-    # ----------------
+    # Public Methods
+    # --------------
     def create_thumbnail_column(self, column_name: str):
 
         self.column_name_list.append('thumbnail')
@@ -1250,8 +1251,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         return pixmap
 
-    # Event Handling or Override Methods
-    # ----------------------------------
+    # Override Methods
+    # ----------------
     def setHeaderLabels(self, labels: Iterable[str]):
         """Set the names of the columns in the tree widget.
 

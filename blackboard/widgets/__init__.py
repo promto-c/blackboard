@@ -10,7 +10,7 @@ from .simple_search_widget import SimpleSearchEdit
 from .groupable_tree_widget import GroupableTreeWidget, TreeUtilityToolBar
 from .scalable_view import ScalableView
 from .item_delegate import HighlightItemDelegate, AdaptiveColorMappingDelegate, HighlightTextDelegate, ThumbnailDelegate
-from .tag_widget import TagWidget
+from .tag_widget import TagListView
 
 __all__ = [
     'FilterBarWidget', 'FilterWidget',
@@ -22,6 +22,6 @@ __all__ = [
     'GroupableTreeWidget', 'TreeUtilityToolBar',
     'ScalableView',
     'HighlightItemDelegate', 'AdaptiveColorMappingDelegate', 'HighlightTextDelegate', 'ThumbnailDelegate',
-    'TagWidget',
+    'TagListView',
     'RangeCalendarWidget',
 ]

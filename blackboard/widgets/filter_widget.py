@@ -103,6 +103,15 @@ class CustomMenu(QtWidgets.QMenu):
         super().__init__()
         self.button = button
 
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
+            # Do nothing, preventing the popup from closing
+            pass  
+        else:
+            super().keyPressEvent(event)
+
     def showEvent(self, event: QtGui.QShowEvent):
         """ Override exec_ to modify the position of the menu popup """
         if self.button:
@@ -114,8 +123,6 @@ class CustomMenu(QtWidgets.QMenu):
 class FilterPopupButton(QtWidgets.QPushButton):
 
     MINIMUM_WIDTH, MINIMUM_HEIGHT  = 42, 24
-    LEFT_PADDING = 8
-    ICON_PADDING = 16
 
     def __init__(self, parent = None, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -129,13 +136,11 @@ class FilterPopupButton(QtWidgets.QPushButton):
         """Set up the initial values for the widget.
         """
         self.is_active = False
-        self.icon = None
 
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets."""
         self.__init_popup_menu()
         self.__init_ui_properties()
-        self.__init_style()
 
     def __init_popup_menu(self):
         """Setup the popup menu of the widget."""
@@ -147,15 +152,7 @@ class FilterPopupButton(QtWidgets.QPushButton):
         self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.setMinimumSize(self.MINIMUM_WIDTH, self.MINIMUM_HEIGHT)
         self.setFixedHeight(self.MINIMUM_HEIGHT)
-
-    def __init_style(self):
-        """Setup the style of the widget."""
         self.setProperty('widget-style', 'round')
-        self.setStyleSheet(f'''
-            QComboBox[widget-style="round"] {{
-                padding: 0 0 0 {self.LEFT_PADDING + self.ICON_PADDING};
-            }}
-        ''')
 
     def __init_accessibility(self):
         """Setup accessibility features like keyboard navigation and screen reader support."""
@@ -173,29 +170,6 @@ class FilterPopupButton(QtWidgets.QPushButton):
         """
         self.style().unpolish(self)
         self.style().polish(self)
-
-    # Override Methods
-    # ----------------
-    def paintEvent(self, event: QtGui.QPaintEvent):
-        """Handles the painting of the button, including its icon and opacity."""
-        super().paintEvent(event)
-
-        if not self.icon:
-            return
-
-        with QtGui.QPainter(self) as painter:
-            # Adjust opacity based on active state
-            painter.setOpacity(1.0 if self.is_active else 0.6)
-
-            # Calculate position and size for the icon
-            icon_size = self.iconSize()
-            rect = self.rect()
-            icon_x = self.LEFT_PADDING
-            icon_y = (rect.height() - icon_size.height()) // 2
-            icon_rect = QtCore.QRect(icon_x, icon_y, icon_size.width() - 2, icon_size.height())
-
-            # Paint the icon
-            self.icon.paint(painter, icon_rect)
 
 class FilterWidget(QtWidgets.QWidget):
     label_changed = QtCore.Signal(str)
@@ -617,7 +591,7 @@ class MultiSelectFilterWidget(FilterWidget):
 
         # Private Attributes
         # ------------------
-        ...
+        self._custom_tags_item = None
 
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
@@ -626,8 +600,6 @@ class MultiSelectFilterWidget(FilterWidget):
         # -------------
         # Create widgets and layouts
         self.setIcon(TablerQIcon.list_check)
-
-        self.tag_widget = widgets.TagWidget(self)
 
         #
         self.line_edit = QtWidgets.QLineEdit(self)
@@ -652,10 +624,23 @@ class MultiSelectFilterWidget(FilterWidget):
         self.flat_proxy = bb.utils.FlatProxyModel(self.tree_widget.model())
         self.completer.setModel(self.flat_proxy)
 
+        self.tag_widget = widgets.TagListView(self)
+        self.tag_widget.setModel(self.tree_widget.model())
+
+        # Copy button
+        # TODO: Implement copy_button as reusable class
+        self.copy_button = QtWidgets.QPushButton(self.tabler_icon.copy, '', self)
+        self.copy_button.clicked.connect(self.copy_data_to_clipboard)
+        self.update_copy_button_state()
+        self.tag_widget.tag_changed.connect(self.update_copy_button_state)
+
         # Setup Layouts
         # -------------
         # Set the layout for the widget
-        self.widget_layout.addWidget(self.tag_widget)
+        self.tag_layout = QtWidgets.QHBoxLayout()
+        self.widget_layout.addLayout(self.tag_layout)
+        self.tag_layout.addWidget(self.tag_widget)
+        self.tag_layout.addWidget(self.copy_button)
         self.widget_layout.addWidget(self.line_edit)
         self.widget_layout.addWidget(self.tree_widget)
 
@@ -663,17 +648,30 @@ class MultiSelectFilterWidget(FilterWidget):
         """Set up signal connections between widgets and slots.
         """
         # Connect signals to slots
-        self.tag_widget.tag_removed.connect(self.uncheck_item)
         # Input text field
         self.line_edit.editingFinished.connect(self.update_checked_state)
         self.line_edit.textChanged.connect(self.update_style)
         # Connect completer's activated signal to add tags
         self.completer.activated.connect(self.update_checked_state)
-        # Tree widget
-        self.tree_widget.itemChanged.connect(self.update_tag_as_checked)
 
-    def uncheck_item(self, tag_name):
-        self.set_check_items([tag_name], False)
+    def update_copy_button_state(self):
+        tag_count = self.tag_widget.get_tags_count()
+        self.copy_button.setEnabled(bool(tag_count))
+
+        num_item_str = str(tag_count) if tag_count else str()
+        self.copy_button.setText(num_item_str)
+
+    def copy_data_to_clipboard(self):
+        full_text = ', '.join(self.tag_widget.get_tags())
+
+        clipboard = QtWidgets.qApp.clipboard()
+        clipboard.setText(full_text)
+
+        # Show tooltip message
+        self.show_tool_tip(f'Copied:\n{full_text}', 5000)
+
+    def show_tool_tip(self, text: str, msc_show_time: int = 1000):
+        QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text, self, QtCore.QRect(), msc_show_time)
 
     def update_checked_state(self):
         text = self.line_edit.text()
@@ -685,23 +683,15 @@ class MultiSelectFilterWidget(FilterWidget):
 
     def add_new_tag_to_tree(self, tag_name: str):
         """Add a new tag to the tree, potentially in a new group."""
-        # Check if a 'Custom Tags' group exists, if not, create it
-        matched_custom_tags_items = self.find_tree_items('Custom Tags')
-
-        if not matched_custom_tags_items:
-            custom_tags_item = self.add_item('Custom Tags')
-        else:
-            custom_tags_item = matched_custom_tags_items[0]
+        # Check if the 'Custom Tags' group exists
+        if not self._custom_tags_item:
+            self._custom_tags_item = self.add_item('Custom Tags')
 
         # Add the new tag as a child of the 'Custom Tags' group
-        new_tag_item = self.add_item(tag_name, custom_tags_item)
+        new_tag_item = self.add_item(tag_name, self._custom_tags_item)
 
         self.tree_widget.expandAll()
         return new_tag_item
-
-    def find_tree_items(self, item_name: str):
-        flags = QtCore.Qt.MatchFlag.MatchExactly | QtCore.Qt.MatchFlag.MatchRecursive
-        return self.tree_widget.findItems(item_name, flags)
 
     @staticmethod
     def split_keyswords(text, splitter: str = '\t\n,|'):
@@ -728,31 +718,9 @@ class MultiSelectFilterWidget(FilterWidget):
 
         self.line_edit.clear()
 
-    def update_line_edit_as_checked(self):
-        self.line_edit.setText(', '.join(self.get_checked_item_texts()))
-
-    def update_tag_as_checked(self):
-        current_tag_name_set = self.tag_widget.tags
-
-        tag_names = set(self.get_checked_item_texts())
-
-        # Tags to be added are those in tag_names but not in current_tag_name_set
-        tags_to_add = tag_names - current_tag_name_set
-
-        # Tags to be tag_removed are those in current_tag_name_set but not in tag_names
-        tags_to_remove = current_tag_name_set - tag_names
-
-        # Add new tags
-        for tag in tags_to_add:
-            self.tag_widget.add_tag(tag)
-
-        # Remove old tags
-        for tag in tags_to_remove:
-            self.tag_widget.remove_tag(tag)
-
     @property
     def is_active(self):
-        return bool(self.tag_widget.tags)
+        return bool(self.tag_widget.get_tags())
 
     def restore_checked_state(self, checked_state_dict: dict, parent_item: QtWidgets.QTreeWidgetItem = None):
         parent_item = parent_item or self.tree_widget.invisibleRootItem()
@@ -847,18 +815,6 @@ class MultiSelectFilterWidget(FilterWidget):
         for item_name in item_list:
             self.add_item(item_name, parent)
 
-    def get_checked_item_texts(self) -> List[str]:
-        """Returns the checked items in the tree.
-        """
-        all_items = bb.utils.TreeUtil.get_child_items(self.tree_widget)
-        checked_items = []
-        for tree_item in all_items:
-            if tree_item.childCount() or tree_item.checkState(0) == QtCore.Qt.CheckState.Unchecked:
-                continue
-            checked_items.append(tree_item.text(0))
-
-        return checked_items
-
     # Slot Implementations
     # --------------------
     def discard_change(self):
@@ -869,10 +825,10 @@ class MultiSelectFilterWidget(FilterWidget):
         checked_state_dict = self.get_checked_state_dict()
         self.save_state('checked_state', checked_state_dict)
 
-        checked_item_texts = self.get_checked_item_texts()
+        tags = self.tag_widget.get_tags()
 
-        self.label_changed.emit(', '.join(checked_item_texts))
-        self.activated.emit(checked_item_texts)
+        self.label_changed.emit(', '.join(tags))
+        self.activated.emit(tags)
 
 class FileTypeFilterWidget(FilterWidget):
     def __init__(self, *args, **kwargs):

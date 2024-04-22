@@ -10,32 +10,39 @@ from qtpy import QtCore, QtGui, QtWidgets
 # Class Definitions
 # -----------------
 class FlatProxyModel(QtCore.QSortFilterProxyModel):
+
+    # Initialization and Setup
+    # ------------------------
     def __init__(self, source_model: QtCore.QAbstractItemModel = None, parent=None, show_only_checked: bool = False, show_only_leaves: bool = False):
         super().__init__(parent)
         self.show_only_checked = show_only_checked
         self.show_only_leaves = show_only_leaves
-        self._flat_map = []
+        self._flat_map = list()
+        self._is_show_checkbox = True
 
         if source_model is not None:
             self.setSourceModel(source_model)
 
     # Public Methods
     # --------------
-    def setSourceModel(self, source_model: QtCore.QAbstractItemModel):
-        """Set the source model and create the flat map."""
-        self._flat_map.clear()
-        old_model = self.sourceModel()
-        if old_model is not None:
-            old_model.dataChanged.disconnect(self._update_flat_map)
-            old_model.rowsInserted.disconnect(self._on_rows_inserted)
-            old_model.rowsRemoved.disconnect(self._on_rows_removed)
+    def set_show_checkbox(self, state: bool = True):
+        self._is_show_checkbox = state
+        self.invalidateFilter()
 
-        super().setSourceModel(source_model)
-        source_model.dataChanged.connect(self._update_flat_map)
-        source_model.rowsInserted.connect(self._on_rows_inserted)
-        source_model.rowsRemoved.connect(self._on_rows_removed)
+    def set_filter_checked_items(self, state: bool = True):
+        self.show_only_checked = state
+        # Rebuild flat map with new filter setting
+        self._flat_map.clear()
         self._populate_flat_map()
 
+    def set_filter_only_leaves(self, state: bool = True):
+        self.show_only_leaves = state
+        # Rebuild flat map with new filter setting
+        self._flat_map.clear()
+        self._populate_flat_map()
+
+    # Private Methods
+    # ---------------
     def _on_rows_inserted(self, parent, first, last):
         """Handle insertion of rows into the source model."""
         model = self.sourceModel()
@@ -78,18 +85,6 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
         self._flat_map = new_flat_map
         self.layoutChanged.emit()
-
-    def set_filter_checked_items(self, state: bool = True):
-        self.show_only_checked = state
-        # Rebuild flat map with new filter setting
-        self._flat_map.clear()
-        self._populate_flat_map()
-
-    def set_filter_only_leaves(self, state: bool = True):
-        self.show_only_leaves = state
-        # Rebuild flat map with new filter setting
-        self._flat_map.clear()
-        self._populate_flat_map()
 
     def _update_flat_map(self, top_left: QtCore.QModelIndex, bottom_right: QtCore.QModelIndex, roles: List[QtCore.Qt.ItemDataRole]):
         """Update only the changed items in the flat map, considering different parents."""
@@ -144,6 +139,23 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
         return True
 
+    # Override Methods
+    # ----------------
+    def setSourceModel(self, source_model: QtCore.QAbstractItemModel):
+        """Set the source model and create the flat map."""
+        self._flat_map.clear()
+        old_model = self.sourceModel()
+        if old_model is not None:
+            old_model.dataChanged.disconnect(self._update_flat_map)
+            old_model.rowsInserted.disconnect(self._on_rows_inserted)
+            old_model.rowsRemoved.disconnect(self._on_rows_removed)
+
+        super().setSourceModel(source_model)
+        source_model.dataChanged.connect(self._update_flat_map)
+        source_model.rowsInserted.connect(self._on_rows_inserted)
+        source_model.rowsRemoved.connect(self._on_rows_removed)
+        self._populate_flat_map()
+
     def mapFromSource(self, source_index):
         """Map from source model index to proxy model index."""
         try:
@@ -172,6 +184,21 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
     def parent(self, index):
         """Ensure that this model behaves as a flat list (no parent)."""
         return QtCore.QModelIndex()
+
+    def itemFromIndex(self, proxy_index):
+        try:
+            if proxy_index.isValid():
+                source_index = self.mapToSource(proxy_index)
+                return self.sourceModel().itemFromIndex(source_index)
+        except AttributeError:
+            pass
+
+        return None
+
+    def data(self, index, role=QtCore.Qt.DisplayRole):
+        if  not self._is_show_checkbox and role == QtCore.Qt.CheckStateRole:
+            return None
+        return super().data(index, role)
 
 class CheckableProxyModel(QtCore.QSortFilterProxyModel):
 
@@ -230,3 +257,13 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
         """Return the item flags for the given index.
         """
         return super().flags(index) | QtCore.Qt.ItemIsUserCheckable
+
+    def itemFromIndex(self, proxy_index):
+        try:
+            if proxy_index.isValid():
+                source_index = self.mapToSource(proxy_index)
+                return self.sourceModel().itemFromIndex(source_index)
+        except AttributeError:
+            pass
+
+        return None
