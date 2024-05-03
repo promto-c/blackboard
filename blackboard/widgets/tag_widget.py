@@ -19,8 +19,8 @@ class InertiaScrollListView(QtWidgets.QListView):
         self.setDragEnabled(False)  # Ensure that the default drag behavior is disabled
         self.setVerticalScrollMode(QtWidgets.QListView.ScrollPerPixel)
         self.setHorizontalScrollMode(QtWidgets.QListView.ScrollPerPixel)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self.max_velocity = max_velocity
         self.deceleration_rate = deceleration_rate
@@ -55,10 +55,13 @@ class InertiaScrollListView(QtWidgets.QListView):
             delta = new_pos - self.last_pos
             delta_time = current_time - self.last_time
             if delta_time > 0:
-                new_velocity = delta.x() / delta_time
+                # new_velocity = delta.x() / delta_time
+                new_velocity = delta.y() / delta_time
                 self.velocity = max(min(new_velocity, self.max_velocity), -self.max_velocity)
-            self.horizontalScrollBar().setValue(
-                self.horizontalScrollBar().value() - delta.x())
+            # self.horizontalScrollBar().setValue(
+            #     self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(
+                self.verticalScrollBar().value() - delta.y())
             self.last_pos = new_pos
             self.last_time = current_time
             event.accept()
@@ -82,7 +85,8 @@ class InertiaScrollListView(QtWidgets.QListView):
             self.inertia_timer.stop()
             return
 
-        h_scroll_bar = self.horizontalScrollBar()
+        # h_scroll_bar = self.horizontalScrollBar()
+        h_scroll_bar = self.verticalScrollBar()
         h_scroll_bar.setValue(h_scroll_bar.value() - int(self.velocity))
 
         if (h_scroll_bar.value() == h_scroll_bar.maximum() or
@@ -116,12 +120,15 @@ class TagListView(InertiaScrollListView):
         """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
         """
         self.setEditTriggers(QtWidgets.QListView.EditTrigger.NoEditTriggers)
-        self.setViewMode(QtWidgets.QListView.ViewMode.ListMode)
-        self.setFlow(QtWidgets.QListView.Flow.LeftToRight)
-        self.setResizeMode(QtWidgets.QListView.ResizeMode.Adjust)
+        self.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
+
+        # self.setViewMode(QtWidgets.QListView.ViewMode.ListMode)
+        # self.setFlow(QtWidgets.QListView.Flow.LeftToRight)
+        # self.setResizeMode(QtWidgets.QListView.ResizeMode.Adjust)
+        # self.setFixedHeight(28)
+
         self.setDragDropMode(QtWidgets.QListView.DragDropMode.NoDragDrop)
         self.setMouseTracking(True)
-        self.setFixedHeight(28)
 
         self.setStyleSheet('''
             QListView::item {

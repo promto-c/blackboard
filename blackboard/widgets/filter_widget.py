@@ -99,9 +99,14 @@ class MoreOptionsButton(QtWidgets.QToolButton):
         self.popup_menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
 
 class CustomMenu(QtWidgets.QMenu):
+
+    resized = QtCore.Signal(QtCore.QSize)
+
     def __init__(self, button: Optional[QtWidgets.QPushButton] = None):
         super().__init__()
         self.button = button
+
+        self.init_drag()
 
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -119,6 +124,39 @@ class CustomMenu(QtWidgets.QMenu):
             pos = self.button.mapToGlobal(QtCore.QPoint(0, self.button.height()))
             self.move(pos)
         super().showEvent(event)
+
+    def init_drag(self):
+        self.dragging = False
+        self.drag_start_point = QtCore.QPoint()
+        self.initial_size = self.size()
+
+    def resizeEvent(self, event):
+        # Update the layout of the widget container on resize
+        self.resized.emit(self.size())
+        # self.widget_container.setMinimumSize(self.size())
+        super().resizeEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.pos().x() >= (self.width() - 20) and event.pos().y() >= (self.height() - 20):
+            self.dragging = True
+            self.drag_start_point = event.pos()
+            self.initial_size = self.size()
+            self.setCursor(QtGui.QCursor(QtCore.Qt.SizeFDiagCursor))
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.dragging:
+            new_width = max(self.initial_size.width() + (event.pos().x() - self.drag_start_point.x()), self.minimumWidth())
+            new_height = max(self.initial_size.height() + (event.pos().y() - self.drag_start_point.y()), self.minimumHeight())
+            self.resize(new_width, new_height)
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.dragging = False
+        self.unsetCursor()
+        super().mouseReleaseEvent(event)
 
 class FilterPopupButton(QtWidgets.QPushButton):
 
@@ -313,6 +351,10 @@ class FilterWidget(QtWidgets.QWidget):
         action = QtWidgets.QWidgetAction(self._button.popup_menu)
         action.setDefaultWidget(self)
         self._button.popup_menu.addAction(action)
+        self._button.popup_menu.resized.connect(self.setMinimumSize)
+
+        # Calculate the appropriate minimum size based on content
+        # self._button.popup_menu.setMinimumSize(self.minimumSizeHint())
 
     # Private Methods
     # ---------------
@@ -570,6 +612,70 @@ class DateRangeFilterWidget(FilterWidget):
         # Set the first item as the current item
         self.relative_date_combo_box.setCurrentIndex(0)
 
+class FilterEntryEdit(QtWidgets.QLineEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+
+        self.tabler_icon = TablerQIcon(opacity=0.6)
+
+        self.setProperty('has-placeholder', True)
+        self.addAction(self.tabler_icon.layout_grid_add, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
+
+        # Set placeholder text and tooltip for the line edit
+        self.setPlaceholderText("Press 'Enter' to add filters (separate with a comma, line break, or '|')")
+        self.setToolTip('Enter filter items, separated by a comma, newline, or pipe. Press Enter to apply.')
+
+        # Setup the completer (assuming a completer class is defined)
+        completer = MatchContainsCompleter(self)  # Assuming MatchContainsCompleter is defined elsewhere
+        self.setCompleter(completer)
+
+    def __init_signal_connections(self):
+        self.textChanged.connect(self.update_style)
+
+    @staticmethod
+    def split_keywords(input_string):
+        # Regular expression that splits on | or , or spaces not within quotes
+        # It captures quoted strings or sequences of characters outside quotes not including delimiters
+        pattern = re.compile(r'''
+            (?:             # Start of non-capturing group for the entire pattern
+                [ ]*        # Match any leading spaces (ignored in results)
+                "([^"]*)"   # Capture anything within double quotes
+                [ ]*        # Match any trailing spaces (ignored in results)
+            |               # OR
+                '([^']*)'   # Capture anything within single quotes
+                [ ]*        # Match any trailing spaces (ignored in results)
+            |               # OR
+                ([^,|"'\s]+) # Capture any sequence of characters that aren't delimiters or quotes
+            )               # End of non-capturing group
+            ''', re.VERBOSE)
+        
+        # Find all matches based on the pattern, this ignores empty matches by the nature of the regex
+        matches = pattern.findall(input_string)
+        
+        # Flatten the list of tuples returned by findall, and filter out any empty strings
+        result = [non_empty for tup in matches for non_empty in tup if non_empty]
+        
+        return result
+
+    def texts(self) -> List[str]:
+        # Get text from QLineEdit, split into keywords, remove any surrounding whitespace or quotes
+        return self.split_keywords(self.text())
+
+    def update_style(self):
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def setModel(self, model):
+        self.model = model
+        self.proxy_model = bb.utils.FlatProxyModel(self.model)
+        # Set the model for the completer
+        self.completer().setModel(self.proxy_model)
+
 class MultiSelectFilterWidget(FilterWidget):
     """A widget representing a filter with a checkable tree.
     """
@@ -596,33 +702,25 @@ class MultiSelectFilterWidget(FilterWidget):
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
         """
-        # Setup Widgets 
-        # -------------
+        # Create Layouts
+        # --------------
+        # Set the layout for the widget
+        self.tag_layout = QtWidgets.QHBoxLayout()
+        self.widget_layout.addLayout(self.tag_layout)
+
+        # Create Widgets
+        # --------------
         # Create widgets and layouts
         self.setIcon(TablerQIcon.list_check)
-
-        #
-        self.line_edit = QtWidgets.QLineEdit(self)
-        self.line_edit.setProperty('has-placeholder', True)
-        self.line_edit.addAction(self.tabler_icon.layout_grid_add, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
-
-        # Set placeholder text and tooltip for line edit
-        self.line_edit.setPlaceholderText("Press 'Enter' to add filters (separate with a comma, line break, or '|')")
-        self.line_edit.setToolTip('Enter filter items, separated by a comma, newline, or pipe. Press Enter to apply.')
-
-        self.set_initial_focus_widget(self.line_edit)
-
-        # Completer setup
-        self.completer = MatchContainsCompleter(self)
-        self.line_edit.setCompleter(self.completer)
 
         # Tree widget
         self.tree_widget = QtWidgets.QTreeWidget(self)
         self.tree_widget.setHeaderHidden(True)
         self.tree_widget.setRootIsDecorated(False)
 
-        self.flat_proxy = bb.utils.FlatProxyModel(self.tree_widget.model())
-        self.completer.setModel(self.flat_proxy)
+        self.filter_entry_edit = FilterEntryEdit(self)
+        self.set_initial_focus_widget(self.filter_entry_edit)
+        self.filter_entry_edit.setModel(self.tree_widget.model())
 
         self.tag_widget = widgets.TagListView(self)
         self.tag_widget.setModel(self.tree_widget.model())
@@ -630,18 +728,12 @@ class MultiSelectFilterWidget(FilterWidget):
         # Copy button
         # TODO: Implement copy_button as reusable class
         self.copy_button = QtWidgets.QPushButton(self.tabler_icon.copy, '', self)
-        self.copy_button.clicked.connect(self.copy_data_to_clipboard)
-        self.update_copy_button_state()
-        self.tag_widget.tag_changed.connect(self.update_copy_button_state)
 
-        # Setup Layouts
-        # -------------
-        # Set the layout for the widget
-        self.tag_layout = QtWidgets.QHBoxLayout()
-        self.widget_layout.addLayout(self.tag_layout)
+        # Add Widgets to Layouts
+        # ----------------------
         self.tag_layout.addWidget(self.tag_widget)
         self.tag_layout.addWidget(self.copy_button)
-        self.widget_layout.addWidget(self.line_edit)
+        self.widget_layout.addWidget(self.filter_entry_edit)
         self.widget_layout.addWidget(self.tree_widget)
 
     def __init_signal_connections(self):
@@ -649,10 +741,12 @@ class MultiSelectFilterWidget(FilterWidget):
         """
         # Connect signals to slots
         # Input text field
-        self.line_edit.editingFinished.connect(self.update_checked_state)
-        self.line_edit.textChanged.connect(self.update_style)
+        self.filter_entry_edit.editingFinished.connect(self.update_checked_state)
         # Connect completer's activated signal to add tags
-        self.completer.activated.connect(self.update_checked_state)
+        self.filter_entry_edit.completer().activated.connect(self.update_checked_state)
+
+        self.copy_button.clicked.connect(self.copy_data_to_clipboard)
+        self.tag_widget.tag_changed.connect(self.update_copy_button_state)
 
     def update_copy_button_state(self):
         tag_count = self.tag_widget.get_tags_count()
@@ -674,12 +768,8 @@ class MultiSelectFilterWidget(FilterWidget):
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text, self, QtCore.QRect(), msc_show_time)
 
     def update_checked_state(self):
-        text = self.line_edit.text()
-        tag_names = [t.strip() for t in self.split_keyswords(text) if t.strip()]
-        
-        self.set_check_items(tag_names)
-
-        self.line_edit.clear()
+        self.set_check_items(self.filter_entry_edit.texts())
+        self.filter_entry_edit.clear()
 
     def add_new_tag_to_tree(self, tag_name: str):
         """Add a new tag to the tree, potentially in a new group."""
@@ -692,10 +782,6 @@ class MultiSelectFilterWidget(FilterWidget):
 
         self.tree_widget.expandAll()
         return new_tag_item
-
-    @staticmethod
-    def split_keyswords(text, splitter: str = '\t\n,|'):
-        return re.split(f'[{splitter}]+', text)
 
     def set_check_items(self, keywords: List[str], is_checked: bool = True):
         check_state = QtCore.Qt.Checked if is_checked else QtCore.Qt.Unchecked
@@ -716,7 +802,7 @@ class MultiSelectFilterWidget(FilterWidget):
             for item in matching_items:
                 item.setCheckState(0, check_state)
 
-        self.line_edit.clear()
+        self.filter_entry_edit.clear()
 
     @property
     def is_active(self):
@@ -752,7 +838,7 @@ class MultiSelectFilterWidget(FilterWidget):
         self.uncheck_all()
 
         # Clear the line edit
-        self.line_edit.clear()
+        self.filter_entry_edit.clear()
 
     def uncheck_all(self, parent_item: QtWidgets.QTreeWidgetItem = None):
         """Recursively unchecks all child items.
