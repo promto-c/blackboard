@@ -1,10 +1,51 @@
-from typing import Dict, List
-import glob, re
+from typing import Dict, List, Generator
+import glob, re, os
 from pathlib import Path
 from numbers import Number
 
 PACKAGE_ROOT = Path(__file__).parent.parent
 
+class PathUtil:
+
+    @staticmethod
+    def traverse_directories_at_level(root: str, level: int, is_skip_hidden: bool = True,
+                                      is_return_relative: bool = False, excluded_folders: List[str] = list(),
+                                     ) -> Generator[str, None, None]:
+        """Traverse directory paths at a specific level relative to a root directory, 
+        optionally returning relative paths.
+
+        Args:
+            root: A string specifying the root directory path.
+            level: An integer specifying the target depth to yield directories from.
+            is_skip_hidden: A boolean indicating whether to skip hidden directories (those starting with '.').
+            is_return_relative: A boolean indicating whether to return relative paths instead of absolute paths.
+            excluded_folders: A list of folder names to be excluded from the traversal.
+
+        Yields:
+            Directory paths from the root that are exactly at the specified level, either absolute or relative.
+        """
+        root += os.sep if not root.endswith(os.sep) else None
+
+        def _traverse(directory, current_level):
+            # Early exit if current level exceeds or meets target level
+            if current_level >= level:
+                return
+
+            if not os.access(directory, os.R_OK):
+                return
+
+            for entry in os.scandir(directory):
+                # Skip non-directories, hidden directories, and excluded folders
+                if not entry.is_dir() or (is_skip_hidden and entry.name.startswith('.')) or entry.name in excluded_folders:
+                    continue
+
+                path = entry.path[len(root):] if is_return_relative else entry.path
+                if current_level == level - 1:
+                    yield path
+                else:
+                    yield from _traverse(entry.path, current_level + 1)
+
+        return _traverse(root, 0)
 
 class PathSequence:
     def __init__(self, path: str):
@@ -71,34 +112,45 @@ class PathPattern:
 
     @staticmethod
     def convert_pattern_to_regex(string_pattern: str) -> str:
-        """Converts a string pattern with variables in curly braces to a regex pattern.
+        """Converts a string pattern with variables in curly braces to a regex pattern that captures across directory names.
+
         Args:
             string_pattern: A string containing the pattern, with variables enclosed in curly braces.
+
         Returns:
             A string representing the converted regular expression pattern.
+
         Examples:
             >>> PathPattern.convert_pattern_to_regex("path/to/{var1}/and/{var2}/")
-            'path/to/(?P<var1>[^\\\\\\\/]+)/and/(?P<var2>[^\\\\\\\/]+)/'
+            'path/to/(?P<var1>.*?)/and/(?P<var2>.*?)/'
         """
-        escaped_pattern = re.escape(string_pattern).replace("\\{", "{").replace("\\}", "}")
-        regex_pattern = re.sub(r'\{(\w+)\}', r'(?P<\1>[^\\\/]+)', escaped_pattern)
+        # Escape all regex characters except for the curly braces which are used for variables
+        # string_pattern = re.escape(string_pattern).replace("\\{", "{").replace("\\}", "}")
+        # # Use a non-greedy match up to the next literal slash or end of string, which allows variable capture over multiple segments
+        regex_pattern = re.sub(r'\{(\w+)\}', r'(?P<\1>.*?)', string_pattern)
         return regex_pattern
 
     @classmethod
     def extract_variables(cls, string_pattern: str, path: str) -> Dict[str, str]:
         """Extracts variables from a given path based on a specified string pattern.
+
         Args:
             string_pattern: The pattern as a string with variables in curly braces.
             path: The path string from which to extract variable values.
+
         Returns:
             A dictionary of variable names and their corresponding values if the path matches the pattern,
             or an empty dictionary if there is no match.
+
         Examples:
             >>> PathPattern.extract_variables("path/to/{var1}/and/{var2}/", "path/to/value1/and/value2/")
             {'var1': 'value1', 'var2': 'value2'}
             >>> PathPattern.extract_variables("projects\{project_name}\seq_{sequence_name}\{shot_name}\work_files",
             ...                               "projects\ProjectB\seq_seq01\shot03\work_files\texture.png")
             {'project_name': 'ProjectB', 'sequence_name': 'seq01', 'shot_name': 'shot03'}
+            >>> PathPattern.extract_variables("projects/{project_name}/seq_{sequence_name}/{shot_name}/work_files",
+            ...                               "projects/ProjectB/seq_seq02/shot04/01/work_files/texture.png")
+            {'project_name': 'ProjectB', 'sequence_name': 'seq02', 'shot_name': 'shot04/01'}
         """
         regex_pattern = cls.convert_pattern_to_regex(string_pattern)
         match = re.match(regex_pattern, path)
@@ -108,8 +160,7 @@ class PathPattern:
 
     @staticmethod
     def extract_variable_names(pattern: str) -> List[str]:
-        """
-        Extract only the variable names from the pattern, excluding the static parts.
+        """Extract only the variable names from the pattern, excluding the static parts.
 
         >>> PathPattern.extract_variable_names("blackboard/examples/projects/{project_name}/seq_{sequence_name}/{shot_name}/work_files")
         ['project_name', 'sequence_name', 'shot_name']
@@ -122,6 +173,7 @@ class PathPattern:
         """
         return re.findall(r'\{(\w+)\}', pattern)
 
+
 if __name__ == '__main__':
     import doctest
     doctest.testmod()
@@ -131,3 +183,11 @@ if __name__ == '__main__':
 
     print(path_sequence.get_frame_range())
     print(path_sequence.padding_length)
+
+    from pprint import pprint
+    pprint(PathPattern.extract_variables(
+        "projects/{project_name}/seq_{sequence_name}/shot/{shot_name}/work_files", 
+        "projects/ProjectB/seq_seq01/test/shot/shot03/work_files/texture.png"
+    ))
+
+    # {'project_name': 'ProjectB', 'sequence_name': 'seq01/test', 'shot_name': 'shot03'}

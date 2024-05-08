@@ -59,10 +59,10 @@ class TreeUtil:
         return items
 
     @classmethod
-    def get_model_indexes(cls, model: 'QtCore.QAbstractItemModel', parent: 'QtCore.QModelIndex'= QtCore.QModelIndex(), 
+    def get_model_indexes(cls, model: 'QtCore.QAbstractItemModel', parent: 'QtCore.QModelIndex' = QtCore.QModelIndex(), 
                           column: int = 0, is_only_leaf: bool = False, is_only_checked: bool = False,
                           data_match: Optional[Tuple['QtCore.Qt.ItemDataRole', Any]] = None,
-                          filter_func: Optional[Callable[['QtCore.QModelIndex'], bool]] = None):
+                          filter_func: Optional[Callable[['QtCore.QModelIndex'], bool]] = None) -> List['QtCore.QModelIndex']:
         """Retrieve QModelIndexes from a QAbstractItemModel based on specified criteria.
 
         This function performs a depth-first search of the model's tree structure,
@@ -84,6 +84,9 @@ class TreeUtil:
         """
         indexes = []
 
+        if not model:
+            return indexes
+
         # Iterate through the model's rows and columns
         for row in range(model.rowCount(parent)):
             # Get the QModelIndex for the current row
@@ -97,7 +100,7 @@ class TreeUtil:
 
             # Check if the index is a leaf node
             if model.hasChildren(index):
-                indexes.extend(cls.get_model_indexes(model, index, column, is_only_leaf, data_match, filter_func))
+                indexes.extend(cls.get_model_indexes(model, index, column, is_only_leaf, is_only_checked, data_match, filter_func))
                 if is_only_leaf:
                     continue
 
@@ -115,6 +118,33 @@ class TreeUtil:
             indexes.append(index)
 
         return indexes
+    
+    @classmethod
+    def get_model_data_list(cls, model: 'QtCore.QAbstractItemModel', parent: 'QtCore.QModelIndex' = QtCore.QModelIndex(),
+                            column: int = 0, is_only_leaf: bool = False, is_only_checked: bool = False,
+                            data_match: Optional[Tuple['QtCore.Qt.ItemDataRole', Any]] = None,
+                            filter_func: Optional[Callable[['QtCore.QModelIndex'], bool]] = None) -> List[str]:
+        """Retrieve data from a QAbstractItemModel based on specified criteria.
+
+        This function retrieves data from the model based on the provided column number.
+        It optionally filters data to include only leaf nodes, nodes matching specific data,
+        or nodes that pass a custom filter function.
+
+        Args:
+            model: The QAbstractItemModel to search.
+            parent: The parent QModelIndex to start the search from.
+            column: The column number from which to retrieve data.
+            is_only_checked: If True, only data from indexes with checked state will be returned.
+            is_only_leaf: True if only data from leaf node indexes should be returned; False otherwise.
+            data_match: Optional tuple (role, value) to match data in the nodes.
+            filter_func: Optional function that takes a QModelIndex and returns a bool
+                         indicating whether the index should be included.
+
+        Returns:
+            List[str]: A list of data strings that meet the specified criteria.
+        """
+        indexes = cls.get_model_indexes(model, parent, column, is_only_leaf, is_only_checked, data_match, filter_func)
+        return [model.data(index) for index in indexes if index.isValid()]
 
     @staticmethod
     def get_shown_column_indexes(tree_widget: 'QtWidgets.QTreeWidget') -> List[int]:

@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Any, List
+from typing import Any, List, Union
 
 # Third Party Imports
 # -------------------
@@ -53,22 +53,25 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
                 new_indices.append(index)
 
         # Find the insertion point in the flat map
-        if new_indices:
-            insert_position = len(self._flat_map)
-            if self._flat_map:
-                for i, idx in enumerate(self._flat_map):
-                    if idx.row() > first and idx.parent() == parent:
-                        insert_position = i
-                        break
+        if not new_indices:
+            return
+        
+        insert_position = len(self._flat_map)
+        if self._flat_map:
+            for i, idx in enumerate(self._flat_map):
+                if idx.row() > first and idx.parent() == parent:
+                    insert_position = i
+                    break
 
-            # Insert the new indices at the found position
-            self._flat_map[insert_position:insert_position] = new_indices
-            self.layoutChanged.emit()
+        # Insert the new indices at the found position
+        self._flat_map[insert_position:insert_position] = new_indices
+        self._sort()
+        self.layoutChanged.emit()
 
     def _on_rows_removed(self, parent, first, last):
         """Handle removal of rows from the source model."""
         # Remove indices in the specified range with the correct parent
-        new_flat_map = []
+        new_flat_map = list()
         removed_count = 0
         for idx in self._flat_map:
             if idx.parent() == parent:
@@ -84,6 +87,8 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
                 new_flat_map.append(idx)
 
         self._flat_map = new_flat_map
+
+        self._sort()
         self.layoutChanged.emit()
 
     def _update_flat_map(self, top_left: QtCore.QModelIndex, bottom_right: QtCore.QModelIndex, roles: List[QtCore.Qt.ItemDataRole]):
@@ -130,6 +135,8 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
             self._flat_map.append(index)
 
+        self._sort()
+
     def _is_accept(self, index: QtCore.QModelIndex):
         if self.show_only_checked and self.sourceModel().data(index, QtCore.Qt.CheckStateRole) != QtCore.Qt.Checked:
             return False
@@ -143,18 +150,33 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
     # ----------------
     def setSourceModel(self, source_model: QtCore.QAbstractItemModel):
         """Set the source model and create the flat map."""
+        self.beginResetModel()
         self._flat_map.clear()
         old_model = self.sourceModel()
         if old_model is not None:
             old_model.dataChanged.disconnect(self._update_flat_map)
             old_model.rowsInserted.disconnect(self._on_rows_inserted)
             old_model.rowsRemoved.disconnect(self._on_rows_removed)
+            old_model.modelAboutToBeReset.disconnect(self._on_source_model_about_to_be_reset)
+            old_model.modelReset.disconnect(self._on_source_model_reset)
 
         super().setSourceModel(source_model)
         source_model.dataChanged.connect(self._update_flat_map)
         source_model.rowsInserted.connect(self._on_rows_inserted)
         source_model.rowsRemoved.connect(self._on_rows_removed)
+        source_model.modelAboutToBeReset.connect(self._on_source_model_about_to_be_reset)
+        source_model.modelReset.connect(self._on_source_model_reset)
         self._populate_flat_map()
+        self.endResetModel()
+
+    def _on_source_model_about_to_be_reset(self):
+        """Handle the source model being reset."""
+        self.beginResetModel()
+        self._flat_map.clear()
+
+    def _on_source_model_reset(self):
+        """Handle the source model being reset."""
+        self.endResetModel()
 
     def mapFromSource(self, source_index):
         """Map from source model index to proxy model index."""
@@ -196,9 +218,27 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
         return None
 
     def data(self, index, role=QtCore.Qt.DisplayRole):
-        if  not self._is_show_checkbox and role == QtCore.Qt.CheckStateRole:
+        if not self._is_show_checkbox and role == QtCore.Qt.CheckStateRole:
             return None
         return super().data(index, role)
+
+    def sort(self, column, order=QtCore.Qt.AscendingOrder):
+        super().sort(column, order)
+        self.layoutAboutToBeChanged.emit()
+        self._sort()
+        self.layoutChanged.emit()
+
+    def _sort(self):
+        """Sorts the items in the proxy model based on a specific column and order."""
+        if not self.sourceModel():
+            return
+
+        # Define a key function for sorting based on the data of the column
+        def sort_key(index):
+            return self.sourceModel().data(index, QtCore.Qt.DisplayRole)
+
+        # Sort the flat map using the defined key function and the specified order
+        self._flat_map.sort(key=sort_key, reverse=(self.sortOrder() == QtCore.Qt.DescendingOrder))
 
 class CheckableProxyModel(QtCore.QSortFilterProxyModel):
 
@@ -207,7 +247,9 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
     def __init__(self, source_model: QtCore.QAbstractItemModel = None, parent=None):
         """Initialize the proxy model and its state tracking dictionary."""
         super().__init__(parent)
-        self.check_states = {}
+        self.check_states = dict()
+        # To store additional rows data
+        self._additional_rows = list()
 
         if source_model is not None:
             self.setSourceModel(source_model)
@@ -225,7 +267,7 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
             self.dataChanged.emit(parent_index, parent_index, [QtCore.Qt.CheckStateRole])
             parent_index = self.parent(parent_index)
 
-    def update_children(self, parent_index: QtCore.QModelIndex, value: any):
+    def update_children(self, parent_index: QtCore.QModelIndex, value: Any):
         """Recursively update the check state of all child items."""
         for row in range(self.rowCount(parent_index)):
             child_index = self.index(row, 0, parent_index)
@@ -233,16 +275,34 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
             self.dataChanged.emit(child_index, child_index, [QtCore.Qt.CheckStateRole])
             self.update_children(child_index, value)
 
+    def set_check_states(self, check_states):
+        """Set the check states from a given dictionary without setting each item individually."""
+        self.check_states = check_states
+        self._emit_data_changed()
+
+    def _emit_data_changed(self):
+        """Emit dataChanged signal for all affected indexes."""
+        for index in self.check_states.keys():
+            self.dataChanged.emit(index, index, [QtCore.Qt.CheckStateRole])
+
     # Override Methods
     # ----------------
-    def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.DisplayRole) -> Any:
+    def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> Any:
         """Retrieve data at the given index for the specified role.
         """
-        if role == QtCore.Qt.CheckStateRole and index.column() == 0:
-            return self.check_states.get(index, QtCore.Qt.Unchecked)
+        if role == QtCore.Qt.ItemDataRole.CheckStateRole and index.column() == 0:
+            return self.check_states.get(index, QtCore.Qt.CheckState.Unchecked)
+        
+        # TODO: Add support additional rows
+        if not index.parent().isValid() and role == QtCore.Qt.DisplayRole:
+            row = index.row() - super().rowCount(index.parent())
+            if row >= 0 and row < len(self._additional_rows):
+                return self._additional_rows[row][index.column()]
+        # ---
+
         return super().data(index, role)
 
-    def setData(self, index: QtCore.QModelIndex, value: any, role: int = QtCore.Qt.EditRole) -> bool:
+    def setData(self, index: QtCore.QModelIndex, value: Any, role: int = QtCore.Qt.ItemDataRole.EditRole) -> bool:
         """Set data at the given index for the specified role.
         """
         if role == QtCore.Qt.CheckStateRole and index.column() == 0:
@@ -256,7 +316,7 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
     def flags(self, index: QtCore.QModelIndex) -> QtCore.Qt.ItemFlags:
         """Return the item flags for the given index.
         """
-        return super().flags(index) | QtCore.Qt.ItemIsUserCheckable
+        return super().flags(index) | QtCore.Qt.ItemFlag.ItemIsUserCheckable
 
     def itemFromIndex(self, proxy_index):
         try:
@@ -267,3 +327,31 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
             pass
 
         return None
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        if parent.isValid():
+            # When the parent is valid, we're looking at children of a parent, so do not add additional rows count
+            return super().rowCount(parent)
+        else:
+            # When the parent is not valid, we're looking at the root level, add additional rows count
+            return super().rowCount(parent) + len(self._additional_rows)
+
+    # TODO: Add support additional rows
+    # def index(self, row, column, parent=QtCore.QModelIndex()):
+    #     source_row_count = super().rowCount(parent)
+
+    #     if row < source_row_count:
+    #         return super().index(row, column, parent)
+    #     else:
+    #         return self.createIndex(row, column, self._additional_rows[row - source_row_count])
+
+    def appendRow(self, item: Union[str, List[str]]):
+        if isinstance(item, str):
+            self._additional_rows.append([item])
+        elif isinstance(item, list):
+            self._additional_rows.append(item)
+        else:
+            raise ValueError("Unsupported item type. Expected str or list of str.")
+
+        # Notify the view that the model has changed
+        self.layoutChanged.emit()

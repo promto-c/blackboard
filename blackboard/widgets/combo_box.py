@@ -107,7 +107,7 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.proxy_model.setRecursiveFilteringEnabled(True)
         self.proxy_model.setFilterKeyColumn(0) 
 
-        self.flat_proxy_model =  bb.utils.FlatProxyModel(self)
+        self.flat_proxy_model = bb.utils.FlatProxyModel(self.model(), self)
         self.flat_proxy_model.setSourceModel(self.model())
         self.flat_proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseInsensitive)
         self.flat_proxy_model.sort(0, QtCore.Qt.AscendingOrder)
@@ -130,7 +130,6 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.filter_line_edit = FilterLineEdit(self.tree_view, self, self.popup_widget)
         self.popup_layout.addWidget(self.filter_line_edit)
         self.tree_view.setModel(self.proxy_model)
-        self.tree_view.setHeaderHidden(True)
         self.popup_layout.addWidget(self.tree_view)
     
     def configure_tree_view(self):
@@ -141,6 +140,12 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.tree_view.setRootIsDecorated(False)
         self.tree_view.setIndentation(12)
 
+    def __init_signal_connections(self):
+        """Connect signals and slots.
+        """
+        self.filter_line_edit.textChanged.connect(self.apply_filter)
+        self.tree_view.clicked.connect(self.apply_selection)
+
     def setModel(self, model):
         """Sets the model for the combo box and updates the proxy model.
         """
@@ -149,12 +154,6 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.tree_view.expandAll()
 
         super().setModel(self.flat_proxy_model)
-
-    def __init_signal_connections(self):
-        """Connect signals and slots.
-        """
-        self.filter_line_edit.textChanged.connect(self.apply_filter)
-        self.tree_view.clicked.connect(self.apply_selection)
 
     def showPopup(self):
         """Displays the custom popup widget and pre-selects the current item in a QTreeView."""
@@ -202,9 +201,12 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.tree_view.expandAll()
         # Find the first index that matches the filter and is visible
         first_index = self.find_first_filtered_index()
-        if first_index.isValid():
-            self.tree_view.setCurrentIndex(first_index)
-            self.tree_view.scrollTo(first_index, QtWidgets.QAbstractItemView.ScrollHint.EnsureVisible)
+
+        if not first_index.isValid():
+            return
+
+        self.tree_view.setCurrentIndex(first_index)
+        self.tree_view.scrollTo(first_index, QtWidgets.QAbstractItemView.ScrollHint.EnsureVisible)
 
     def find_first_filtered_index(self):
         """Finds the first index in the proxy model that is visible and matches the filter."""

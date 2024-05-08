@@ -461,6 +461,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self.batch_size = 50
         self.threshold_to_fetch_more = 50
+        self.has_more_items_to_fetch = True
 
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
@@ -1413,6 +1414,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             self._current_task = None
 
         self.generator = generator
+        self.has_more_items_to_fetch = True
 
         if not self.generator:
             return
@@ -1421,7 +1423,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         first_batch_size = self.calculate_dynamic_batch_size()
 
-        # NOTE: Fetch more data
         self.data_fetching_buttons.show()
         self._fetch_more_data(first_batch_size)
 
@@ -1432,7 +1433,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             self.apply_column_color_adaptive(column)
 
     def _fetch_more_data(self, batch_size: int = None):
-        if self._current_task is not None:
+        if self._current_task is not None or not self.has_more_items_to_fetch:
             return
 
         if batch_size:
@@ -1441,19 +1442,23 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             items_to_fetch = self.generator
 
         # Create the self._current_task
-        self._current_task = GeneratorWorker(items_to_fetch)
+        self._current_task = GeneratorWorker(items_to_fetch, desired_size=batch_size)
         # Connect signals to slots for handling placeholders and real data
         self._current_task.result.connect(self.add_item)
-        # NOTE: Fetch more data button
-        self._current_task.started.connect(self.show_fetching_indicator)  # Optional: Show a fetching indicator
+        self._current_task.started.connect(self.show_fetching_indicator)
         self._current_task.finished.connect(self.show_fetch_buttons)
+        self._current_task.loaded_all.connect(self._handle_no_more_items)
 
-        self._current_task.loaded_all.connect(self._disconnect_check_scroll_possition)
-        self._current_task.loaded_all.connect(self.data_fetching_buttons.hide)
         # Start the self._current_task using ThreadPoolManager
         ThreadPoolManager.thread_pool().start(self._current_task.run)
 
-    def _disconnect_check_scroll_possition(self):
+    def _handle_no_more_items(self):
+        self.has_more_items_to_fetch = False
+        self._disconnect_check_scroll_position()
+        self.data_fetching_buttons.hide()
+        self.show_tool_tip("All items have been fetched.", 5000)
+
+    def _disconnect_check_scroll_position(self):
         try:
             self.verticalScrollBar().valueChanged.disconnect(self._check_scroll_position)
         except TypeError:

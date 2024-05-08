@@ -86,11 +86,11 @@ class InertiaScrollListView(QtWidgets.QListView):
             return
 
         # h_scroll_bar = self.horizontalScrollBar()
-        h_scroll_bar = self.verticalScrollBar()
-        h_scroll_bar.setValue(h_scroll_bar.value() - int(self.velocity))
+        v_scroll_bar = self.verticalScrollBar()
+        v_scroll_bar.setValue(v_scroll_bar.value() - int(self.velocity))
 
-        if (h_scroll_bar.value() == h_scroll_bar.maximum() or
-            h_scroll_bar.value() == h_scroll_bar.minimum()):
+        if (v_scroll_bar.value() == v_scroll_bar.maximum() or
+            v_scroll_bar.value() == v_scroll_bar.minimum()):
             self.inertia_timer.stop()
 
 class TagListView(InertiaScrollListView):
@@ -172,7 +172,7 @@ class TagListView(InertiaScrollListView):
         super().mouseMoveEvent(event)
         index = self.indexAt(event.pos())
         if index.isValid():
-            self.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+            self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
         else:
             self.unsetCursor()
 

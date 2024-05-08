@@ -13,7 +13,7 @@ class FilePatternQuery:
     META_FIELDS = ['_file_path', '_file_name']
 
     def __init__(self, pattern: str) -> None:
-        self.pattern = str(Path(pattern).resolve())
+        self.pattern = Path(pattern).as_posix() + '/'
         self.regex_pattern = PathPattern.convert_pattern_to_regex(self.pattern)
         self.fields = PathPattern.extract_variable_names(self.pattern) + self.META_FIELDS
 
@@ -31,15 +31,14 @@ class FilePatternQuery:
 
     def extract_variables(self, path: str) -> Dict[str, str]:
         """Extracts variables from a given path based on a specified string pattern.
+
         Args:
             string_pattern: The pattern as a string with variables in curly braces.
             path: The path string from which to extract variable values.
+
         Returns:
             A dictionary of variable names and their corresponding values if the path matches the pattern,
             or an empty dictionary if there is no match.
-        Examples:
-            >>> FilePatternQuery.extract_variables("path/to/{var1}/and/{var2}/", "path/to/value1/and/value2/")
-            {'var1': 'value1', 'var2': 'value2'}
         """
         match = re.match(self.regex_pattern, path)
         if match:
@@ -49,7 +48,7 @@ class FilePatternQuery:
     def construct_search_paths(self, filters: Dict[str, List[str]]) -> Generator[str, None, None]:
 
         # Construct combinations using specific filter values or wildcard '*' for each field
-        values_combinations = [filters[field] if field in filters else ['*'] for field in self.fields]
+        values_combinations = [filters[field] if field in filters and filters[field] else ['*'] for field in self.fields]
 
         # Generate all possible paths based on combinations of field values
         all_value_combinations = product(*values_combinations)
@@ -65,6 +64,7 @@ class FilePatternQuery:
         paths = self.construct_search_paths(filters)
 
         for path in paths:
+            path = Path(path).as_posix()
             if not os.path.isfile(path):
                 continue
             data_dict = self.extract_variables(path)

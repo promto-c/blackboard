@@ -1,11 +1,13 @@
 
 # Type Checking Imports
 # ---------------------
-from typing import Any, Optional, List, Union, overload, Dict
+from typing import Any, Optional, List, Union, Dict
 
 # Standard Library Imports
 # ------------------------
 import re
+import fnmatch
+from functools import partial
 
 # Third Party Imports
 # -------------------
@@ -17,14 +19,6 @@ from tablerqicon import TablerQIcon
 import blackboard as bb
 from blackboard import widgets
 
-
-class MatchContainsCompleter(QtWidgets.QCompleter):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        
-        # Set the completion mode to match items containing the typed text
-        self.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
-        self.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
 
 class FilterBarWidget(QtWidgets.QWidget):
 
@@ -162,8 +156,8 @@ class FilterPopupButton(QtWidgets.QPushButton):
 
     MINIMUM_WIDTH, MINIMUM_HEIGHT  = 42, 24
 
-    def __init__(self, parent = None, *args, **kwargs):
-        super().__init__(parent, *args, **kwargs)
+    def __init__(self, parent = None):
+        super().__init__(parent)
 
         # Initialize setup
         self.__init_attributes()
@@ -457,6 +451,11 @@ class FilterWidget(QtWidgets.QWidget):
         """Method to clear the condition. This should be implemented in subclasses.
         """
         raise NotImplementedError("Subclasses must implement clear_filter")
+    
+    def set_filter(self):
+        """Method to set the filter. This should be implemented in subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement set_filter")
 
     # Override Methods
     # ----------------
@@ -631,7 +630,7 @@ class FilterEntryEdit(QtWidgets.QLineEdit):
         self.setToolTip('Enter filter items, separated by a comma, newline, or pipe. Press Enter to apply.')
 
         # Setup the completer (assuming a completer class is defined)
-        completer = MatchContainsCompleter(self)  # Assuming MatchContainsCompleter is defined elsewhere
+        completer = bb.utils.MatchContainsCompleter(self)
         self.setCompleter(completer)
 
     def __init_signal_connections(self):
@@ -713,17 +712,19 @@ class MultiSelectFilterWidget(FilterWidget):
         # Create widgets and layouts
         self.setIcon(TablerQIcon.list_check)
 
-        # Tree widget
-        self.tree_widget = QtWidgets.QTreeWidget(self)
-        self.tree_widget.setHeaderHidden(True)
-        self.tree_widget.setRootIsDecorated(False)
+        # Tree view
+        self.tree_view = QtWidgets.QTreeView(self)
+        self.tree_view.setHeaderHidden(True)
+        self.tree_view.setRootIsDecorated(False)
+        self.proxy_model = bb.utils.CheckableProxyModel()
+        self.tree_view.setModel(self.proxy_model)
 
         self.filter_entry_edit = FilterEntryEdit(self)
         self.set_initial_focus_widget(self.filter_entry_edit)
-        self.filter_entry_edit.setModel(self.tree_widget.model())
+        self.filter_entry_edit.setModel(self.tree_view.model())
 
-        self.tag_widget = widgets.TagListView(self)
-        self.tag_widget.setModel(self.tree_widget.model())
+        self.tag_list_view = widgets.TagListView(self)
+        self.tag_list_view.setModel(self.tree_view.model())
 
         # Copy button
         # TODO: Implement copy_button as reusable class
@@ -731,10 +732,10 @@ class MultiSelectFilterWidget(FilterWidget):
 
         # Add Widgets to Layouts
         # ----------------------
-        self.tag_layout.addWidget(self.tag_widget)
+        self.tag_layout.addWidget(self.tag_list_view)
         self.tag_layout.addWidget(self.copy_button)
         self.widget_layout.addWidget(self.filter_entry_edit)
-        self.widget_layout.addWidget(self.tree_widget)
+        self.widget_layout.addWidget(self.tree_view)
 
     def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
@@ -746,17 +747,19 @@ class MultiSelectFilterWidget(FilterWidget):
         self.filter_entry_edit.completer().activated.connect(self.update_checked_state)
 
         self.copy_button.clicked.connect(self.copy_data_to_clipboard)
-        self.tag_widget.tag_changed.connect(self.update_copy_button_state)
+        self.tag_list_view.tag_changed.connect(self.update_copy_button_state)
 
     def update_copy_button_state(self):
-        tag_count = self.tag_widget.get_tags_count()
+        """Update the state of the copy button based on the number of tags in the tag widget.
+        """
+        tag_count = self.tag_list_view.get_tags_count()
         self.copy_button.setEnabled(bool(tag_count))
 
         num_item_str = str(tag_count) if tag_count else str()
         self.copy_button.setText(num_item_str)
 
     def copy_data_to_clipboard(self):
-        full_text = ', '.join(self.tag_widget.get_tags())
+        full_text = ', '.join(self.tag_list_view.get_tags())
 
         clipboard = QtWidgets.qApp.clipboard()
         clipboard.setText(full_text)
@@ -765,6 +768,8 @@ class MultiSelectFilterWidget(FilterWidget):
         self.show_tool_tip(f'Copied:\n{full_text}', 5000)
 
     def show_tool_tip(self, text: str, msc_show_time: int = 1000):
+        """Show a tooltip message for the given text.
+        """
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text, self, QtCore.QRect(), msc_show_time)
 
     def update_checked_state(self):
@@ -780,54 +785,76 @@ class MultiSelectFilterWidget(FilterWidget):
         # Add the new tag as a child of the 'Custom Tags' group
         new_tag_item = self.add_item(tag_name, self._custom_tags_item)
 
-        self.tree_widget.expandAll()
+        self.tree_view.expandAll()
         return new_tag_item
 
-    def set_check_items(self, keywords: List[str], is_checked: bool = True):
-        check_state = QtCore.Qt.Checked if is_checked else QtCore.Qt.Unchecked
-        flags = QtCore.Qt.MatchFlag.MatchWildcard | QtCore.Qt.MatchFlag.MatchRecursive
+    def setModel(self, model: QtCore.QAbstractItemModel):
+        """Set the model for the widget.
 
-        for keyword in keywords:
-            # Check if the tag is a wildcard
-            is_wildcard = '*' in keyword
+        Args:
+            model (QtCore.QAbstractItemModel): The model to set.
+        """
+        self.proxy_model.setSourceModel(model)
+        self.filter_entry_edit.setModel(self.proxy_model)
 
-            # Find items that match the text in the specified column (0 in this case)
-            matching_items = self.tree_widget.findItems(keyword, flags, 0)
-            
-            if not matching_items and not is_wildcard:
-                # If no matching items and tag is not a wildcard, add as a new tag
-                new_tag_item = self.add_new_tag_to_tree(keyword)
-                matching_items.append(new_tag_item)
+        self.tag_list_view.setModel(self.proxy_model)
+        self.tree_view.setModel(self.proxy_model)
+        self.tree_view.expandAll()
 
-            for item in matching_items:
-                item.setCheckState(0, check_state)
+    def set_check_items(self, keywords: List[str], checked_state: QtCore.Qt.CheckState = QtCore.Qt.CheckState.Checked):
+        filter_func = partial(self.filter_keywords, keywords)
+        model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), filter_func=filter_func)
 
-        self.filter_entry_edit.clear()
+        for model_index in model_indexes:
+            self.tree_view.model().setData(model_index, checked_state, QtCore.Qt.CheckStateRole)
+
+        # TODO: Handle to add new inputs
+        # # Check if the tag is a wildcard
+        # is_wildcard = '*' in keyword
+
+        # if not matching_items and not is_wildcard:
+        #     # If no matching items and tag is not a wildcard, add as a new tag
+        #     new_tag_item = self.add_new_tag_to_tree(keyword)
+        #     matching_items.append(new_tag_item)
+
+    # TODO: Add support when when add parent, children should be filtered
+    @staticmethod
+    def filter_keywords(keywords: List[str], index: QtCore.QModelIndex):
+        if not index.isValid():
+            return False
+
+        text = index.data()
+        # Check each keyword against the text using fnmatch which supports wildcards like *
+        return any(fnmatch.fnmatch(text, pattern) for pattern in keywords)
 
     @property
     def is_active(self):
-        return bool(self.tag_widget.get_tags())
+        return bool(self.tag_list_view.get_tags())
 
-    def restore_checked_state(self, checked_state_dict: dict, parent_item: QtWidgets.QTreeWidgetItem = None):
-        parent_item = parent_item or self.tree_widget.invisibleRootItem()
+    def restore_checked_state(self, checked_state_dict: dict, parent_index: QtCore.QModelIndex = QtCore.QModelIndex()):
 
-        for i in range(parent_item.childCount()):
-            child = parent_item.child(i)
-            key = child.text(0)
-            checked_state = checked_state_dict.get(key, False)
-            child.setCheckState(0, checked_state)
+        model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), parent_index)
+        model_index_to_check_state = dict()
 
-            self.restore_checked_state(checked_state_dict, child)
+        is_proxy_model = isinstance(self.tree_view.model(), bb.utils.CheckableProxyModel)
 
-    def get_checked_state_dict(self, checked_state_dict: dict = dict(), parent_item: QtWidgets.QTreeWidgetItem = None):
-        parent_item = parent_item or self.tree_widget.invisibleRootItem()
+        for model_index in model_indexes:
+            text = model_index.data()
+            checked_state = checked_state_dict.get(text, QtCore.Qt.CheckState.Unchecked)
+            if is_proxy_model:
+                model_index_to_check_state[model_index] = checked_state
+            else:
+                self.tree_view.model().setData(model_index, checked_state, QtCore.Qt.CheckStateRole)
 
-        for i in range(parent_item.childCount()):
-            child = parent_item.child(i)
-            # Assuming the first column is used for unique identification
-            key = child.text(0)
-            checked_state_dict[key] = child.checkState(0)
-            checked_state_dict = self.get_checked_state_dict(checked_state_dict, child)
+        if is_proxy_model:
+            self.tree_view.model().set_check_states(model_index_to_check_state)
+
+    def get_checked_state_dict(self, checked_state_dict: Dict[str, QtCore.Qt.CheckState] = dict(), parent_index: QtCore.QModelIndex = QtCore.QModelIndex()):
+        model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), parent_index)
+        for model_index in model_indexes:
+            text = model_index.data()
+            checked_state = model_index.data(QtCore.Qt.CheckStateRole)
+            checked_state_dict[text] = checked_state
 
         return checked_state_dict
 
@@ -840,15 +867,13 @@ class MultiSelectFilterWidget(FilterWidget):
         # Clear the line edit
         self.filter_entry_edit.clear()
 
-    def uncheck_all(self, parent_item: QtWidgets.QTreeWidgetItem = None):
-        """Recursively unchecks all child items.
+    def uncheck_all(self, parent_index: QtCore.QModelIndex = QtCore.QModelIndex()):
+        """Recursively unchecks all child indexes.
         """
-        parent_item = parent_item or self.tree_widget.invisibleRootItem()
+        model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), parent_index)
 
-        for i in range(parent_item.childCount()):
-            child = parent_item.child(i)
-            child.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
-            self.uncheck_all(child)
+        for model_index in model_indexes:
+            self.tree_view.model().setData(model_index, QtCore.Qt.CheckState.Unchecked, QtCore.Qt.CheckStateRole)
 
     def add_items(self, item_names: Union[Dict[str, List[str]], List[str]]):
         """Adds items to the tree widget.
@@ -856,6 +881,14 @@ class MultiSelectFilterWidget(FilterWidget):
         Args:
             item_names (Union[Dict[str, List[str]], List[str]]): If a dictionary is provided, it represents parent-child relationships where keys are parent item names and values are lists of child item names. If a list is provided, it contains item names to be added at the root level.
         """
+
+        if isinstance(self.tree_view.model(), bb.utils.CheckableProxyModel):
+            self.tree_view_model = QtGui.QStandardItemModel()
+            self.tree_view.setModel(self.tree_view_model)
+
+            self.filter_entry_edit.setModel(self.tree_view_model)
+            self.tag_list_view.setModel(self.tree_view_model)
+
         if isinstance(item_names, dict):
             self._add_items_from_dict(item_names)
         elif isinstance(item_names, list):
@@ -863,24 +896,37 @@ class MultiSelectFilterWidget(FilterWidget):
         else:
             raise ValueError("Invalid type for item_names. Expected a list or a dictionary.")
 
-        self.tree_widget.expandAll()
+        self.tree_view.expandAll()
 
-    def add_item(self, item_label: str, parent: Optional[QtWidgets.QTreeWidgetItem] = None):
+    # def add_item(self, item_label: str, parent: Optional[QtWidgets.QTreeWidgetItem] = None):
+    #     """Adds a single item to the tree widget.
+
+    #     Args:
+    #         item_label (str): The label for the tree item.
+    #         parent (QtWidgets.QTreeWidgetItem, optional): The parent item for this item. Defaults to None, in which case the item is added at the root level.
+
+    #     Returns:
+    #         QtWidgets.QTreeWidgetItem: The created tree item.
+    #     """
+    #     parent = parent or self.tree_view.invisibleRootItem()
+    #     tree_item = QtWidgets.QTreeWidgetItem(parent, [item_label])
+    #     tree_item.setFlags(tree_item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable | QtCore.Qt.ItemFlag.ItemIsAutoTristate)
+    #     tree_item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
+
+    #     return tree_item
+    
+    # Implement add_item for self.tree_view
+    # TODO: Implement appendRow for CheckableProxyModel
+    def add_item(self, item_label: str, parent_item: QtGui.QStandardItem = None):
         """Adds a single item to the tree widget.
-
-        Args:
-            item_label (str): The label for the tree item.
-            parent (QtWidgets.QTreeWidgetItem, optional): The parent item for this item. Defaults to None, in which case the item is added at the root level.
-
-        Returns:
-            QtWidgets.QTreeWidgetItem: The created tree item.
-        """
-        parent = parent or self.tree_widget.invisibleRootItem()
-        tree_item = QtWidgets.QTreeWidgetItem(parent, [item_label])
-        tree_item.setFlags(tree_item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable | QtCore.Qt.ItemFlag.ItemIsAutoTristate)
-        tree_item.setCheckState(0, QtCore.Qt.CheckState.Unchecked)
-
-        return tree_item
+        """ 
+        # Add items to the model
+        parent_item = parent_item or self.tree_view_model
+        item = QtGui.QStandardItem(item_label)
+        item.setCheckable(True)
+        item.setEditable(False)
+        parent_item.appendRow(item)
+        return item
 
     def _add_items_from_dict(self, item_dict: Dict[str, List[str]]):
         """Adds items to the tree widget based on a dictionary of parent-child relationships.
@@ -903,6 +949,11 @@ class MultiSelectFilterWidget(FilterWidget):
 
     # Slot Implementations
     # --------------------
+    def set_filter(self, filters: List[str]):
+        self.clear_filter()
+        self.set_check_items(filters)
+        self.apply_filter()
+
     def discard_change(self):
         checked_state_dict = self.load_state('checked_state', dict())
         self.restore_checked_state(checked_state_dict)
@@ -911,7 +962,7 @@ class MultiSelectFilterWidget(FilterWidget):
         checked_state_dict = self.get_checked_state_dict()
         self.save_state('checked_state', checked_state_dict)
 
-        tags = self.tag_widget.get_tags()
+        tags = self.tag_list_view.get_tags()
 
         self.label_changed.emit(', '.join(tags))
         self.activated.emit(tags)
@@ -1087,17 +1138,56 @@ if __name__ == '__main__':
     date_filter_widget.activated.connect(print)
     # Shot Filter Setup
     shot_filter_widget = MultiSelectFilterWidget(filter_name="Shot")
-    sequence_to_shot = {
-        "100": [
-            "100_010_001", "100_020_050"
-        ],
-        "101": [
-            "101_022_232", "101_023_200"
-        ],
-    }
-    shot_filter_widget.add_items(sequence_to_shot)
+    # sequence_to_shot = {
+    #     "100": [
+    #         "100_010_001", "100_020_050"
+    #     ],
+    #     "101": [
+    #         "101_022_232", "101_023_200"
+    #     ],
+    # }
+    # shot_filter_widget.add_items(sequence_to_shot)
+    # shots = ['102_212_010', '103_202_110']
+    # shot_filter_widget.add_items(shots)
+
+
+    # NOTE: Test set model
+    # Creating a QStandardItemModel
+    model = QtGui.QStandardItemModel()
+
+    # Defining parent nodes (fruit categories)
+    citrus = QtGui.QStandardItem('Citrus Fruits')
+    tropical = QtGui.QStandardItem('Tropical Fruits')
+    berries = QtGui.QStandardItem('Berries')
+
+    # Adding child nodes to citrus
+    citrus.appendRow(QtGui.QStandardItem('Lemon'))
+    citrus.appendRow(QtGui.QStandardItem('Orange'))
+    citrus.appendRow(QtGui.QStandardItem('Lime'))
+    citrus.appendRow(QtGui.QStandardItem('Tangerine'))
+
+    # Adding child nodes to tropical
+    tropical.appendRow(QtGui.QStandardItem('Mango'))
+    tropical.appendRow(QtGui.QStandardItem('Papaya'))
+    tropical.appendRow(QtGui.QStandardItem('Kiwi'))
+    tropical.appendRow(QtGui.QStandardItem('Dragon Fruit'))
+
+    # Adding child nodes to berries
+    berries.appendRow(QtGui.QStandardItem('Strawberry'))
+    berries.appendRow(QtGui.QStandardItem('Raspberry'))
+    berries.appendRow(QtGui.QStandardItem('Blackberry'))
+
+    # Adding parent nodes to the model
+    model.appendRow(citrus)
+    model.appendRow(tropical)
+    model.appendRow(berries)
+
+    # Setting the model for the tree view
+    shot_filter_widget.setModel(model)
+
     shots = ['102_212_010', '103_202_110']
-    shot_filter_widget.add_items(shots)
+    # shot_filter_widget.add_items(shots)
+
     shot_filter_widget.activated.connect(print)
 
     # File Type Filter Setup

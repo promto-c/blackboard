@@ -16,19 +16,59 @@ from blackboard import widgets
 # Class Definitions
 # -----------------
 class MatchCountButton(QtWidgets.QPushButton):
-    """A custom QPushButton that changes its appearance on mouse hover.
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    """A custom QPushButton that changes its appearance on mouse hover and displays match counts.
 
+    This button is designed to display the number of matches in a search operation.
+    It changes its appearance when the mouse hovers over it, providing a visual cue
+    for user interaction.
+
+    Attributes:
+        _current_label (str): Stores the current label text of the button.
+    """
+    # Initialization and Setup
+    # ------------------------
+    def __init__(self, parent: QtWidgets.QWidget = None):
+        """Initializes the MatchCountButton with a parent widget, sets properties, and tooltip.
+
+        Args:
+            parent (QtWidgets.QWidget, optional): The parent widget of the button. Defaults to None.
+        """
+        super().__init__(parent)
+
+        # Initialize setup
+        self.__init_attributes()
+        self.__init_ui()
+
+    def __init_attributes(self):
+        """Set up the initial values for the widget.
+        """
         self._current_label = str()
+
+    def __init_ui(self):
+        """Sets up the initial properties of the button."""
         self.setProperty('widget-style', 'action-clear')
         self.setFixedHeight(16)
         # Setting a default tooltip
         self.setToolTip("Click to clear search")
 
-    def enterEvent(self, event):
-        """Handles mouse entry events on the button.
+    # Public Methods
+    # --------------
+    def set_match_count(self, total_matches: int):
+        """Sets the visibility and text of the button based on the total match count.
+
+        Args:
+            total_matches (int): The number of matches to display.
+        """
+        self.setVisible(bool(total_matches))
+        self.setText(str(total_matches))
+
+    # Overridden Methods
+    # ------------------
+    def enterEvent(self, event: QtCore.QEvent):
+        """Handles mouse entry events on the button, changing the icon and cursor.
+
+        Args:
+            event (QtCore.QEvent): The mouse enter event.
         """
         super().enterEvent(event)
         self._current_label = self.text()
@@ -36,15 +76,18 @@ class MatchCountButton(QtWidgets.QPushButton):
         self.setText('')
         self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
 
-    def leaveEvent(self, event):
-        """Handles mouse leave events on the button.
+    def leaveEvent(self, event: QtCore.QEvent):
+        """Handles mouse leave events on the button, resetting the icon and cursor.
+
+        Args:
+            event (QtCore.QEvent): The mouse leave event.
         """
         super().leaveEvent(event)
         self.setIcon(QtGui.QIcon())
         self.setText(self._current_label)
-        self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.ArrowCursor))
+        self.unsetCursor()
 
-class SimpleSearchEdit(QtWidgets.QComboBox):
+class SimpleSearchEdit(QtWidgets.QLineEdit):
     """A custom combo box widget tailored for simplified search functionality within a 
     groupable tree widget. It supports keyword search, highlighting matching items, 
     and displaying the total count of matches.
@@ -54,6 +97,8 @@ class SimpleSearchEdit(QtWidgets.QComboBox):
         is_active (bool): Indicates whether the search filter is currently applied.
         _all_match_items (set): A set of items that match the current search criteria.
     """
+    activated = QtCore.Signal()
+
     # Initialization and Setup
     # ------------------------
     def __init__(self, tree_widget: 'widgets.GroupableTreeWidget', parent: QtWidgets.QWidget = None):
@@ -80,6 +125,7 @@ class SimpleSearchEdit(QtWidgets.QComboBox):
         """
         # Attributes
         # ----------
+        self.tabler_icon = TablerQIcon(opacity=0.6)
         self.is_active = False
 
         # Private Attributes
@@ -89,48 +135,92 @@ class SimpleSearchEdit(QtWidgets.QComboBox):
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
         """
-        self.setEditable(True)
         self.setProperty('widget-style', 'round')
-
-        self.lineEdit().setPlaceholderText('Type to Search')
+        self.setProperty('has-placeholder', True)
+        self.setPlaceholderText('Type to Search')
         self.setFixedHeight(24)
-        self.tabler_icon = TablerQIcon(opacity=0.6)
 
         # Add search icon
-        self.lineEdit().addAction(self.tabler_icon.search, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
-        self.lineEdit().setProperty('has-placeholder', True)
-        self.lineEdit().textChanged.connect(self.update_style)
+        self.addAction(self.tabler_icon.search, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
 
         self.__init_match_count_action()
         self.update_style()
 
     def __init_match_count_action(self):
+        """Initializes the match count action and adds it to the line edit."""
         # Create and add the label for showing the total match count
-        self.match_count_button = MatchCountButton(parent=self)
+        self.match_count_button = MatchCountButton(self)
 
+        # Initialize a QWidgetAction to hold the match count button and set it as the default widget
         self.match_count_action = QtWidgets.QWidgetAction(self)
         self.match_count_action.setDefaultWidget(self.match_count_button)
-        self.lineEdit().addAction(self.match_count_action, QtWidgets.QLineEdit.ActionPosition.TrailingPosition)
+
+        # Add the match count action to the line edit, positioned at the trailing end
+        self.addAction(self.match_count_action, QtWidgets.QLineEdit.ActionPosition.TrailingPosition)
+
+        # Initially hide the match count button
         self.match_count_button.setVisible(False)
 
     def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
         """
         # Connect signals to slots
-        self.editTextChanged.connect(self.set_inactive)
-        self.editTextChanged.connect(self._highlight_search)
-        self.match_count_button.clicked.connect(self.clearEditText)
+        self.textChanged.connect(self.set_inactive)
+        self.textChanged.connect(self._highlight_search)
+        self.textChanged.connect(self.update_style)
+        self.match_count_button.clicked.connect(self.clear)
+
         bb.utils.KeyBinder.bind_key('Enter', self, self.set_active)
         bb.utils.KeyBinder.bind_key('Return', self, self.set_active)
-        bb.utils.KeyBinder.bind_key('Escape', self, self.clearEditText)
+        bb.utils.KeyBinder.bind_key('Escape', self, self.clear)
+
+    # Public Methods
+    # --------------
+    def set_text_as_selection(self):
+        keywords = {f'"{index.data()}"' for index in self.tree_widget.selectedIndexes()}
+
+        self.setText('|'.join(keywords))
+        self.setFocus()
+
+    def set_active(self):
+        if not self._all_match_items:
+            return
+
+        self._set_property_active(True)
+        self._apply_search()
+        self.activated.emit()
+
+    def set_inactive(self):
+        if not self.is_active:
+            return
+
+        self._set_property_active(False)
+        self._reset_search()
+
+    def update(self):
+        self._highlight_search()
+
+        if self.is_active:
+            self._apply_search()
+
+    def update_style(self):
+        """ Update the button's style based on its state.
+        """
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    # Class Properties
+    # ----------------
+    @property
+    def matched_items(self):
+        return self._all_match_items
 
     # Private Methods
     # ---------------
     def _update_total_matches(self, total_matches: Optional[int] = None):
         """Update the text of the match count label with the total number of matches."""
         total_matches = total_matches or len(self._all_match_items)
-        self.match_count_button.setVisible(bool(total_matches))
-        self.match_count_button.setText(str(total_matches))
+        self.match_count_button.set_match_count(total_matches)
 
     def _highlight_search(self):
         """Highlight the items in the tree widget that match the search criteria.
@@ -143,7 +233,7 @@ class SimpleSearchEdit(QtWidgets.QComboBox):
         self._update_total_matches()
 
         # Get the selected column, condition, and keyword
-        keyword = self.currentText().strip()
+        keyword = self.text().strip()
 
         # Return if the keyword is empty
         if not keyword:
@@ -204,57 +294,9 @@ class SimpleSearchEdit(QtWidgets.QComboBox):
 
         self._highlight_search()
 
-    @property
-    def matched_items(self):
-        return self._all_match_items
 
-    # Public Methods
-    # --------------
-    def set_text_as_selection(self):
-        model_indexes = self.tree_widget.selectedIndexes()
-        keywords = set()
-
-        for model_index in model_indexes:
-            tree_item = self.tree_widget.itemFromIndex(model_index)
-            keyword = tree_item.text(model_index.column())
-
-            keywords.add(f'"{keyword}"')
-
-        self.setCurrentText('|'.join(keywords))
-        self.setFocus()
-
-    def set_active(self):
-        if not self._all_match_items:
-            return
-
-        self._set_property_active(True)
-        self._apply_search()
-
-    def set_inactive(self):
-        if not self.is_active:
-            return
-
-        self._set_property_active(False)
-        self._reset_search()
-
-    def update(self):
-        self._highlight_search()
-
-        if self.is_active:
-            self._apply_search()
-
-    def update_style(self):
-        """ Update the button's style based on its state.
-        """
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    # Special Methods
-    # ---------------
-
-    # Event Handling or Override Methods
-    # ----------------------------------
-
+# Main Function
+# -------------
 def main():
     """Create the application and main window, and show the widget.
     """
@@ -269,7 +311,8 @@ def main():
     bb.theme.set_theme(app, 'dark')
 
     # Create the tree widget with example data
-    tree_widget = widgets.GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST)
+    tree_widget = widgets.GroupableTreeWidget()
+    tree_widget.setHeaderLabels(COLUMN_NAME_LIST)
     tree_widget.add_items(ID_TO_DATA_DICT)
 
     # Create an instance of the widget and set it as the central widget

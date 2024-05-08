@@ -1,6 +1,10 @@
 # Type Checking Imports
 # ---------------------
-from typing import Optional, Generator
+from typing import Any, Optional, Generator
+
+# Standard Library Imports
+# ------------------------
+from types import GeneratorType
 
 # Third Party Imports
 # -------------------
@@ -28,14 +32,14 @@ class ThreadPoolManager:
 
 class RunnableTask(QtCore.QRunnable):
     def __init__(self, task):
-        super(RunnableTask, self).__init__()
+        super().__init__()
         self.task = task
 
     @QtCore.Slot()
     def run(self):
-        # Check if the task object has a 'run' method
+        # Check if the task object has a 'run' method and execute it
         if hasattr(self.task, 'run') and callable(getattr(self.task, 'run')):
-            self.task.run()  # Execute the 'run' method of the task
+            self.task.run()
 
 class GeneratorWorker(QtCore.QObject):
     started = QtCore.Signal()           # Emit to indicate fetching has started
@@ -44,40 +48,75 @@ class GeneratorWorker(QtCore.QObject):
     finished = QtCore.Signal()
     loaded_all = QtCore.Signal()        # Emit when no more data is available to fetch
 
-    def __init__(self, generator, is_pass_error: bool = False):
+    def __init__(self, generator: Optional[Generator[Any, None, None]] = None, is_pass_error: bool = False, desired_size: Optional[int] = None):
+        """Initializes the GeneratorWorker with the given generator and desired size.
+
+        Args:
+            generator: A generator object that yields items to be processed.
+            is_pass_error (bool): If True, passes errors to the error signal; otherwise, raises them.
+            desired_size (Optional[int]): The desired number of items to be processed from the generator.
+        """
         super().__init__()
         self.generator = generator
         self.is_pass_error = is_pass_error
+        self.desired_size = desired_size
         self.is_stopped = False
+        self._mutex = QtCore.QMutex()
 
+    def set_generator(self, generator: Generator[Any, None, None], desired_size: Optional[int] = None):
+        """Sets a new generator to be processed and optionally its desired size.
+
+        Args:
+            generator: A generator object that yields items to be processed.
+            desired_size (Optional[int]): The desired number of items to be processed from the generator.
+        """
+        with QtCore.QMutexLocker(self._mutex):
+            self.generator = generator
+            self.desired_size = desired_size
+            # Reset the stop flag when setting a new generator
+            self.is_stopped = False
+
+    @QtCore.Slot()
     def run(self):
+        """Runs the generator, emitting signals for each item, errors, and completion.
+        """
         self.started.emit()
-        is_loaded_any = False
+        count = 0
         try:
             for item in self.generator:
                 # Emit each generated item
                 self.result.emit(item)
-                is_loaded_any = True
+                count += 1
 
-                # Exit the loop if is_stopped
-                if self.is_stopped:
-                    break
-
-            if not is_loaded_any:
-                self.loaded_all.emit()
+                # Lock the mutex to check the stop flag
+                with QtCore.QMutexLocker(self._mutex):
+                    if self.is_stopped:
+                        break
 
         except Exception as e:
             if self.is_pass_error:
                 # Emit error if occurred
                 self.error.emit(e)
             else:
-                raise(e)
+                raise
 
         finally:
             # Signal completion
             self.finished.emit()
-            if isinstance(self.generator, Generator) and not self.is_stopped:
+
+            # Check if no items are loaded
+            if not count:
+                self.loaded_all.emit()
+            # Check if the desired size is set, not yet reached, and loading is not stopped
+            elif self.desired_size is not None and count < self.desired_size and not self.is_stopped:
+                self.loaded_all.emit()
+            # Check if the generator is still running and loading is not stopped
+            elif isinstance(self.generator, GeneratorType) and not self.is_stopped:
                 self.loaded_all.emit()
 
     def stop(self):
-        self.is_stopped = True
+        """Stops the generator by setting the is_stopped flag.
+        """
+        # Lock the mutex to set the stop flag safely
+        with QtCore.QMutexLocker(self._mutex):
+            self.is_stopped = True
