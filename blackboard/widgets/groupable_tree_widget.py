@@ -407,6 +407,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     # Signals emitted by the GroupableTreeWidget
     ungrouped_all = QtCore.Signal()
     grouped_by_column = QtCore.Signal(str)
+    item_added = QtCore.Signal(TreeWidgetItem)
 
     # Initialization and Setup
     # ------------------------
@@ -461,7 +462,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self.batch_size = 50
         self.threshold_to_fetch_more = 50
-        self.has_more_items_to_fetch = True
+        self.has_more_items_to_fetch = False
 
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
@@ -956,7 +957,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         else:
             raise ValueError("Invalid type for item_names. Expected a list or a dictionary.")
 
-    def add_item(self, data_dict, item_id=None, parent=None):
+    def add_item(self, data_dict, item_id=None, parent=None) -> TreeWidgetItem:
         # Capture the current first top-level item, if any
         previous_first_item = self.topLevelItem(0) if self.topLevelItemCount() > 0 else None
         
@@ -973,6 +974,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # If the first item has changed (by comparing object references), emit the signal
         if current_first_item != previous_first_item:
             self.set_row_height()
+
+        self.item_added.emit(tree_item)
 
         return tree_item
 
@@ -1414,11 +1417,11 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             self._current_task = None
 
         self.generator = generator
-        self.has_more_items_to_fetch = True
 
         if not self.generator:
             return
 
+        self.has_more_items_to_fetch = True
         self.verticalScrollBar().valueChanged.connect(self._check_scroll_position)
 
         first_batch_size = self.calculate_dynamic_batch_size()

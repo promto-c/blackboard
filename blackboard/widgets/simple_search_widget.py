@@ -2,6 +2,7 @@
 # ---------------------
 from typing import Optional
 
+import fnmatch
 # Third Party Imports
 # -------------------
 from qtpy import QtCore, QtGui, QtWidgets
@@ -127,6 +128,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         # ----------
         self.tabler_icon = TablerQIcon(opacity=0.6)
         self.is_active = False
+        self.is_searching = False
 
         # Private Attributes
         # ------------------
@@ -169,6 +171,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.textChanged.connect(self._highlight_search)
         self.textChanged.connect(self.update_style)
         self.match_count_button.clicked.connect(self.clear)
+        self.tree_widget.item_added.connect(self._handle_item_added)
 
         bb.utils.KeyBinder.bind_key('Enter', self, self.set_active)
         bb.utils.KeyBinder.bind_key('Return', self, self.set_active)
@@ -183,12 +186,17 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.setFocus()
 
     def set_active(self):
-        if not self._all_match_items:
+        self.is_searching = False
+        if not self._all_match_items and not self.tree_widget.has_more_items_to_fetch:
             return
 
         self._set_property_active(True)
         self._apply_search()
         self.activated.emit()
+
+        if self.tree_widget.has_more_items_to_fetch:
+            self.is_searching = True
+            self.tree_widget.fetch_all()
 
     def set_inactive(self):
         if not self.is_active:
@@ -217,6 +225,38 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
     # Private Methods
     # ---------------
+    def _handle_item_added(self, tree_item):
+        if not self.is_searching:
+            return
+
+        keyword = self.text().strip()
+        if not keyword:
+            return
+
+        tree_item.setHidden(True)
+        quoted_terms = bb.utils.TextExtraction.extract_quoted_terms(keyword)
+        unquoted_terms = bb.utils.TextExtraction.extract_unquoted_terms(keyword)
+        if self._item_matches_filter(tree_item, quoted_terms, unquoted_terms):
+            self._all_match_items.add(tree_item)
+            tree_item.setHidden(False)
+            self._update_total_matches()
+
+    def _item_matches_filter(self, item, quoted_terms, unquoted_terms):
+        for column_index in range(self.tree_widget.columnCount()):
+            item_text = item.text(column_index)
+            for term in quoted_terms:
+                if item_text == term:
+                    return True
+            for term in unquoted_terms:
+                if bb.utils.TextExtraction.is_contains_wildcard(term):
+                    if fnmatch.fnmatch(item_text, term):
+                        return True
+                else:
+                    if term in item_text:
+                        return True
+
+        return False
+
     def _update_total_matches(self, total_matches: Optional[int] = None):
         """Update the text of the match count label with the total number of matches."""
         total_matches = total_matches or len(self._all_match_items)
@@ -262,7 +302,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
                 # Find items that contain the term, regardless of its position in the string
                 match_items.extend(self.tree_widget.findItems(term, flags, column_index))
-            
+
             # Highlight the matched items
             self.tree_widget.highlight_items(match_items, column_index)
 

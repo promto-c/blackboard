@@ -42,7 +42,7 @@ class TextExtraction:
             ['grape']
         """
         unquoted_terms = [term.strip() for term in re.split(r'"[^"]*"|\'[^\']*\'', keyword) if term.strip()]
-        return [split_term for term in unquoted_terms for split_term in re.split('[\t\n,|]+', term) if split_term.strip()]
+        return [split_term for term in unquoted_terms for split_term in TextExtraction.split_keywords(term) if split_term.strip()]
 
     @staticmethod
     def split_keywords(text: str) -> List[str]:
