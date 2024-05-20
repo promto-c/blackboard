@@ -381,6 +381,9 @@ class FilterWidget(QtWidgets.QWidget):
         self.style().unpolish(widget)
         self.style().polish(widget)
 
+    def unset_popup(self):
+        self._button.setMenu(None)
+
     def hide_popup(self):
         self._button.popup_menu.hide()
 
@@ -1110,7 +1113,8 @@ class BooleanFilterWidget(FilterWidget):
         """Set up the UI for the widget, including creating widgets and layouts.
         """
         self.setIcon(TablerQIcon.checkbox)
-        self.button.showPopup = self.toggle_active
+        self.unset_popup()
+        self.button.clicked.connect(self.toggle_active)
 
     def toggle_active(self):
         self.set_active(not self._is_active)
