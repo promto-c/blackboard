@@ -97,6 +97,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         tree_widget (widgets.GroupableTreeWidget): The tree widget where search will be performed.
         is_active (bool): Indicates whether the search filter is currently applied.
         _all_match_items (set): A set of items that match the current search criteria.
+        skip_columns (set): A set of column indices to skip during the search.
     """
     activated = QtCore.Signal()
 
@@ -129,6 +130,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.tabler_icon = TablerQIcon(opacity=0.6)
         self.is_active = False
         self.is_searching = False
+        self.skip_columns = set()
 
         # Private Attributes
         # ------------------
@@ -243,6 +245,9 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
     def _item_matches_filter(self, item, quoted_terms, unquoted_terms):
         for column_index in range(self.tree_widget.columnCount()):
+            if column_index in self.skip_columns:
+                continue
+
             item_text = item.text(column_index)
             for term in quoted_terms:
                 if item_text == term:
@@ -290,6 +295,9 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         wildcard_match_flags = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchWildcard
 
         for column_index in range(self.tree_widget.columnCount()):
+            if column_index in self.skip_columns:
+                continue
+
             match_items = list()
 
             # Handle fixed string match terms with case-insensitive matching

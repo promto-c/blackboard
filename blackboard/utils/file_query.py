@@ -53,11 +53,11 @@ class FilePatternQuery:
         # Generate all possible paths based on combinations of field values
         all_value_combinations = product(*values_combinations)
         # Using map to apply format_by_index for each combination of values
-        search_paths = list(map(self.format_for_recursive_glob, all_value_combinations))
+        search_paths = map(self.format_for_recursive_glob, all_value_combinations)
 
         for search_path in search_paths:
             # Find file paths matching the pattern
-            return glob.iglob(search_path, recursive=True)
+            yield from glob.iglob(search_path, recursive=True)
 
     def query_files(self, filters: Dict[str, List[str]] = dict()) -> Generator[Dict[str, str], None, None]:
 
