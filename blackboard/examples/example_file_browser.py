@@ -24,24 +24,26 @@ class ApplicationUtils:
         return mime_type
 
     @staticmethod
-    def parse_gio_mime_output(output: str) -> Dict[str, List[str]]:
-        """Parse the output of the 'gio mime' command to extract application information.
-        
+    def get_mime_type_associations(mime_type: str) -> dict:
+        """Retrieve MIME type associations using the 'gio mime' command.
+
         Args:
-            output (str): The output string from the 'gio mime' command.
-            
+            mime_type (str): The MIME type to search for associated applications.
+
         Returns:
-            Dict[str, List[str]]: A dictionary with default, registered, and recommended applications.
+            dict: A dictionary with keys 'default', 'registered', 'recommended' and their associated applications.
         """
+        result = subprocess.check_output(['gio', 'mime', mime_type]).decode().strip()
+
         data = {}
 
         default_app_pattern = re.compile(r'Default application for “.+?”: (.+)')
         registered_apps_pattern = re.compile(r'Registered applications:\n((?:\s+.+\.desktop\n)+)')
         recommended_apps_pattern = re.compile(r'Recommended applications:\n((?:\s+.+\.desktop\n)+)')
 
-        default_app_match = default_app_pattern.search(output)
-        registered_apps_match = registered_apps_pattern.search(output)
-        recommended_apps_match = recommended_apps_pattern.search(output)
+        default_app_match = default_app_pattern.search(result)
+        registered_apps_match = registered_apps_pattern.search(result)
+        recommended_apps_match = recommended_apps_pattern.search(result)
 
         data['default'] = default_app_match.group(1).strip() if default_app_match else None
 
@@ -76,8 +78,7 @@ class ApplicationUtils:
             except ValueError:
                 raise ValueError(f"Invalid section '{section}'. Choose from 'default', 'registered', 'recommended'.")
         
-        result = subprocess.check_output(['gio', 'mime', mime_type]).decode().strip()
-        parsed_data = ApplicationUtils.parse_gio_mime_output(result)
+        parsed_data = ApplicationUtils.get_mime_type_associations(mime_type)
 
         if parsed_data['default']:
             parsed_data['default'] = ApplicationUtils.find_desktop_file(parsed_data['default'])
