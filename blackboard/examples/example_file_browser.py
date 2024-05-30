@@ -1,25 +1,43 @@
+# Type Checking Imports
+# ---------------------
 from typing import Tuple, Optional, List, Dict, Union
 
+# Standard Library Imports
+# ------------------------
 import subprocess
 import re
 import os
 import sys
 import configparser
-
-from PyQt5 import QtCore, QtGui, QtWidgets
-
 from enum import Enum
 
+# Third Party Imports
+# -------------------
+from qtpy import QtCore, QtGui, QtWidgets
+
+
+# Class Definitions
+# -----------------
 class ApplicationSection(Enum):
     DEFAULT = 'default'
     REGISTERED = 'registered'
     RECOMMENDED = 'recommended'
 
+    def __str__(self):
+        return self.value
+
 class ApplicationUtils:
     
     @staticmethod
     def get_mime_type(file_path: str) -> str:
-        """Use the file command to get the MIME type of the file."""
+        """Gets the MIME type of the specified file.
+
+        Args:
+            file_path (str): The path to the file for which to get the MIME type.
+
+        Returns:
+            str: The MIME type of the file.
+        """
         mime_type = subprocess.check_output(['file', '--mime-type', '-b', file_path]).decode().strip()
         return mime_type
 
@@ -35,74 +53,65 @@ class ApplicationUtils:
         """
         result = subprocess.check_output(['gio', 'mime', mime_type]).decode().strip()
 
-        data = {}
+        data = {'default': None, 'registered': [], 'recommended': []}
 
-        default_app_pattern = re.compile(r'Default application for “.+?”: (.+)')
-        registered_apps_pattern = re.compile(r'Registered applications:\n((?:\s+.+\.desktop\n)+)')
-        recommended_apps_pattern = re.compile(r'Recommended applications:\n((?:\s+.+\.desktop\n)+)')
+        patterns = {
+            'default': re.compile(r'Default application for “.+?”: (.+)'),
+            'registered': re.compile(r'Registered applications:\n((?:\s+.+\.desktop\n)+)'),
+            'recommended': re.compile(r'Recommended applications:\n((?:\s+.+\.desktop\n)+)')
+        }
 
-        default_app_match = default_app_pattern.search(result)
-        registered_apps_match = registered_apps_pattern.search(result)
-        recommended_apps_match = recommended_apps_pattern.search(result)
-
-        data['default'] = default_app_match.group(1).strip() if default_app_match else None
-
-        if registered_apps_match:
-            registered_apps = registered_apps_match.group(1).strip().split('\n')
-            data['registered'] = [app.strip() for app in registered_apps]
-        else:
-            data['registered'] = []
-
-        if recommended_apps_match:
-            recommended_apps = recommended_apps_match.group(1).strip().split('\n')
-            data['recommended'] = [app.strip() for app in recommended_apps]
-        else:
-            data['recommended'] = []
+        for key, pattern in patterns.items():
+            match = pattern.search(result)
+            if match:
+                if key == 'default':
+                    data[key] = match.group(1).strip()
+                else:
+                    data[key] = [app.strip() for app in match.group(1).strip().split('\n')]
 
         return data
 
     @staticmethod
-    def get_associated_apps(mime_type: str, section: Union[ApplicationSection, str] = ApplicationSection.DEFAULT) -> List[str]:
+    def get_associated_apps(mime_type: str, section: Union[ApplicationSection, str] = ApplicationSection.DEFAULT) -> Union[str, List[str]]:
         """List applications associated with a given MIME type.
-        
+
         Args:
             mime_type (str): The MIME type to search for associated applications.
             section (Union[ApplicationSection, str]): The section of applications to return ('default', 'registered', 'recommended').
-            
+
         Returns:
-            List[str]: A list of paths to the .desktop files of the specified section.
+            Union[str, List[str]]: The path to the default application or a list of paths to the registered or recommended applications.
+
+        Raises:
+            ValueError: If the provided section is invalid.
         """
+        # Convert section to ApplicationSection if it's a string
         if isinstance(section, str):
             try:
                 section = ApplicationSection(section.lower())
             except ValueError:
                 raise ValueError(f"Invalid section '{section}'. Choose from 'default', 'registered', 'recommended'.")
-        
+
+        # Fetch the associated applications data for the given MIME type
         parsed_data = ApplicationUtils.get_mime_type_associations(mime_type)
 
-        if parsed_data['default']:
-            parsed_data['default'] = ApplicationUtils.find_desktop_file(parsed_data['default'])
-
-        parsed_data['registered'] = [
-            ApplicationUtils.find_desktop_file(app) for app in parsed_data['registered'] if ApplicationUtils.find_desktop_file(app) is not None
-        ]
-
-        parsed_data['recommended'] = [
-            ApplicationUtils.find_desktop_file(app) for app in parsed_data['recommended'] if ApplicationUtils.find_desktop_file(app) is not None
-        ]
-
-        if section.value not in parsed_data:
+        # Validate and return the requested section
+        if section not in ApplicationSection:
             raise ValueError(f"Invalid section '{section.value}'. Choose from 'default', 'registered', 'recommended'.")
 
-        return parsed_data[section.value]
+        # Return the appropriate data based on the section
+        if section == ApplicationSection.DEFAULT:
+            return ApplicationUtils.find_desktop_file(parsed_data[section.value])
+        else:
+            return ApplicationUtils.find_desktop_files(parsed_data[section.value])
 
     @staticmethod
     def parse_desktop_file(desktop_file: str) -> Tuple[Optional[str], Optional[str]]:
         """Parse the .desktop file to extract the application name and icon path.
-        
+
         Args:
             desktop_file (str): Path to the .desktop file.
-            
+
         Returns:
             Tuple[Optional[str], Optional[str]]: The application name and icon path, or None if not found.
         """
@@ -116,17 +125,44 @@ class ApplicationUtils:
 
     @staticmethod
     def find_desktop_file(app_name: str) -> Optional[str]:
-        """Find the full path of the .desktop file for the specified application."""
+        """Find the full path of the .desktop file for the specified application.
+
+        Args:
+            app_name (str): The name of the application for which to find the .desktop file.
+
+        Returns:
+            Optional[str]: The full path to the .desktop file, or None if not found.
+        """
         search_paths = ['/usr/share/applications/', os.path.expanduser('~/.local/share/applications/')]
         for path in search_paths:
             desktop_file = os.path.join(path, app_name)
             if os.path.isfile(desktop_file):
                 return desktop_file
-        return None
+        return
+
+    @staticmethod
+    def find_desktop_files(app_list: List[str]) -> List[Optional[str]]:
+        """Find the full paths of .desktop files for a list of specified applications.
+
+        Args:
+            app_list (List[str]): A list of application names for which to find .desktop files.
+
+        Returns:
+            List[Optional[str]]: A list of full paths to the .desktop files. The list will be empty if no .desktop files are found.
+        """
+        return [ApplicationUtils.find_desktop_file(app) for app in app_list if ApplicationUtils.find_desktop_file(app)]
 
     @staticmethod
     def open_file_with_application(file_path: str, desktop_file: str):
-        """Command to open the file with the specified application."""
+        """Command to open the file with the specified application.
+
+        Args:
+            file_path (str): The path to the file to be opened.
+            desktop_file (str): The path to the .desktop file of the application to use.
+
+        Raises:
+            ValueError: If no .desktop file is found for the selected application.
+        """
         if desktop_file:
             subprocess.run(['gio', 'launch', desktop_file, file_path])
         else:
