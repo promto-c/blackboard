@@ -27,7 +27,12 @@ class ApplicationSection(Enum):
         return self.value
 
 class ApplicationUtils:
-    
+    """Utility class for handling application-related operations.
+
+    This class provides static methods to interact with MIME types, find associated
+    applications, and manage .desktop files for applications.
+    """
+
     @staticmethod
     def get_mime_type(file_path: str) -> str:
         """Gets the MIME type of the specified file.
@@ -215,43 +220,46 @@ class CustomTreeView(QtWidgets.QTreeView):
         self.doubleClicked.connect(self.open_file_on_double_click)
 
     def open_menu(self, position):
+
         indexes = self.selectedIndexes()
-        if len(indexes) > 0:
-            index = indexes[0]
-            menu = QtWidgets.QMenu()
+        if not indexes:
+            return
+
+        index = indexes[0]
+        menu = QtWidgets.QMenu()
+        
+        if QtCore.QFileInfo(self.model().filePath(index)).isFile():
+            open_action = QtWidgets.QAction('Open', self)
+            open_with_action = QtWidgets.QAction('Open with...', self)
+            open_containing_folder_action = QtWidgets.QAction('Open Containing Folder', self)
+            open_in_terminal_action = QtWidgets.QAction('Open in Terminal', self)
+            copy_path_action = QtWidgets.QAction('Copy Path', self)
+            copy_relative_path_action = QtWidgets.QAction('Copy Relative Path', self)
+
+            open_action.triggered.connect(lambda: self.open_file(index))
+            open_with_action.triggered.connect(lambda: self.open_file_with(indexes[0]))
+            open_containing_folder_action.triggered.connect(lambda: self.open_containing_folder(index))
+            open_in_terminal_action.triggered.connect(lambda: self.open_in_terminal(index))
+            copy_path_action.triggered.connect(lambda: self.copy_file_path(index))
+            copy_relative_path_action.triggered.connect(lambda: self.copy_relative_path(index))
+
+            menu.addAction(open_action)
+            menu.addAction(open_with_action)
+            menu.addAction(open_containing_folder_action)
+            menu.addAction(open_in_terminal_action)
+            menu.addAction(copy_path_action)
+            menu.addAction(copy_relative_path_action)
+        else:
+            new_file_action = QtWidgets.QAction('New File', self)
+            new_folder_action = QtWidgets.QAction('New Folder', self)
             
-            if QtCore.QFileInfo(self.model().filePath(index)).isFile():
-                open_action = QtWidgets.QAction('Open', self)
-                open_with_action = QtWidgets.QAction('Open with...', self)
-                open_containing_folder_action = QtWidgets.QAction('Open Containing Folder', self)
-                open_in_terminal_action = QtWidgets.QAction('Open in Terminal', self)
-                copy_file_path_action = QtWidgets.QAction('Copy Path', self)
-                copy_relative_path_action = QtWidgets.QAction('Copy Relative Path', self)
+            new_file_action.triggered.connect(lambda: self.new_file(index))
+            new_folder_action.triggered.connect(lambda: self.new_folder(index))
 
-                open_action.triggered.connect(lambda: self.open_file(index))
-                open_with_action.triggered.connect(lambda: self.open_file_with(indexes[0]))
-                open_containing_folder_action.triggered.connect(lambda: self.open_containing_folder(index))
-                open_in_terminal_action.triggered.connect(lambda: self.open_in_terminal(index))
-                copy_file_path_action.triggered.connect(lambda: self.copy_file_path(index))
-                copy_relative_path_action.triggered.connect(lambda: self.copy_relative_path(index))
+            menu.addAction(new_file_action)
+            menu.addAction(new_folder_action)
 
-                menu.addAction(open_action)
-                menu.addAction(open_with_action)
-                menu.addAction(open_containing_folder_action)
-                menu.addAction(open_in_terminal_action)
-                menu.addAction(copy_file_path_action)
-                menu.addAction(copy_relative_path_action)
-            else:
-                new_file_action = QtWidgets.QAction('New File', self)
-                new_folder_action = QtWidgets.QAction('New Folder', self)
-                
-                new_file_action.triggered.connect(lambda: self.new_file(index))
-                new_folder_action.triggered.connect(lambda: self.new_folder(index))
-
-                menu.addAction(new_file_action)
-                menu.addAction(new_folder_action)
-
-            menu.exec_(self.viewport().mapToGlobal(position))
+        menu.exec_(self.viewport().mapToGlobal(position))
 
     def open_file(self, index):
         file_path = self.model().filePath(index)
