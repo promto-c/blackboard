@@ -781,7 +781,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for item in all_items:
             item.setHidden(True)
 
-    def highlight_items(self, tree_items: List['TreeWidgetItem'], focused_column_index = None):
+    def highlight_items(self, tree_items: Iterable['TreeWidgetItem'], focused_column_index = None):
         """Highlight the specified `tree_items` in the tree widget.
         """
         # Loop through the specified tree items
