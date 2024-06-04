@@ -20,15 +20,15 @@ class MatchCountButton(QtWidgets.QPushButton):
     """A custom QPushButton that changes its appearance on mouse hover and displays match counts.
 
     This button is designed to display the number of matches in a search operation.
-    It changes its appearance when the mouse hovers over it, providing a visual cue
-    for user interaction.
+    When the mouse hovers over it, the button provides a visual indication that clicking it
+    will clear the search results.
 
     Attributes:
         _current_label (str): Stores the current label text of the button.
     """
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent: QtWidgets.QWidget = None):
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
         """Initializes the MatchCountButton with a parent widget, sets properties, and tooltip.
 
         Args:
@@ -47,6 +47,7 @@ class MatchCountButton(QtWidgets.QPushButton):
 
     def __init_ui(self):
         """Sets up the initial properties of the button."""
+        # Set up properties
         self.setProperty('widget-style', 'action-clear')
         self.setFixedHeight(16)
         # Setting a default tooltip
@@ -66,7 +67,7 @@ class MatchCountButton(QtWidgets.QPushButton):
     # Overridden Methods
     # ------------------
     def enterEvent(self, event: QtCore.QEvent):
-        """Handles mouse entry events on the button, changing the icon and cursor.
+        """Handles mouse entry events, changing the icon and cursor.
 
         Args:
             event (QtCore.QEvent): The mouse enter event.
@@ -78,7 +79,7 @@ class MatchCountButton(QtWidgets.QPushButton):
         self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
 
     def leaveEvent(self, event: QtCore.QEvent):
-        """Handles mouse leave events on the button, resetting the icon and cursor.
+        """Handles mouse leave events, resetting the icon and cursor.
 
         Args:
             event (QtCore.QEvent): The mouse leave event.
@@ -95,7 +96,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
     Attributes:
         tree_widget (widgets.GroupableTreeWidget): The tree widget where search will be performed.
-        is_active (bool): Indicates whether the search filter is currently applied.
+        _is_active (bool): Indicates whether the search filter is currently applied.
         _all_match_items (set): A set of items that match the current search criteria.
         skip_columns (set): A set of column indices to skip during the search.
     """
@@ -128,13 +129,13 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         # Attributes
         # ----------
         self.tabler_icon = TablerQIcon(opacity=0.6)
-        self.is_active = False
-        self.is_searching = False
         self.skip_columns = set()
 
         # Private Attributes
         # ------------------
         self._all_match_items = set()
+        self._is_active = False
+        self._is_searching = False
 
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
@@ -144,9 +145,10 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.setPlaceholderText('Type to Search')
         self.setFixedHeight(24)
 
-        # Add search icon
-        self.addAction(self.tabler_icon.search, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
+        # Create the search action
+        self.search_action = self.addAction(self.tabler_icon.search, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
 
+        # Create the clear action
         self.__init_match_count_action()
         self.update_style()
 
@@ -173,7 +175,8 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.textChanged.connect(self._highlight_search)
         self.textChanged.connect(self.update_style)
         self.match_count_button.clicked.connect(self.clear)
-        self.tree_widget.item_added.connect(self._handle_item_added)
+        self.tree_widget.item_added.connect(self._filter_new_item)
+        self.search_action.triggered.connect(self.set_active)
 
         bb.utils.KeyBinder.bind_key('Enter', self, self.set_active)
         bb.utils.KeyBinder.bind_key('Return', self, self.set_active)
@@ -182,13 +185,14 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     # Public Methods
     # --------------
     def set_text_as_selection(self):
+        """Sets the text of the search edit to the selected items' text from the tree widget."""
         keywords = {f'"{index.data()}"' for index in self.tree_widget.selectedIndexes()}
-
         self.setText('|'.join(keywords))
         self.setFocus()
 
     def set_active(self):
-        self.is_searching = False
+        """Activates the search functionality."""
+        self._is_searching = False
         if not self._all_match_items and not self.tree_widget.has_more_items_to_fetch:
             return
 
@@ -197,20 +201,22 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.activated.emit()
 
         if self.tree_widget.has_more_items_to_fetch:
-            self.is_searching = True
+            self._is_searching = True
             self.tree_widget.fetch_all()
 
     def set_inactive(self):
-        if not self.is_active:
+        """Deactivates the search functionality."""
+        if not self._is_active:
             return
 
         self._set_property_active(False)
         self._reset_search()
 
     def update(self):
+        """Updates the search and highlights matching items."""
         self._highlight_search()
 
-        if self.is_active:
+        if self._is_active:
             self._apply_search()
 
     def update_style(self):
@@ -225,10 +231,19 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     def matched_items(self):
         return self._all_match_items
 
+    @property
+    def is_active(self):
+        return self._is_active
+
     # Private Methods
     # ---------------
-    def _handle_item_added(self, tree_item):
-        if not self.is_searching:
+    def _filter_new_item(self, tree_item: QtWidgets.QTreeWidgetItem):
+        """Filters a new item to see if it matches the search filter.
+
+        Args:
+            tree_item (QtWidgets.QTreeWidgetItem): The item that was added to the tree widget.
+        """
+        if not self._is_searching:
             return
 
         keyword = self.text().strip()
@@ -236,46 +251,62 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
             return
 
         tree_item.setHidden(True)
-        quoted_terms = bb.utils.TextExtraction.extract_quoted_terms(keyword)
-        unquoted_terms = bb.utils.TextExtraction.extract_unquoted_terms(keyword)
-        if self._item_matches_filter(tree_item, quoted_terms, unquoted_terms):
+
+        if self._item_matches_filter(tree_item):
             self._all_match_items.add(tree_item)
             tree_item.setHidden(False)
             self._update_total_matches()
 
-    def _item_matches_filter(self, item, quoted_terms, unquoted_terms):
+    def _item_matches_filter(self, item: QtWidgets.QTreeWidgetItem) -> bool:
+        """Checks if an item matches the search filter.
+
+        Args:
+            item (QtWidgets.QTreeWidgetItem): The item to check.
+
+        Returns:
+            bool: True if the item matches the filter, False otherwise.
+        """
         for column_index in range(self.tree_widget.columnCount()):
             if column_index in self.skip_columns:
                 continue
 
             item_text = item.text(column_index)
-            for term in quoted_terms:
-                if item_text == term:
-                    return True
-            for term in unquoted_terms:
-                if bb.utils.TextExtraction.is_contains_wildcard(term):
-                    if fnmatch.fnmatch(item_text, term):
-                        return True
-                else:
-                    if term in item_text:
-                        return True
+
+            # Check quoted terms for exact match
+            if any(item_text == term for term in self.quoted_terms):
+                return True
+
+            # Check unquoted terms with wildcard support
+            if any(self._matches_unquoted_term(item_text, term) for term in self.unquoted_terms):
+                return True
 
         return False
+
+    def _matches_unquoted_term(self, item_text, term):
+        """Helper method to check if item_text matches the unquoted term."""
+        if bb.utils.TextExtraction.is_contains_wildcard(term):
+            return fnmatch.fnmatch(item_text, term)
+        else:
+            return term in item_text
 
     def _update_total_matches(self, total_matches: Optional[int] = None):
         """Update the text of the match count label with the total number of matches."""
         total_matches = total_matches or len(self._all_match_items)
         self.match_count_button.set_match_count(total_matches)
 
+    def _reset_highlight(self):
+        """Resets the highlight and clears matched items."""
+        # Reset the highlight for all items
+        self.tree_widget.clear_highlight()
+        # Clear any previously matched items
+        self._all_match_items.clear()
+        self._update_total_matches()
+
     def _highlight_search(self):
         """Highlight the items in the tree widget that match the search criteria.
         """
         # Reset the highlight for all items
-        self.tree_widget.clear_highlight()
-
-        # Clear any previously matched items
-        self._all_match_items.clear()
-        self._update_total_matches()
+        self._reset_highlight()
 
         # Get the selected column, condition, and keyword
         keyword = self.text().strip()
@@ -285,10 +316,9 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
             return
 
         # Match terms enclosed in either double or single quotes for fixed string match
-        quoted_terms = bb.utils.TextExtraction.extract_quoted_terms(keyword)
-
+        self.quoted_terms = bb.utils.TextExtraction.extract_quoted_terms(keyword)
         # Split the string at parts enclosed in either double or single quotes for contains match
-        unquoted_terms = bb.utils.TextExtraction.extract_unquoted_terms(keyword)
+        self.unquoted_terms = bb.utils.TextExtraction.extract_unquoted_terms(keyword)
 
         fixed_string_match_flags = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchFixedString
         contains_match_flags = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchContains
@@ -298,18 +328,18 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
             if column_index in self.skip_columns:
                 continue
 
-            match_items = list()
+            match_items = set()
 
             # Handle fixed string match terms with case-insensitive matching
-            for term in quoted_terms:
-                match_items.extend(self.tree_widget.findItems(term, fixed_string_match_flags, column_index))
+            for term in self.quoted_terms:
+                match_items.update(self.tree_widget.findItems(term, fixed_string_match_flags, column_index))
 
             # Handle contains match terms
-            for term in unquoted_terms:
+            for term in self.unquoted_terms:
                 flags = wildcard_match_flags if bb.utils.TextExtraction.is_contains_wildcard(term) else contains_match_flags
 
                 # Find items that contain the term, regardless of its position in the string
-                match_items.extend(self.tree_widget.findItems(term, flags, column_index))
+                match_items.update(self.tree_widget.findItems(term, flags, column_index))
 
             # Highlight the matched items
             self.tree_widget.highlight_items(match_items, column_index)
@@ -322,8 +352,8 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     def _set_property_active(self, state: bool = True):
         """Set the active state of the button.
         """
-        self.is_active = state
-        self.setProperty('active', self.is_active)
+        self._is_active = state
+        self.setProperty('active', self._is_active)
         self.update_style()
 
     def _apply_search(self):
@@ -337,6 +367,9 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.tree_widget.show_items(self._all_match_items)
 
     def _reset_search(self):
+        """Reset the search and show all items.
+        """
+        self._is_searching = False
         # Show all items
         self.tree_widget.show_all_items()
 

@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Callable, Optional
+from typing import Optional
 
 # Third Party Imports
 # -------------------
@@ -30,7 +30,9 @@ class ScalableView(QtWidgets.QGraphicsView):
     # Initialization and Setup
     # ------------------------
     def __init__(self, widget: QtWidgets.QWidget, parent: Optional[QtWidgets.QWidget] = None):
-        # Call the parent class constructor
+        """Initialize the ScalableView widget.
+        """
+        # Initialize the super class
         super().__init__(parent)
 
         # Store the arguments
@@ -42,7 +44,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         self.__init_signal_connections()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize attributes of the widget.
         """
         # Set the minimum and maximum scale values
         self.min_zoom_level = self.DEFAULT_MIN_ZOOM_LEVEL
@@ -52,27 +54,26 @@ class ScalableView(QtWidgets.QGraphicsView):
         self.current_zoom_level = self.DEFAULT_ZOOM_LEVEL
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets and layouts.
+        """Initialize the UI of the widget.
         """
         # Set the scene
         self.setScene(QtWidgets.QGraphicsScene(self))
         # Set the widget as the central widget of the scene
         self.graphic_proxy_widget = self.scene().addWidget(self.widget)
+
         # Set the alignment of the widget to the top left corner
         self.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft)
-
         # Set the viewport update mode to full viewport update to ensure that the entire view is updated when scaling
         self.setViewportUpdateMode(QtWidgets.QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         # Set the rendering hints to smooth pixels to improve the quality of the rendering
         self.setRenderHints(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
 
-        # Set the horizontal scroll bar policy to always off
+        # Set the scroll bars to be always off
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        # Set the vertical scroll bar policy to always off
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal connections.
         """
         # Connect the wheel event signal to the scaling slot
         self.viewport().installEventFilter(self)
@@ -97,7 +98,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         self.current_zoom_level = zoom_level
 
         # Update the size of the widget to fit the view window
-        self.resizeEvent(None)
+        self.resizeEvent()
 
     def reset_scale(self) -> None:
         """Reset scaling of the view to default zoom level (1.0 or no zoom).
@@ -108,20 +109,9 @@ class ScalableView(QtWidgets.QGraphicsView):
         self.current_zoom_level = 1.0
 
         # Update the size of the widget to fit the view window
-        self.resizeEvent(None)
+        self.resizeEvent()
 
-    def bind_key(self, key_sequence: str, function: Callable):
-        """Binds a given key sequence to a function.
-        Args:
-            key_sequence (str): The key sequence as a string, e.g., "Ctrl+C".
-            function (Callable): The function to be called when the key sequence is activated.
-        """
-        # Create a shortcut with the specified key sequence
-        shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(key_sequence), self)
-        # Connect the activated signal of the shortcut to the given function
-        shortcut.activated.connect(function)
-
-    def save_state(self, settings: QtCore.QSettings, group_name='scalable_view'):
+    def save_state(self, settings: QtCore.QSettings, group_name: str = 'scalable_view'):
         settings.beginGroup(group_name)
         settings.setValue('zoom_level', self.current_zoom_level)
         settings.endGroup()
@@ -149,7 +139,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Default case: Pass the event on to the parent class
         return super().eventFilter(obj, event)
 
-    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+    def resizeEvent(self, event: Optional[QtGui.QResizeEvent] = None) -> None:
         """Handle resize events to resize the widget to the full size of the view, reserved for scaling.
         """
         # Get the size of the view
@@ -218,7 +208,8 @@ def main():
     from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
 
     # Create the tree widget with example data
-    tree_widget = widgets.GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST)
+    tree_widget = widgets.GroupableTreeWidget()
+    tree_widget.setHeaderLabels(COLUMN_NAME_LIST)
     tree_widget.add_items(ID_TO_DATA_DICT)
 
     # Create the scalable view and set the tree widget as its central widget

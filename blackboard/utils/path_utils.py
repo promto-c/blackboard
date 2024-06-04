@@ -1,4 +1,4 @@
-from typing import Dict, List, Generator
+from typing import Dict, List, Generator, Optional
 import glob, re, os
 from pathlib import Path
 from numbers import Number
@@ -8,44 +8,61 @@ PACKAGE_ROOT = Path(__file__).parent.parent
 class PathUtil:
 
     @staticmethod
-    def traverse_directories_at_level(root: str, level: int, is_skip_hidden: bool = True,
-                                      is_return_relative: bool = False, excluded_folders: List[str] = list(),
-                                     ) -> Generator[str, None, None]:
-        """Traverse directory paths at a specific level relative to a root directory, 
-        optionally returning relative paths.
+    def traverse_directories(root: str, target_depth: Optional[int] = None, is_skip_hidden: bool = True,
+                             is_return_relative: bool = False, excluded_folders: List[str] = list(),
+                            ) -> Generator[str, None, None]:
+        """Traverse directory paths from a root directory, optionally returning relative paths.
+
+        If a target_depth is specified, only directories at that depth are yielded.
 
         Args:
-            root: A string specifying the root directory path.
-            level: An integer specifying the target depth to yield directories from.
-            is_skip_hidden: A boolean indicating whether to skip hidden directories (those starting with '.').
-            is_return_relative: A boolean indicating whether to return relative paths instead of absolute paths.
-            excluded_folders: A list of folder names to be excluded from the traversal.
+            root (str): A string specifying the root directory path.
+            target_depth (Optional[int]): An optional integer specifying the target depth to yield directories from.
+                   If not specified, all directories are yielded.
+            is_skip_hidden (bool): A boolean indicating whether to skip hidden directories (those starting with '.').
+            is_return_relative (bool): A boolean indicating whether to return relative paths instead of absolute paths.
+            excluded_folders (List[str]): A list of folder names to be excluded from the traversal.
 
         Yields:
-            Directory paths from the root that are exactly at the specified level, either absolute or relative.
+            Generator[str, None, None]: Directory paths from the root, either absolute or relative.
+            If target_depth is specified, only directories at that depth are yielded.
         """
-        root += os.sep if not root.endswith(os.sep) else None
+        # Normalize the root directory path to ensure a consistent format
+        root = os.path.normpath(root)
 
-        def _traverse(directory, current_level):
-            # Early exit if current level exceeds or meets target level
-            if current_level >= level:
+        def _traverse(directory: str, current_depth: int = 0) -> Generator[str, None, None]:
+            """Helper function to recursively traverse directories.
+
+            Args:
+                directory (str): The current directory path.
+                current_depth (int): The current depth level of traversal.
+
+            Yields:
+                Generator[str, None, None]: Directory paths based on the specified criteria.
+            """
+            # Determine the path to yield (relative or absolute)
+            path = directory[len(root) + 1:] if is_return_relative else directory
+
+            # Check if the current depth matches the target depth
+            if target_depth is None and current_depth:
+                yield path
+            elif current_depth == target_depth:
+                yield path
                 return
 
+            # Check if the directory can be accessed, skip if not 
             if not os.access(directory, os.R_OK):
                 return
 
+            # Continue traversal for subdirectories
             for entry in os.scandir(directory):
                 # Skip non-directories, hidden directories, and excluded folders
                 if not entry.is_dir() or (is_skip_hidden and entry.name.startswith('.')) or entry.name in excluded_folders:
                     continue
 
-                path = entry.path[len(root):] if is_return_relative else entry.path
-                if current_level == level - 1:
-                    yield path
-                else:
-                    yield from _traverse(entry.path, current_level + 1)
+                yield from _traverse(entry.path, current_depth + 1)
 
-        return _traverse(root, 0)
+        yield from _traverse(root)
 
 class PathSequence:
     def __init__(self, path: str):
@@ -125,9 +142,10 @@ class PathPattern:
             'path/to/(?P<var1>.*?)/and/(?P<var2>.*?)/'
         """
         # Escape all regex characters except for the curly braces which are used for variables
-        # string_pattern = re.escape(string_pattern).replace("\\{", "{").replace("\\}", "}")
+        string_pattern = re.escape(string_pattern).replace(r'\{', '{').replace(r'\}', '}')
         # # Use a non-greedy match up to the next literal slash or end of string, which allows variable capture over multiple segments
         regex_pattern = re.sub(r'\{(\w+)\}', r'(?P<\1>.*?)', string_pattern)
+
         return regex_pattern
 
     @classmethod

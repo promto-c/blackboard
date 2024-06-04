@@ -51,18 +51,16 @@ class ThumbnailUtils:
         if np.all(image_min == image_max):
             if image_data.dtype == np.uint16:
                 # Scale the image to [0, 255]
-                normalized_image = image_data / 255.0
+                image_data /= 255.0
             else:
                 # Clip float image to [0, 1] range, then scale to [0, 255]
-                normalized_image = np.clip(image_data, 0.0, 1.0) * 255.0
+                image_data = np.clip(image_data, 0.0, 1.0) * 255.0
         else:
-            # Get the minimum and maximum values of the whole image data
-            image_min, image_max = image_data.min(), image_data.max()
             # Normalize the image to the range [0, 255]
-            normalized_image = (image_data - image_min) * 255.0 / (image_max - image_min)
+            image_data = cv2.normalize(image_data, None, 0, 255, cv2.NORM_MINMAX)
 
         # Convert the normalized image to uint8 format
-        return normalized_image.astype(np.uint8)
+        return image_data.astype(np.uint8)
 
     @staticmethod
     def create_qpixmap_from_image_data(image_data: 'np.ndarray', desired_height: int = 64) -> QtGui.QPixmap:
@@ -184,6 +182,6 @@ class ThumbnailLoader(QtCore.QObject):
 
 if __name__ == "__main__":
     # ThumbnailUtils.normalize_to_uint8(np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32))
-    im = ThumbnailUtils.normalize_to_uint8(np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32))
+    im = ThumbnailUtils.normalize_to_uint8(np.array([[0, 32767, 65535], [16383, 32767, 49151], [8191, 24575, 40959]], dtype=np.uint16))
     print(im.dtype)
     print(im)

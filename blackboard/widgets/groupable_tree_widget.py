@@ -256,11 +256,11 @@ class ColumnMangementWidget(QtWidgets.QTreeWidget):
     def update_columns(self):
         self.clear()
 
-        if not self.tree_widget.column_name_list:
+        if not self.tree_widget.column_names:
             return
 
         logical_indexes = [self.tree_widget.get_column_logical_index(i) for i in range(self.tree_widget.columnCount())]
-        header_names = [self.tree_widget.column_name_list[i] for i in logical_indexes]
+        header_names = [self.tree_widget.column_names[i] for i in logical_indexes]
 
         self.addItems(header_names)
 
@@ -393,7 +393,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     """A QTreeWidget subclass that displays data in a tree structure with the ability to group data by a specific column.
 
     Attributes:
-        column_name_list (List[str]): The list of column names to be displayed in the tree widget.
+        column_names (List[str]): The list of column names to be displayed in the tree widget.
         groups (Dict[str, TreeWidgetItem]): A dictionary mapping group names to their tree widget items.
         _is_middle_button_pressed (bool): Indicates if the middle mouse button is pressed.
             It's used for scrolling functionality when the middle button is pressed and the mouse is moved.
@@ -428,7 +428,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Store the current grouped column name
         self.grouped_column_name = str()
 
-        self.column_name_list = list()
+        self.column_names = list()
 
         self._drag_data_column = self.DEFAULT_DRAG_DATA_COLUMN
 
@@ -727,11 +727,11 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     # --------------
     def create_thumbnail_column(self, column_name: str):
 
-        self.column_name_list.append('thumbnail')
-        self.setHeaderLabels(self.column_name_list)
+        self.column_names.append('thumbnail')
+        self.setHeaderLabels(self.column_names)
 
-        source_column = self.column_name_list.index(column_name)
-        thumbnail_column = self.column_name_list.index('thumbnail')
+        source_column = self.column_names.index(column_name)
+        thumbnail_column = self.column_names.index('thumbnail')
 
         self.thumbnail_delegate.set_thumbnail_column(thumbnail_column)
         self.thumbnail_delegate.set_source_column(source_column)
@@ -781,7 +781,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for item in all_items:
             item.setHidden(True)
 
-    def highlight_items(self, tree_items: List['TreeWidgetItem'], focused_column_index = None):
+    def highlight_items(self, tree_items: Iterable['TreeWidgetItem'], focused_column_index = None):
         """Highlight the specified `tree_items` in the tree widget.
         """
         # Loop through the specified tree items
@@ -924,13 +924,13 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         Raises:
             ValueError: If the column name is not found.
         """
-        # Check if the column name is not in the column_name_list
-        if column_name not in self.column_name_list:
+        # Check if the column name is not in the column_names
+        if column_name not in self.column_names:
             # Raise an exception with a descriptive error message
             raise ValueError(f"Invalid column name: {column_name}")
 
         # Return the index of the column if found
-        return self.column_name_list.index(column_name)
+        return self.column_names.index(column_name)
 
     def get_column_visual_index(self, column: Union[str, int]) -> int:
         """
@@ -1098,7 +1098,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             return
 
         # Reset the header label
-        self.setHeaderLabel(self.column_name_list[0])
+        self.setHeaderLabel(self.column_names[0])
         
         # Show hidden column
         column_index = self.get_column_index(self.grouped_column_name)
@@ -1175,11 +1175,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             for column in column_set:
                 row_dict.setdefault(column, str())
 
-        row_texts = list()
-        for row_dict in cell_dict.values():
-            row_text = '\t'.join(row_dict[column] for column in sorted(column_set))
-            row_texts.append(row_text)
-
+        row_texts = ['\t'.join(row_dict[column] for column in sorted(column_set)) for row_dict in cell_dict.values()]
         full_text = '\n'.join(row_texts)
 
         clipboard = QtWidgets.QApplication.clipboard()
@@ -1264,11 +1260,11 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             labels (Iterable[str]): The iterable of column names to be set.
         """
         # Store the column names for later use
-        self.column_name_list = labels
+        self.column_names = labels
 
         # Set the number of columns and the column labels
-        self.setColumnCount(len(self.column_name_list))
-        super().setHeaderLabels(self.column_name_list)
+        self.setColumnCount(len(self.column_names))
+        super().setHeaderLabels(self.column_names)
 
     def hideColumn(self, column: Union[int, str]):
         column_index = self.get_column_index(column) if isinstance(column, str) else column
@@ -1563,7 +1559,7 @@ def main():
     tree_widget.create_thumbnail_column('file_path')
     tree_widget.set_generator(generator)
 
-    # tree_widget = GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST)
+    # tree_widget = GroupableTreeWidget(column_names=COLUMN_NAME_LIST)
     # tree_widget.add_items(ID_TO_DATA_DICT)
 
     # Show the window and run the application
