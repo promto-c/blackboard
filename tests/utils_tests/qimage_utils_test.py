@@ -1,7 +1,6 @@
 import pytest
 import numpy as np
 from blackboard.utils.qimage_utils import ThumbnailUtils
-from PyQt5 import QtGui
 
 
 @pytest.mark.parametrize("image_data, expected_output", [
