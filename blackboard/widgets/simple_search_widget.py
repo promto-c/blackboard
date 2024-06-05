@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Optional, List
+from typing import Optional
 
 import fnmatch
 # Third Party Imports
@@ -145,9 +145,10 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.setPlaceholderText('Type to Search')
         self.setFixedHeight(24)
 
-        # Add search icon
-        self.addAction(self.tabler_icon.search, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
+        # Create the search action
+        self.search_action = self.addAction(self.tabler_icon.search, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
 
+        # Create the clear action
         self.__init_match_count_action()
         self.update_style()
 
@@ -175,6 +176,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.textChanged.connect(self.update_style)
         self.match_count_button.clicked.connect(self.clear)
         self.tree_widget.item_added.connect(self._filter_new_item)
+        self.search_action.triggered.connect(self.set_active)
 
         bb.utils.KeyBinder.bind_key('Enter', self, self.set_active)
         bb.utils.KeyBinder.bind_key('Return', self, self.set_active)
@@ -365,6 +367,9 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.tree_widget.show_items(self._all_match_items)
 
     def _reset_search(self):
+        """Reset the search and show all items.
+        """
+        self._is_searching = False
         # Show all items
         self.tree_widget.show_all_items()
 
