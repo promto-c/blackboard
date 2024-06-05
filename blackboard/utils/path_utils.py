@@ -1,4 +1,4 @@
-from typing import Dict, List, Generator
+from typing import Dict, List, Generator, Optional
 import glob, re, os
 from pathlib import Path
 from numbers import Number
@@ -8,44 +8,53 @@ PACKAGE_ROOT = Path(__file__).parent.parent
 class PathUtil:
 
     @staticmethod
-    def traverse_directories_at_level(root: str, level: int, is_skip_hidden: bool = True,
-                                      is_return_relative: bool = False, excluded_folders: List[str] = list(),
-                                     ) -> Generator[str, None, None]:
-        """Traverse directory paths at a specific level relative to a root directory, 
-        optionally returning relative paths.
+    def traverse_directories(root: str, level: Optional[int] = None, is_skip_hidden: bool = True,
+                             is_return_relative: bool = False, excluded_folders: List[str] = list(),
+                            ) -> Generator[str, None, None]:
+        """Traverse directory paths from a root directory, optionally returning relative paths.
+        
+        If a level is specified, only directories at that level are yielded.
 
         Args:
             root: A string specifying the root directory path.
-            level: An integer specifying the target depth to yield directories from.
+            level: An optional integer specifying the target depth to yield directories from.
+                   If not specified, all directories are yielded.
             is_skip_hidden: A boolean indicating whether to skip hidden directories (those starting with '.').
             is_return_relative: A boolean indicating whether to return relative paths instead of absolute paths.
             excluded_folders: A list of folder names to be excluded from the traversal.
 
         Yields:
-            Directory paths from the root that are exactly at the specified level, either absolute or relative.
+            Directory paths from the root, either absolute or relative.
+            If level is specified, only directories at that level are yielded.
         """
-        root += os.sep if not root.endswith(os.sep) else None
+        # Normalize the root directory path to ensure a consistent format
+        root = os.path.normpath(root)
 
-        def _traverse(directory, current_level):
-            # Early exit if current level exceeds or meets target level
-            if current_level >= level:
-                return
-
+        def _traverse(directory: str, current_level: int) -> Generator[str, None, None]:
+            # TODO: Skip yield root when not set level
             if not os.access(directory, os.R_OK):
                 return
 
+            # Determine the path to yield (relative or absolute)
+            path = directory[len(root) + 1:] if is_return_relative else directory
+
+            # Yield the directory path if the level condition is met
+            if level is not None:
+                if current_level >= level:
+                    yield path
+                    return
+            else:
+                yield path
+
+            # Continue traversal for subdirectories
             for entry in os.scandir(directory):
                 # Skip non-directories, hidden directories, and excluded folders
                 if not entry.is_dir() or (is_skip_hidden and entry.name.startswith('.')) or entry.name in excluded_folders:
                     continue
 
-                path = entry.path[len(root):] if is_return_relative else entry.path
-                if current_level == level - 1:
-                    yield path
-                else:
-                    yield from _traverse(entry.path, current_level + 1)
+                yield from _traverse(entry.path, current_level + 1)
 
-        return _traverse(root, 0)
+        yield from _traverse(root, 0)
 
 class PathSequence:
     def __init__(self, path: str):

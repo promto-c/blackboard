@@ -218,7 +218,8 @@ def main():
     from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
 
     # Create the tree widget with example data
-    tree_widget = widgets.GroupableTreeWidget(column_name_list=COLUMN_NAME_LIST)
+    tree_widget = widgets.GroupableTreeWidget()
+    tree_widget.setHeaderLabels(COLUMN_NAME_LIST)
     tree_widget.add_items(ID_TO_DATA_DICT)
 
     # Create the scalable view and set the tree widget as its central widget

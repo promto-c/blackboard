@@ -27,8 +27,8 @@ from blackboard.utils.qimage_utils import ThumbnailUtils
 
     (np.array([[0, 32767, 65535], [16383, 32767, 49151], [8191, 24575, 40959]], dtype=np.uint16),
      np.array([[  0, 127, 255],
-               [ 63, 127, 191],
-               [ 31,  95, 159]], dtype=np.uint8)),
+               [ 64, 127, 191],
+               [ 32,  96, 159]], dtype=np.uint8)),
 
     (np.array([[0.2, 0.4, 0.6], [0.2, 0.4, 0.6], [0.2, 0.4, 0.6]], dtype=np.float32),
      np.array([[  51, 102, 153],

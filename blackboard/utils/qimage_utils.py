@@ -56,18 +56,8 @@ class ThumbnailUtils:
                 # Clip float image to [0, 1] range, then scale to [0, 255]
                 image_data = np.clip(image_data, 0.0, 1.0) * 255.0
         else:
-            # Get the minimum and maximum values of the whole image data
-            image_min, image_max = image_data.min(), image_data.max()
-            # Calculate the scaling factor to normalize the image to [0, 255]
-            normalized_image_scale = 255.0 / (image_max - image_min)
-
             # Normalize the image to the range [0, 255]
-            image_data -= image_min
-            # NOTE: Attempt in-place multiplication for better performance; if it fails, fall back to standard multiplication
-            try:
-                image_data *= normalized_image_scale
-            except TypeError:
-                image_data = image_data * normalized_image_scale
+            image_data = cv2.normalize(image_data, None, 0, 255, cv2.NORM_MINMAX)
 
         # Convert the normalized image to uint8 format
         return image_data.astype(np.uint8)

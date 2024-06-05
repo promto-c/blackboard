@@ -1,5 +1,10 @@
+# Third Party Imports
+# -------------------
 from qtpy import QtGui
 
+
+# Class Definitions
+# -----------------
 class ColorUtils:
 
     @staticmethod
@@ -12,6 +17,23 @@ class ColorUtils:
 
         Returns:
             QtGui.QColor: The resulting blended color.
+
+        Examples:
+            >>> from qtpy import QtGui
+            >>> color1 = QtGui.QColor(255, 0, 0, 255)
+            >>> color2 = QtGui.QColor(0, 0, 255, 255)
+            >>> ColorUtils.blend_colors(color1, color2).getRgb()
+            (127, 0, 127, 255)
+
+            >>> color1 = QtGui.QColor(255, 0, 0, 0)
+            >>> color2 = QtGui.QColor(0, 0, 255, 255)
+            >>> ColorUtils.blend_colors(color1, color2).getRgb()
+            (0, 0, 255, 255)
+
+            >>> color1 = QtGui.QColor(255, 0, 0, 100)
+            >>> color2 = QtGui.QColor(0, 0, 255, 200)
+            >>> ColorUtils.blend_colors(color1, color2).getRgb()
+            (85, 0, 170, 255)
         """
         r1, g1, b1, a1 = color1.getRgb()
         r2, g2, b2, a2 = color2.getRgb()
@@ -30,3 +52,7 @@ class ColorUtils:
         a = min(total_alpha, 255)
 
         return QtGui.QColor(r, g, b, a)
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()
