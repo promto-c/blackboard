@@ -31,7 +31,16 @@ class PathUtil:
         root = os.path.normpath(root)
 
         def _traverse(directory: str, current_level: int) -> Generator[str, None, None]:
-            # TODO: Skip yield root when not set level
+            """Helper function to recursively traverse directories.
+
+            Args:
+                directory: The current directory path.
+                current_level: The current depth level of traversal.
+
+            Yields:
+                Directory paths based on the specified criteria.
+            """
+            # Check if the directory can be accessed, skip if not 
             if not os.access(directory, os.R_OK):
                 return
 
@@ -43,7 +52,7 @@ class PathUtil:
                 if current_level >= level:
                     yield path
                     return
-            else:
+            elif directory != root:
                 yield path
 
             # Continue traversal for subdirectories
@@ -134,9 +143,10 @@ class PathPattern:
             'path/to/(?P<var1>.*?)/and/(?P<var2>.*?)/'
         """
         # Escape all regex characters except for the curly braces which are used for variables
-        # string_pattern = re.escape(string_pattern).replace("\\{", "{").replace("\\}", "}")
+        string_pattern = re.escape(string_pattern).replace(r'\{', '{').replace(r'\}', '}')
         # # Use a non-greedy match up to the next literal slash or end of string, which allows variable capture over multiple segments
         regex_pattern = re.sub(r'\{(\w+)\}', r'(?P<\1>.*?)', string_pattern)
+
         return regex_pattern
 
     @classmethod
