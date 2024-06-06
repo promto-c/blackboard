@@ -18,31 +18,31 @@ def create_test_directory(tmp_path_factory):
 def test_return_absolute_paths(create_test_directory):
     root = str(create_test_directory)
     expected = {os.path.join(root, "dir1"), os.path.join(root, "dir2"), os.path.join(root, "excluded_dir")}
-    result = set(PathUtil.traverse_directories(root, level=1))
+    result = set(PathUtil.traverse_directories(root, target_depth=1))
     assert result == expected
 
 def test_return_relative_paths(create_test_directory):
     root = str(create_test_directory)
     expected = {"dir1", "dir2", "excluded_dir"}
-    result = set(PathUtil.traverse_directories(root, level=1, is_return_relative=True))
+    result = set(PathUtil.traverse_directories(root, target_depth=1, is_return_relative=True))
     assert result == expected
 
 def test_skip_hidden(create_test_directory):
     root = str(create_test_directory)
     expected = {os.path.join(root, "dir1"), os.path.join(root, "dir2"), os.path.join(root, "excluded_dir")}
-    result = set(PathUtil.traverse_directories(root, level=1, is_skip_hidden=True))
+    result = set(PathUtil.traverse_directories(root, target_depth=1, is_skip_hidden=True))
     assert result == expected
     assert os.path.join(root, ".hidden") not in result
 
 def test_not_skip_hidden(create_test_directory):
     root = str(create_test_directory)
     expected = {os.path.join(root, "dir1"), os.path.join(root, "dir2"), os.path.join(root, ".hidden"), os.path.join(root, "excluded_dir")}
-    assert set(PathUtil.traverse_directories(root, level=1, is_skip_hidden=False)) == expected
+    assert set(PathUtil.traverse_directories(root, target_depth=1, is_skip_hidden=False)) == expected
 
 def test_excluded_folders(create_test_directory):
     root = str(create_test_directory)
     expected = {os.path.join(root, "dir1"), os.path.join(root, "dir2")}
-    result = set(PathUtil.traverse_directories(root, level=1, excluded_folders=["excluded_dir"]))
+    result = set(PathUtil.traverse_directories(root, target_depth=1, excluded_folders=["excluded_dir"]))
     assert result == expected
     assert os.path.join(root, "excluded_dir") not in result
 
