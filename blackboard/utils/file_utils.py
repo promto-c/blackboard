@@ -114,18 +114,19 @@ class FilePatternQuery:
             path: The path string from which to extract variable values.
 
         Returns:
-            A dictionary of variable names and their corresponding values if the path matches the pattern,
-            or an empty dictionary if there is no match.
+            Dict[str, str]: A dictionary of variable names and their corresponding values if the path matches the pattern,
+                or an empty dictionary if there is no match.
         """
         return PathPattern.extract_variables(self.regex_pattern, path, is_regex=True)
 
-    def construct_search_paths(self, filters: Dict[str, List[str]]) -> Generator[str, None, None]:
+    def construct_search_paths(self, filters: Dict[str, List[str]], recursive: bool = True) -> Generator[str, None, None]:
         """Constructs and yields search paths based on provided filters and the pattern.
 
         Args:
             filters (Dict[str, List[str]]): A dictionary where keys are field names extracted
                                             from the pattern, and values are lists of strings
                                             that specify the filter values for each field.
+            recursive (bool, optional): Whether to search recursively. Defaults to True.
 
         Yields:
             Generator[str, None, None]: Paths to files that match the constructed search patterns.
@@ -140,7 +141,7 @@ class FilePatternQuery:
 
         for search_path in search_paths:
             # Find and yield file paths matching the pattern using recursive glob
-            yield from glob.iglob(search_path, recursive=True)
+            yield from glob.iglob(search_path, recursive=recursive)
 
     def query_files(self, filters: Dict[str, List[str]] = dict()) -> Generator[Dict[str, str], None, None]:
         """Queries files matching the pattern and filters, returning their info.
