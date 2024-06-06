@@ -148,13 +148,14 @@ class PathPattern:
 
         return regex_pattern
 
-    @classmethod
-    def extract_variables(cls, string_pattern: str, path: str) -> Dict[str, str]:
-        """Extracts variables from a given path based on a specified string pattern.
+    @staticmethod
+    def extract_variables(pattern: str, path: str, is_regex: bool = False) -> Dict[str, str]:
+        """Extracts variables from a given path based on a specified pattern.
 
         Args:
-            string_pattern: The pattern as a string with variables in curly braces.
+            pattern: The pattern as a string with variables in curly braces or a regex pattern.
             path: The path string from which to extract variable values.
+            is_regex: Boolean flag to indicate if the pattern is a regex.
 
         Returns:
             A dictionary of variable names and their corresponding values if the path matches the pattern,
@@ -169,8 +170,13 @@ class PathPattern:
             >>> PathPattern.extract_variables("projects/{project_name}/seq_{sequence_name}/{shot_name}/work_files",
             ...                               "projects/ProjectB/seq_seq02/shot04/01/work_files/texture.png")
             {'project_name': 'ProjectB', 'sequence_name': 'seq02', 'shot_name': 'shot04/01'}
+            >>> PathPattern.extract_variables(r'path/to/(?P<var1>\w+)/and/(?P<var2>\w+)/', "path/to/value1/and/value2/", is_regex=True)
+            {'var1': 'value1', 'var2': 'value2'}
         """
-        regex_pattern = cls.convert_pattern_to_regex(string_pattern)
+        # Convert the pattern to a regex pattern if not already a regex
+        regex_pattern = pattern if is_regex else PathPattern.convert_pattern_to_regex(pattern)
+
+        # Match the regex pattern against the provided path
         match = re.match(regex_pattern, path)
         if match:
             return match.groupdict()

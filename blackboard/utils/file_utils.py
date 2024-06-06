@@ -112,17 +112,13 @@ class FilePatternQuery:
         """Extracts variables from a given path based on a specified string pattern.
 
         Args:
-            string_pattern: The pattern as a string with variables in curly braces.
             path: The path string from which to extract variable values.
 
         Returns:
             A dictionary of variable names and their corresponding values if the path matches the pattern,
             or an empty dictionary if there is no match.
         """
-        match = re.match(self.regex_pattern, path)
-        if match:
-            return match.groupdict()
-        return {}
+        return PathPattern.extract_variables(self.regex_pattern, path, is_regex=True)
 
     def construct_search_paths(self, filters: Dict[str, List[str]]) -> Generator[str, None, None]:
         """Constructs and yields search paths based on provided filters and the pattern.
