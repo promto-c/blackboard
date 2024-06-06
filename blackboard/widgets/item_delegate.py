@@ -6,6 +6,7 @@ import dateutil.parser as date_parser
 from qtpy import QtCore, QtGui, QtWidgets
 
 from blackboard.utils.color_utils import ColorUtils
+from blackboard.utils.file_path_utils import SequenceFileUtil
 from blackboard.utils.qimage_utils import ThumbnailUtils, ThumbnailLoader
 from blackboard.utils.thread_pool import ThreadPoolManager, RunnableTask
 
@@ -437,6 +438,8 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         # ------------------
         self._thumbnail_column = None
         self._source_column = None
+        self._sequence_range_column = None
+        self._sequence_range_column = None
         self._loading_threads = dict()
         self._loaded_thumbnails = dict()
 
@@ -447,6 +450,9 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
 
     def set_thumbnail_column(self, column: int):
         self._thumbnail_column = column
+
+    def set_sequence_range_column(self, column: int):
+        self._sequence_range_column = column
 
     def load_thumbnail(self, file_path: str, is_background_process: bool = True) -> QtGui.QPixmap:
         if is_background_process:
@@ -520,16 +526,25 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         del self._loading_threads[file_path]
         self.parent().viewport().update()  # Request a repaint
 
+    def get_sibling_data(self, index: QtCore.QModelIndex, column: int, data_role: QtCore.Qt.ItemDataRole = QtCore.Qt.ItemDataRole.DisplayRole):
+        sibling_index = index.sibling(index.row(), column)
+        return sibling_index.data(data_role)
+
     # Overridden Methods
     # ------------------
     def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex):
         super().paint(painter, option, index)
 
-        file_path_index = index.sibling(index.row(), self._source_column)
-        file_path = file_path_index.data(QtCore.Qt.ItemDataRole.DisplayRole)
+        file_path = self.get_sibling_data(index, self._source_column)
 
         if not file_path:
             return
+
+        if self._sequence_range_column is not None:
+            sequence_range = self.get_sibling_data(index, self._sequence_range_column)
+            if sequence_range:
+                first_frame_number = int(sequence_range.split('-')[0])
+                file_path = SequenceFileUtil.generate_frame_path(file_path, first_frame_number)
 
         pixmap = self.load_thumbnail(file_path)
 

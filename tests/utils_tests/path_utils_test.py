@@ -1,62 +1,66 @@
-import os
 import pytest
-from blackboard.utils.path_utils import PathUtil
+from blackboard.utils.path_utils import PathSequence, PathPattern
+from pathlib import Path
 
 
-# Define a fixture for a sample directory structure
-@pytest.fixture(scope="module")
-def create_test_directory(tmp_path_factory):
-    base_dir = tmp_path_factory.mktemp("test_dir")
-    (base_dir / "dir1").mkdir()
-    (base_dir / "dir1" / "subdir1").mkdir()
-    (base_dir / "dir1" / "subdir2").mkdir()
-    (base_dir / "dir2").mkdir()
-    (base_dir / ".hidden").mkdir()
-    (base_dir / "excluded_dir").mkdir()
+@pytest.fixture
+def create_test_sequence_files(tmp_path):
+    base_dir = tmp_path / "sequence"
+    base_dir.mkdir()
+    for i in range(1, 11):
+        (base_dir / f"frame.{str(i).zfill(4)}.exr").write_text("content")
     return base_dir
 
-def test_return_absolute_paths(create_test_directory):
-    root = str(create_test_directory)
-    expected = {os.path.join(root, "dir1"), os.path.join(root, "dir2"), os.path.join(root, "excluded_dir")}
-    result = set(PathUtil.traverse_directories(root, target_depth=1))
-    assert result == expected
+def test_path_sequence_get_frame_range(create_test_sequence_files):
+    path = str(create_test_sequence_files / "frame.####.exr")
+    ps = PathSequence(path)
+    assert ps.get_frame_range() == (1, 10)
 
-def test_return_relative_paths(create_test_directory):
-    root = str(create_test_directory)
-    expected = {"dir1", "dir2", "excluded_dir"}
-    result = set(PathUtil.traverse_directories(root, target_depth=1, is_return_relative=True))
-    assert result == expected
+def test_path_sequence_get_frame_count_from_range(create_test_sequence_files):
+    path = str(create_test_sequence_files / "frame.####.exr")
+    ps = PathSequence(path)
+    assert ps.get_frame_count_from_range() == 10
 
-def test_skip_hidden(create_test_directory):
-    root = str(create_test_directory)
-    expected = {os.path.join(root, "dir1"), os.path.join(root, "dir2"), os.path.join(root, "excluded_dir")}
-    result = set(PathUtil.traverse_directories(root, target_depth=1, is_skip_hidden=True))
-    assert result == expected
-    assert os.path.join(root, ".hidden") not in result
+def test_path_sequence_get_frame_path(create_test_sequence_files):
+    path = str(create_test_sequence_files / "frame.####.exr")
+    ps = PathSequence(path)
+    assert ps.get_frame_path(5) == str(create_test_sequence_files / "frame.0005.exr")
 
-def test_not_skip_hidden(create_test_directory):
-    root = str(create_test_directory)
-    expected = {os.path.join(root, "dir1"), os.path.join(root, "dir2"), os.path.join(root, ".hidden"), os.path.join(root, "excluded_dir")}
-    assert set(PathUtil.traverse_directories(root, target_depth=1, is_skip_hidden=False)) == expected
+@pytest.mark.parametrize("pattern, values, expected", [
+    ("File {name} has size {size} bytes.", ["example.txt", "1024"], "File example.txt has size 1024 bytes."),
+    ("No placeholders here!", [], "No placeholders here!"),
+    ("{first} {second} {third}", ["1", "2", "3"], "1 2 3")
+])
+def test_format_by_index(pattern, values, expected):
+    assert PathPattern.format_by_index(pattern, values) == expected
 
-def test_excluded_folders(create_test_directory):
-    root = str(create_test_directory)
-    expected = {os.path.join(root, "dir1"), os.path.join(root, "dir2")}
-    result = set(PathUtil.traverse_directories(root, target_depth=1, excluded_folders=["excluded_dir"]))
-    assert result == expected
-    assert os.path.join(root, "excluded_dir") not in result
+@pytest.mark.parametrize("pattern, expected", [
+    ("path/to/{var1}/and/{var2}/", "path/to/(?P<var1>.*?)/and/(?P<var2>.*?)/"),
+    ("projects/{project_name}/seq_{sequence_name}/{shot_name}/work_files", 
+     "projects/(?P<project_name>.*?)/seq_(?P<sequence_name>.*?)/(?P<shot_name>.*?)/work_files")
+])
+def test_convert_pattern_to_regex(pattern, expected):
+    assert PathPattern.convert_pattern_to_regex(pattern) == expected
 
-def test_traverse_all_levels(create_test_directory):
-    root = str(create_test_directory)
-    expected = {
-        os.path.join(root, "dir1"),
-        os.path.join(root, "dir1", "subdir1"),
-        os.path.join(root, "dir1", "subdir2"),
-        os.path.join(root, "dir2"),
-        os.path.join(root, "excluded_dir")
-    }
-    result = set(PathUtil.traverse_directories(root))
-    assert result == expected
+@pytest.mark.parametrize("pattern, path, is_regex, expected", [
+    ("path/to/{var1}/and/{var2}/", "path/to/value1/and/value2/", False, {'var1': 'value1', 'var2': 'value2'}),
+    ("projects/{project_name}/seq_{sequence_name}/{shot_name}/work_files", 
+     "projects/ProjectB/seq_seq01/shot03/work_files/texture.png", False,
+     {'project_name': 'ProjectB', 'sequence_name': 'seq01', 'shot_name': 'shot03'}),
+    (r"path/to/(?P<var1>\w+)/and/(?P<var2>\w+)/", "path/to/value1/and/value2/", True, {'var1': 'value1', 'var2': 'value2'})
+])
+def test_extract_variables(pattern, path, is_regex, expected):
+    assert PathPattern.extract_variables(pattern, path, is_regex) == expected
+
+@pytest.mark.parametrize("pattern, expected", [
+    ("blackboard/examples/projects/{project_name}/seq_{sequence_name}/{shot_name}/work_files", 
+     ['project_name', 'sequence_name', 'shot_name']),
+    ("{var1}/static/{var2}/end", ['var1', 'var2']),
+    ("no/dynamic/parts", [])
+])
+def test_extract_variable_names(pattern, expected):
+    assert PathPattern.extract_variable_names(pattern) == expected
+
 
 # Run the tests
 if __name__ == "__main__":

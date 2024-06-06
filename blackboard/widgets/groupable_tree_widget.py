@@ -725,16 +725,17 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     # Public Methods
     # --------------
-    def create_thumbnail_column(self, column_name: str):
-
+    def create_thumbnail_column(self, source_column_name: str = 'file_path', sequence_range_column_name: str = 'sequence_range'):
         self.column_names.append('thumbnail')
         self.setHeaderLabels(self.column_names)
 
-        source_column = self.column_names.index(column_name)
+        source_column = self.column_names.index(source_column_name)
         thumbnail_column = self.column_names.index('thumbnail')
+        sequence_range_column = self.column_names.index(sequence_range_column_name) if sequence_range_column_name in self.column_names else None
 
         self.thumbnail_delegate.set_thumbnail_column(thumbnail_column)
         self.thumbnail_delegate.set_source_column(source_column)
+        self.thumbnail_delegate.set_sequence_range_column(sequence_range_column)
 
         self.setItemDelegateForColumn(thumbnail_column, self.thumbnail_delegate)
 
