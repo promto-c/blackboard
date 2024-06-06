@@ -5,8 +5,7 @@ from typing import Dict, List, Generator
 
 # Standard Library Imports
 # ------------------------
-import re, glob, os, pwd, datetime
-from pathlib import Path
+import glob, os, pwd, datetime
 from itertools import product
 
 # Local Imports
@@ -28,24 +27,24 @@ class FileUtils:
         """Extracts detailed information about a file.
 
         Args:
-            file_path (str): The path to the file for which information is to be extracted.
+            file_path (str): Path to the file for extracting information.
 
         Returns:
             Dict[str, str]: A dictionary containing detailed file information, including:
                 - file_name: The base name of the file.
                 - file_path: The full path to the file.
-                - file_size: The size of the file in a human-readable format.
+                - file_size: File size in a human-readable format.
                 - file_extension: The file extension.
-                - last_modified: The last modification timestamp in ISO 8601 format.
+                - last_modified: The last modification timestamp in `YYYY-MM-DD HH:MM:SS` format.
                 - file_owner: The owner of the file.
         """
         # Retrieve file statistics and details: file info, owner, last modified time, extension, and formatted size
         file_info = os.stat(file_path)
         owner = pwd.getpwuid(file_info.st_uid).pw_name
-        modified_time = datetime.datetime.fromtimestamp(file_info.st_mtime).strftime('%Y-%m-%dT%H:%M:%S')
+        modified_time = datetime.datetime.fromtimestamp(file_info.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
         extension = file_path.rsplit('.', 1)[-1] if '.' in file_path else ''
         readable_size = FileUtils.format_size(file_info.st_size)
-        
+
         # Compile the file details into a dictionary
         details = {
             "file_name": os.path.basename(file_path),
@@ -55,7 +54,7 @@ class FileUtils:
             "last_modified": modified_time,
             "file_owner": owner,
         }
-        
+
         return details
 
     @staticmethod
@@ -67,14 +66,14 @@ class FileUtils:
             precision (int, optional): The number of decimal places for the formatted size. Defaults to 2.
 
         Returns:
-            str: The size of the file in a human-readable format, such as '1.23 MB'.
+            str: File size in a human-readable format, such as '1.23 MB'.
         """
         # Loop through each unit until the size is smaller than 1024
         for unit in FileUtils.UNITS:
             if size < 1024:
                 # Use the appropriate format string based on the unit
-                format_str = f"{{:.{precision}f}} {unit}" if unit != 'bytes' else f"{{:.0f}} {unit}"
-                return format_str.format(size)
+                formatted_size = f"{size:.{precision}f} {unit}" if unit != 'bytes' else f"{size} {unit}"
+                return formatted_size
             
             # Divide the size by 1024 to move to the next unit
             size /= 1024
