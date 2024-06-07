@@ -101,6 +101,11 @@ class PathSequence:
         return f"Name Part: {self.name_part}, Frame Padding: {self.frame_padding} (Length: {self.padding_length}), Extension: {self.extension}"
 
 class PathPattern:
+    """A utility class for handling and manipulating file path patterns with named placeholders.
+    """
+
+    # Define regex pattern for variable placeholders
+    VARIABLE_PLACEHOLDER_PATTERN = r'\{(\w+)\}'
 
     @staticmethod
     def format_by_index(pattern: str, values: List[str]) -> str:
@@ -122,29 +127,29 @@ class PathPattern:
             '1 2 3'
         """
         # Replace all named placeholders with '{}' in one go
-        new_pattern = re.sub(r'\{\w+\}', '{}', pattern)
+        formatted_pattern = re.sub(PathPattern.VARIABLE_PLACEHOLDER_PATTERN, '{}', pattern)
         
         # Use str.format with the modified pattern
-        return new_pattern.format(*values)
+        return formatted_pattern.format(*values)
 
     @staticmethod
-    def convert_pattern_to_regex(string_pattern: str) -> str:
+    def convert_pattern_to_regex(pattern: str) -> str:
         """Converts a string pattern with variables in curly braces to a regex pattern that captures across directory names.
 
         Args:
-            string_pattern: A string containing the pattern, with variables enclosed in curly braces.
+            pattern (str): A string containing the pattern, with variables enclosed in curly braces.
 
         Returns:
-            A string representing the converted regular expression pattern.
+            str: The converted regular expression pattern.
 
         Examples:
             >>> PathPattern.convert_pattern_to_regex("path/to/{var1}/and/{var2}/")
             'path/to/(?P<var1>.*?)/and/(?P<var2>.*?)/'
         """
         # Escape all regex characters except for the curly braces which are used for variables
-        string_pattern = re.escape(string_pattern).replace(r'\{', '{').replace(r'\}', '}')
-        # # Use a non-greedy match up to the next literal slash or end of string, which allows variable capture over multiple segments
-        regex_pattern = re.sub(r'\{(\w+)\}', r'(?P<\1>.*?)', string_pattern)
+        pattern = re.escape(pattern).replace(r'\{', '{').replace(r'\}', '}')
+        # Use a non-greedy match up to the next literal slash or end of string, which allows variable capture over multiple segments
+        regex_pattern = re.sub(PathPattern.VARIABLE_PLACEHOLDER_PATTERN, r'(?P<\1>.*?)', pattern)
 
         return regex_pattern
 
@@ -153,13 +158,13 @@ class PathPattern:
         """Extracts variables from a given path based on a specified pattern.
 
         Args:
-            pattern: The pattern as a string with variables in curly braces or a regex pattern.
-            path: The path string from which to extract variable values.
-            is_regex: Boolean flag to indicate if the pattern is a regex.
+            pattern (str): The pattern as a string with variables in curly braces or a regex pattern.
+            path (str): The path string from which to extract variable values.
+            is_regex (bool): Boolean flag to indicate if the pattern is a regex.
 
         Returns:
-            A dictionary of variable names and their corresponding values if the path matches the pattern,
-            or an empty dictionary if there is no match.
+            Dict[str, str]: A dictionary of variable names and their corresponding values if the path matches the pattern,
+                or an empty dictionary if there is no match.
 
         Examples:
             >>> PathPattern.extract_variables("path/to/{var1}/and/{var2}/", "path/to/value1/and/value2/")
@@ -186,16 +191,21 @@ class PathPattern:
     def extract_variable_names(pattern: str) -> List[str]:
         """Extract only the variable names from the pattern, excluding the static parts.
 
-        >>> PathPattern.extract_variable_names("blackboard/examples/projects/{project_name}/seq_{sequence_name}/{shot_name}/work_files")
-        ['project_name', 'sequence_name', 'shot_name']
-        
-        >>> PathPattern.extract_variable_names("{var1}/static/{var2}/end")
-        ['var1', 'var2']
-        
-        >>> PathPattern.extract_variable_names("no/dynamic/parts")
-        []
+        Args:
+            pattern (str): The string pattern with variables in curly braces.
+
+        Returns:
+            List[str]: A list of variable names.
+
+        Examples:
+            >>> PathPattern.extract_variable_names("blackboard/examples/projects/{project_name}/seq_{sequence_name}/{shot_name}/work_files")
+            ['project_name', 'sequence_name', 'shot_name']
+            >>> PathPattern.extract_variable_names("{var1}/static/{var2}/end")
+            ['var1', 'var2']
+            >>> PathPattern.extract_variable_names("no/dynamic/parts")
+            []
         """
-        return re.findall(r'\{(\w+)\}', pattern)
+        return re.findall(PathPattern.VARIABLE_PLACEHOLDER_PATTERN, pattern)
 
 
 if __name__ == '__main__':

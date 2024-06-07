@@ -85,16 +85,19 @@ class FilePatternQuery:
     """Queries files matching a specified pattern.
     """
 
+    # Initialization and Setup
+    # ------------------------
     def __init__(self, pattern: str) -> None:
         """Initializes a FilePatternQuery instance.
 
         Args:
             pattern (str): The pattern to match files with.
         """
-        self.pattern = os.path.normpath(pattern) + '/'
-        self.regex_pattern = PathPattern.convert_pattern_to_regex(self.pattern)
-        self.fields = PathPattern.extract_variable_names(self.pattern) + FileUtils.FILE_INFO_FIELDS
+        # Store the arguments
+        self.pattern = pattern
 
+    # Public Methods
+    # --------------
     def format_for_recursive_glob(self, values: List[str]) -> str:
         """Formats a string with named placeholders for use with glob.iglob, including adding '**' at the end for recursive searches.
         
@@ -117,16 +120,15 @@ class FilePatternQuery:
             Dict[str, str]: A dictionary of variable names and their corresponding values if the path matches the pattern,
                 or an empty dictionary if there is no match.
         """
-        return PathPattern.extract_variables(self.regex_pattern, path, is_regex=True)
+        return PathPattern.extract_variables(self._regex_pattern, path, is_regex=True)
 
     def construct_search_paths(self, filters: Dict[str, List[str]], recursive: bool = True) -> Generator[str, None, None]:
         """Constructs and yields search paths based on provided filters and the pattern.
 
         Args:
-            filters (Dict[str, List[str]]): A dictionary where keys are field names extracted
-                                            from the pattern, and values are lists of strings
-                                            that specify the filter values for each field.
-            recursive (bool, optional): Whether to search recursively. Defaults to True.
+            filters (Dict[str, List[str]]): A dictionary where keys are field names extracted from the pattern, 
+                and values are lists of strings that specify the filter values for each field.
+            recursive (Optional[bool]): Whether to search recursively. Defaults to True.
 
         Yields:
             Generator[str, None, None]: Paths to files that match the constructed search patterns.
@@ -136,11 +138,11 @@ class FilePatternQuery:
 
         # Generate all possible paths based on combinations of field values
         all_value_combinations = product(*values_combinations)
-        # Using map to apply format_for_recursive_glob for each combination of values
+        # Using map to apply format for recursive glob for each combination of values
         search_paths = map(self.format_for_recursive_glob, all_value_combinations)
 
+        # Iterate through search paths and yield matching files
         for search_path in search_paths:
-            # Find and yield file paths matching the pattern using recursive glob
             yield from glob.iglob(search_path, recursive=recursive)
 
     def query_files(self, filters: Dict[str, List[str]] = dict()) -> Generator[Dict[str, str], None, None]:
@@ -149,7 +151,7 @@ class FilePatternQuery:
         Args:
             filters (Dict[str, List[str]]): Filters for querying files.
 
-        Returns:
+        Yields:
             Generator[Dict[str, str], None, None]: File information for each matching file.
         """
         # Construct search paths based on the filters
@@ -161,15 +163,42 @@ class FilePatternQuery:
             if not os.path.isfile(path):
                 continue
 
-            # Extract file metadata using FileUtils
+            # Extract file information dict from the path
             file_info = FileUtils.extract_file_info(path)
 
-            # Extract variables from the path based on the pattern
+            # Extract variables from the path based on the pattern and merge it with file information
             data_dict = self.extract_variables(path)
-            # Merge file info into the data dictionary
             data_dict.update(file_info)
 
             yield data_dict
+
+    # Class Properties
+    # ----------------
+    @property
+    def fields(self) -> List[str]:
+        """Returns the list of fields extracted from the pattern.
+        """
+        return PathPattern.extract_variable_names(self._pattern) + FileUtils.FILE_INFO_FIELDS
+
+    @property
+    def pattern(self) -> str:
+        """Returns the pattern used to query files.
+        """
+        return self._pattern
+    
+    @pattern.setter
+    def pattern(self, value: str) -> None:
+        """Sets the pattern used to query files.
+        """
+        # Normalize the pattern and store the regex pattern for matching files
+        self._pattern = os.path.normpath(value) + '/'
+        self._regex_pattern = PathPattern.convert_pattern_to_regex(self._pattern)
+    
+    @property
+    def regex_pattern(self) -> str:
+        """Returns the regular expression pattern used to query files.
+        """
+        return self._regex_pattern
 
 
 if __name__ == '__main__':
