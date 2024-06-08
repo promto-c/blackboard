@@ -1,10 +1,16 @@
 import os
 import datetime
-import pwd
 from typing import Dict, List, Optional, Tuple
 import time
 from enum import Enum
 import random
+from collections import defaultdict
+
+if os.name == 'nt':
+    import win32security
+    import ntsecuritycon as con
+else:
+    import pwd
 
 class FileUtils:
     """Utilities for working with files."""
@@ -30,7 +36,7 @@ class FileUtils:
         """
         # Retrieve file statistics and details: file info, owner, last modified time, extension, and formatted size
         file_info = os.stat(file_path)
-        owner = pwd.getpwuid(file_info.st_uid).pw_name
+        owner = FileUtils.get_file_owner(file_path)
         modified_time = datetime.datetime.fromtimestamp(file_info.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
         extension = file_path.rsplit('.', 1)[-1] if '.' in file_path else ''
         readable_size = FileUtils.format_size(file_info.st_size)
@@ -46,6 +52,25 @@ class FileUtils:
         }
 
         return details
+
+    @staticmethod
+    def get_file_owner(file_path: str) -> str:
+        """Gets the owner of a file.
+
+        Args:
+            file_path (str): Path to the file.
+
+        Returns:
+            str: The name of the file owner.
+        """
+        if os.name == 'nt':
+            sd = win32security.GetFileSecurity(file_path, win32security.OWNER_SECURITY_INFORMATION)
+            owner_sid = sd.GetSecurityDescriptorOwner()
+            name, domain, type = win32security.LookupAccountSid(None, owner_sid)
+            return f"{domain}\\{name}"
+        else:
+            file_info = os.stat(file_path)
+            return pwd.getpwuid(file_info.st_uid).pw_name
 
     @staticmethod
     def format_size(size: int, precision: int = 2) -> str:
@@ -72,11 +97,14 @@ class FileUtils:
         return f"{size:.{precision}f} PB"
 
 class FormatStyle(Enum):
-    """Enum for different placeholder formats for file sequences."""
-    HASH = 'hash'           # '#'
-    PERCENT = 'percent'     # '%0Nd'
-    BRACKETS = 'brackets'   # '[0-9]'
-    BRACES = 'braces'       # '{0..9}'
+    """Enum for different placeholder formats for file sequences.
+    """
+    HASH = 'hash'                               # '#'
+    PERCENT = 'percent'                         # '%0Nd'
+    BRACKETS = 'brackets'                       # '[0-9]'
+    BRACES = 'braces'                           # '{0..9}'
+    HASH_WITH_RANGE = 'hash_with_range'         # '####.ext 0-9'
+    PERCENT_WITH_RANGE = 'percent_with_range'   # '%0Nd.ext 0-9'
 
     def requires_frame_range(self) -> bool:
         """Determines if the format style requires a range of frame numbers."""
@@ -92,6 +120,10 @@ class FormatStyle(Enum):
             return f"{base_name}.[{str(min_num).zfill(length)}-{str(max_num).zfill(length)}].{extension}"
         elif self == FormatStyle.BRACES:
             return f"{base_name}.{{{str(min_num).zfill(length)}..{str(max_num).zfill(length)}}}.{extension}"
+        elif self == FormatStyle.HASH_WITH_RANGE:
+            return f"{base_name}.{'#' * length}.{extension} {min_num}-{max_num}"
+        elif self == FormatStyle.PERCENT_WITH_RANGE:
+            return f"{base_name}.%0{length}d.{extension} {min_num}-{max_num}"
         else:
             raise ValueError(f"Unsupported format style: {self}")
 
@@ -125,7 +157,7 @@ class SequenceFileUtils(FileUtils):
         """
         if not SequenceFileUtils.is_sequence_file(file_name):
             return None
-        
+
         parts = file_name.rsplit('.', 2)
         return {
             "base_name": parts[0],
@@ -176,25 +208,21 @@ class SequenceFileUtils(FileUtils):
         Returns:
             List[str]: A list of file paths with padded sequence formats.
         """
-        sequence_dict = {}
-        result = []
+        sequence_dict = defaultdict(list)
+        result = set()
 
         for file_path in file_paths:
-            file_name = os.path.basename(file_path)
-            sequence_info = SequenceFileUtils.extract_sequence_info(file_name)
+            sequence_info = SequenceFileUtils.extract_sequence_info(file_path)
             if sequence_info:
                 base_name = sequence_info['base_name']
                 sequence_number = sequence_info['sequence_number']
                 extension = sequence_info['extension']
-                if base_name not in sequence_dict:
-                    sequence_dict[base_name] = {"numbers": [], "extension": extension}
-                sequence_dict[base_name]["numbers"].append(sequence_number)
+                key = (base_name, extension)
+                sequence_dict[key].append(sequence_number)
             else:
-                result.append(file_path)
+                result.add(file_path)
 
-        for base_name, data in sequence_dict.items():
-            sequence_numbers = data["numbers"]
-            extension = data["extension"]
+        for (base_name, extension), sequence_numbers in sequence_dict.items():
             max_length = len(max(sequence_numbers, key=len))
 
             min_num, max_num = None, None
@@ -204,12 +232,12 @@ class SequenceFileUtils(FileUtils):
             if distinct_formats:
                 for length in set(map(len, sequence_numbers)):
                     padded_format = format_style.format_sequence(base_name, length, extension, min_num, max_num)
-                    result.append(os.path.join(os.path.dirname(file_paths[0]), padded_format))
+                    result.add(padded_format)
             else:
                 padded_format = format_style.format_sequence(base_name, max_length, extension, min_num, max_num)
-                result.append(os.path.join(os.path.dirname(file_paths[0]), padded_format))
+                result.add(padded_format)
 
-        return sorted(set(result))
+        return sorted(result)
 
 # Example usage
 file_paths = [
