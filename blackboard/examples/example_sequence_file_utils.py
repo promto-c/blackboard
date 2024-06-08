@@ -108,7 +108,7 @@ class FormatStyle(Enum):
 
     def requires_frame_range(self) -> bool:
         """Determines if the format style requires a range of frame numbers."""
-        return self in {FormatStyle.BRACKETS, FormatStyle.BRACES}
+        return self in {FormatStyle.BRACKETS, FormatStyle.BRACES, FormatStyle.HASH_WITH_RANGE, FormatStyle.PERCENT_WITH_RANGE}
 
     def format_sequence(self, base_name: str, length: int, extension: str, min_num: Optional[int] = None, max_num: Optional[int] = None) -> str:
         """Constructs the formatted sequence string based on the format style."""
@@ -337,3 +337,9 @@ padded_paths_single = SequenceFileUtils.convert_to_padded_format(file_paths, dis
 end_time = time.time()
 print(f"Single format ({{0..9}}): {padded_paths_single[:10]}...")  # Print only the first 10 for brevity
 print(f"Time taken with single format ({{0..9}}): {end_time - start_time} seconds")
+
+start_time = time.time()
+padded_paths_single = SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=False, format_style=FormatStyle.HASH_WITH_RANGE)
+end_time = time.time()
+print(f"Single format (nuke): {padded_paths_single[:10]}...")  # Print only the first 10 for brevity
+print(f"Time taken with single format (nuke): {end_time - start_time} seconds")
