@@ -99,31 +99,41 @@ class FileUtils:
 class FormatStyle(Enum):
     """Enum for different placeholder formats for file sequences.
     """
-    HASH = 'hash'                               # '#'
-    PERCENT = 'percent'                         # '%0Nd'
-    BRACKETS = 'brackets'                       # '[0-9]'
-    BRACES = 'braces'                           # '{0..9}'
-    HASH_WITH_RANGE = 'hash_with_range'         # '####.ext 0-9'
-    PERCENT_WITH_RANGE = 'percent_with_range'   # '%0Nd.ext 0-9'
+    HASH = 'hash'                                           # '#'
+    PERCENT = 'percent'                                     # '%0Nd'
+    BRACKETS = 'brackets'                                   # '[0-9]'
+    BRACES = 'braces'                                       # '{0..9}'
+    HASH_WITH_RANGE = 'hash_with_range'                     # '####.ext 0-9'
+    PERCENT_WITH_RANGE = 'percent_with_range'               # '%0Nd.ext 0-9'
+    BRACKETS_SEPARATE_RANGES = 'brackets_separate_ranges'   # '[0-4,6-7,9]'
 
     def requires_frame_range(self) -> bool:
         """Determines if the format style requires a range of frame numbers."""
         return self in {FormatStyle.BRACKETS, FormatStyle.BRACES, FormatStyle.HASH_WITH_RANGE, FormatStyle.PERCENT_WITH_RANGE}
 
-    def format_sequence(self, base_name: str, length: int, extension: str, min_num: Optional[int] = None, max_num: Optional[int] = None) -> str:
+    def requires_separate_ranges(self) -> bool:
+        """Determines if the format style requires separate ranges."""
+        return self == FormatStyle.BRACKETS_SEPARATE_RANGES
+
+    def format_sequence(self, base_name: str, length: int, extension: str, ranges: Optional[List[str]] = None) -> str:
         """Constructs the formatted sequence string based on the format style."""
         if self == FormatStyle.HASH:
             return f"{base_name}.{'#' * length}.{extension}"
         elif self == FormatStyle.PERCENT:
             return f"{base_name}.%0{length}d.{extension}"
-        elif self == FormatStyle.BRACKETS:
-            return f"{base_name}.[{str(min_num).zfill(length)}-{str(max_num).zfill(length)}].{extension}"
-        elif self == FormatStyle.BRACES:
-            return f"{base_name}.{{{str(min_num).zfill(length)}..{str(max_num).zfill(length)}}}.{extension}"
-        elif self == FormatStyle.HASH_WITH_RANGE:
-            return f"{base_name}.{'#' * length}.{extension} {min_num}-{max_num}"
-        elif self == FormatStyle.PERCENT_WITH_RANGE:
-            return f"{base_name}.%0{length}d.{extension} {min_num}-{max_num}"
+        elif self.requires_separate_ranges():
+            ranges_str = ','.join(ranges)
+            return f"{base_name}.[{ranges_str}].{extension}"
+        elif self.requires_frame_range():
+            min_num, max_num = ranges
+            if self == FormatStyle.BRACKETS:
+                return f"{base_name}.[{str(min_num).zfill(length)}-{str(max_num).zfill(length)}].{extension}"
+            elif self == FormatStyle.BRACES:
+                return f"{base_name}.{{{str(min_num).zfill(length)}..{str(max_num).zfill(length)}}}.{extension}"
+            elif self == FormatStyle.HASH_WITH_RANGE:
+                return f"{base_name}.{'#' * length}.{extension} {min_num}-{max_num}"
+            elif self == FormatStyle.PERCENT_WITH_RANGE:
+                return f"{base_name}.%0{length}d.{extension} {min_num}-{max_num}"
         else:
             raise ValueError(f"Unsupported format style: {self}")
 
@@ -184,17 +194,54 @@ class SequenceFileUtils(FileUtils):
         return sorted(sequence_files)
 
     @staticmethod
-    def get_sequence_range(sequence_files: List[str]) -> Tuple[int, int]:
+    def get_sequence_range(sequence_numbers: List[str]) -> Tuple[int, int]:
         """Gets the range of sequence numbers from a list of sequence files.
 
         Args:
-            sequence_files (List[str]): A list of sequence file names.
+            sequence_numbers (List[str]): A list of sequence numbers.
 
         Returns:
             Tuple[int, int]: The minimum and maximum sequence numbers in the list.
         """
-        sequence_numbers = [int(f) for f in sequence_files if f.isdigit()]
+        sequence_numbers = [int(num) for num in sequence_numbers if num.isdigit()]
         return min(sequence_numbers), max(sequence_numbers)
+
+    @staticmethod
+    def get_sequence_ranges(sequence_numbers: List[str], preserve_length: bool = False) -> List[str]:
+        """Gets the ranges of sequence numbers from a list of sequence numbers.
+
+        Args:
+            sequence_numbers (List[str]): A list of sequence numbers.
+            preserve_length (bool): Whether to preserve the length of the sequence numbers using zfill.
+
+        Returns:
+            List[str]: A list of ranges in the format 'start-end' or individual numbers as strings.
+        """
+        sequence_numbers_int = sorted([int(num) for num in sequence_numbers])
+        ranges = []
+        range_start = sequence_numbers_int[0]
+        previous_num = sequence_numbers_int[0]
+        length = len(sequence_numbers[0])
+
+        for num in sequence_numbers_int[1:]:
+            if num != previous_num + 1:
+                if range_start == previous_num:
+                    ranges.append(f"{str(range_start).zfill(length)}" if preserve_length else f"{range_start}")
+                else:
+                    range_start_str = str(range_start).zfill(length) if preserve_length else f"{range_start}"
+                    previous_num_str = str(previous_num).zfill(length) if preserve_length else f"{previous_num}"
+                    ranges.append(f"{range_start_str}-{previous_num_str}")
+                range_start = num
+            previous_num = num
+
+        if range_start == previous_num:
+            ranges.append(f"{str(range_start).zfill(length)}" if preserve_length else f"{range_start}")
+        else:
+            range_start_str = str(range_start).zfill(length) if preserve_length else f"{range_start}"
+            previous_num_str = str(previous_num).zfill(length) if preserve_length else f"{previous_num}"
+            ranges.append(f"{range_start_str}-{previous_num_str}")
+
+        return ranges
 
     @staticmethod
     def convert_to_padded_format(file_paths: List[str], distinct_formats: bool = True, format_style: FormatStyle = FormatStyle.HASH) -> List[str]:
@@ -207,6 +254,39 @@ class SequenceFileUtils(FileUtils):
 
         Returns:
             List[str]: A list of file paths with padded sequence formats.
+
+        Examples:
+            >>> file_paths = [
+            ... 'project/shot/comp_v1.001001.exr',
+            ... 'project/shot/comp_v1.001011.exr',
+            ... 'project/shot/comp_v1.001012.exr',
+            ... 'project/shot/comp_v1.1001.exr',
+            ... 'project/shot/comp_v1.1002.exr',
+            ... 'project/shot/comp_v1.1001.jpg',
+            ... 'project/shot/comp_v1.1002.jpg',
+            ... 'project/shot/reference_image.png',
+            ... 'project/shot/notes.txt'
+            ... ]
+            >>> SequenceFileUtils.convert_to_padded_format(file_paths)
+            ['project/shot/comp_v1.######.exr', 'project/shot/comp_v1.####.exr', 'project/shot/comp_v1.####.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
+
+            >>> SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=False)
+            ['project/shot/comp_v1.######.exr', 'project/shot/comp_v1.####.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
+
+            >>> SequenceFileUtils.convert_to_padded_format(file_paths, format_style=FormatStyle.PERCENT)
+            ['project/shot/comp_v1.%04d.exr', 'project/shot/comp_v1.%04d.jpg', 'project/shot/comp_v1.%06d.exr', 'project/shot/notes.txt', 'project/shot/reference_image.png']
+
+            >>> SequenceFileUtils.convert_to_padded_format(file_paths, format_style=FormatStyle.BRACKETS)
+            ['project/shot/comp_v1.[001001-001012].exr', 'project/shot/comp_v1.[1001-1002].exr', 'project/shot/comp_v1.[1001-1002].jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
+
+            >>> SequenceFileUtils.convert_to_padded_format(file_paths, format_style=FormatStyle.BRACES)
+            ['project/shot/comp_v1.{001001..001012}.exr', 'project/shot/comp_v1.{1001..1002}.exr', 'project/shot/comp_v1.{1001..1002}.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
+
+            >>> SequenceFileUtils.convert_to_padded_format(file_paths, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES)
+            ['project/shot/comp_v1.[001001,001011-001012].exr', 'project/shot/comp_v1.[1001-1002].exr', 'project/shot/comp_v1.[1001-1002].jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
+
+            >>> SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=False, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES)
+            ['project/shot/comp_v1.[1001,1001-1002,1011-1012].exr', 'project/shot/comp_v1.[1001-1002].jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
         """
         sequence_dict = defaultdict(list)
         result = set()
@@ -223,123 +303,65 @@ class SequenceFileUtils(FileUtils):
                 result.add(file_path)
 
         for (base_name, extension), sequence_numbers in sequence_dict.items():
-            max_length = len(max(sequence_numbers, key=len))
-
-            min_num, max_num = None, None
-            if format_style.requires_frame_range():
-                min_num, max_num = SequenceFileUtils.get_sequence_range(sequence_numbers)
-
             if distinct_formats:
-                for length in set(map(len, sequence_numbers)):
-                    padded_format = format_style.format_sequence(base_name, length, extension, min_num, max_num)
+                preserve_length = True
+                length_to_sequences = defaultdict(list)
+                for seq in sequence_numbers:
+                    length_to_sequences[len(seq)].append(seq)
+
+                for length, sequences in length_to_sequences.items():
+                    ranges = None
+                    if format_style.requires_frame_range():
+                        ranges = SequenceFileUtils.get_sequence_range(sequences)
+                    elif format_style.requires_separate_ranges():
+                        ranges = SequenceFileUtils.get_sequence_ranges(sequences, preserve_length)
+
+                    padded_format = format_style.format_sequence(base_name, length, extension, ranges)
                     result.add(padded_format)
             else:
-                padded_format = format_style.format_sequence(base_name, max_length, extension, min_num, max_num)
+                preserve_length = False
+                max_length = len(max(sequence_numbers, key=len))
+                ranges = None
+                if format_style.requires_frame_range():
+                    ranges = SequenceFileUtils.get_sequence_range(sequence_numbers)
+                elif format_style.requires_separate_ranges():
+                    ranges = SequenceFileUtils.get_sequence_ranges(sequence_numbers, preserve_length)
+
+                padded_format = format_style.format_sequence(base_name, max_length, extension, ranges)
                 result.add(padded_format)
 
         return sorted(result)
 
-# Example usage
-file_paths = [
-    'path/to/file.1001.exr',
-    'path/to/file.1002.exr',
-    'path/to/file.1003.exr',
-    'path/to/file.1004.exr',
-    'path/to/file.1005.exr',
-    'path/to/file.143541.exr',
-    'path/to/file.143542.exr',
-    'path/to/file.2001.exr',
-    'path/to/file.2002.exr',
-    'path/to/file.2003.exr',
-    'path/to/file.300001.exr',
-    'path/to/file.300002.exr',
-    'path/to/file.300003.exr',
-    'path/to/file.40001.exr',
-    'path/to/file.40002.exr',
-    'path/to/simple_file.conf',
-    'path/to/another_file.conf',
-    'path/to/some_file.txt',
-    'path/to/other_file.log',
-    'path/to/yet_another_file.dat'
-]
 
-def generate_file_paths(num_files: int) -> List[str]:
-    sequence_bases = ['file', 'image', 'video', 'audio']
-    non_sequence_files = ['config.conf', 'readme.txt', 'data.log', 'notes.doc']
-    extensions = ['exr', 'jpg', 'png', 'mp4', 'mp3']
+if __name__ == '__main__':
+    import doctest
+    doctest.testmod()
 
-    file_paths = []
+    def generate_file_paths(num_files: int) -> List[str]:
+        sequence_bases = ['file', 'image', 'video', 'audio']
+        non_sequence_files = ['config.conf', 'readme.txt', 'data.log', 'notes.doc']
+        extensions = ['exr', 'jpg', 'png', 'mp4', 'mp3']
 
-    for i in range(num_files):
-        if random.choice([True, False]):
-            base = random.choice(sequence_bases)
-            sequence_number = str(random.randint(1, 999999)).zfill(random.randint(4, 6))
-            extension = random.choice(extensions)
-            file_path = f"path/to/{base}.{sequence_number}.{extension}"
-        else:
-            file_path = f"path/to/{random.choice(non_sequence_files)}"
+        file_paths = []
 
-        file_paths.append(file_path)
+        for i in range(num_files):
+            if random.choice([True, False]):
+                base = random.choice(sequence_bases)
+                sequence_number = str(random.randint(1, 999999)).zfill(random.randint(4, 6))
+                extension = random.choice(extensions)
+                file_path = f"path/to/{base}.{sequence_number}.{extension}"
+            else:
+                file_path = f"path/to/{random.choice(non_sequence_files)}"
 
-    return file_paths
+            file_paths.append(file_path)
 
-# Generate 2000 file paths for testing
-file_paths = generate_file_paths(2000)
-from pprint import pprint
-# Performance comparison
-start_time = time.time()
-padded_paths_distinct = SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=True, format_style=FormatStyle.HASH)
-end_time = time.time()
-pprint(f"Distinct formats (hash): {padded_paths_distinct[:10]}...")  # Print only the first 10 for brevity
-pprint(f"Time taken with distinct formats (hash): {end_time - start_time} seconds")
+        return file_paths
 
-start_time = time.time()
-padded_paths_single = SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=False, format_style=FormatStyle.HASH)
-end_time = time.time()
-pprint(f"Single format (hash): {padded_paths_single[:10]}...")  # Print only the first 10 for brevity
-pprint(f"Time taken with single format (hash): {end_time - start_time} seconds")
+    # Generate 2000 file paths for testing
+    file_paths = generate_file_paths(2000)
 
-# Test with %0Nd format
-start_time = time.time()
-padded_paths_distinct = SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=True, format_style=FormatStyle.PERCENT)
-end_time = time.time()
-pprint(f"Distinct formats (%0Nd): {padded_paths_distinct[:10]}...")  # Print only the first 10 for brevity
-pprint(f"Time taken with distinct formats (%0Nd): {end_time - start_time} seconds")
-
-start_time = time.time()
-padded_paths_single = SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=False, format_style=FormatStyle.PERCENT)
-end_time = time.time()
-pprint(f"Single format (%0Nd): {padded_paths_single[:10]}...")  # Print only the first 10 for brevity
-pprint(f"Time taken with single format (%0Nd): {end_time - start_time} seconds")
-
-# Test with [0-9] format
-start_time = time.time()
-padded_paths_distinct = SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=True, format_style=FormatStyle.BRACKETS)
-end_time = time.time()
-pprint(f"Distinct formats ([0-9]): {padded_paths_distinct[:10]}...")  # Print only the first 10 for brevity
-pprint(f"Time taken with distinct formats ([0-9]): {end_time - start_time} seconds")
-
-start_time = time.time()
-padded_paths_single = SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=False, format_style=FormatStyle.BRACKETS)
-end_time = time.time()
-pprint(f"Single format ([0-9]): {padded_paths_single[:10]}...")  # Print only the first 10 for brevity
-pprint(f"Time taken with single format ([0-9]): {end_time - start_time} seconds")
-
-# Test with {0..9} format
-start_time = time.time()
-padded_paths_distinct = SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=True, format_style=FormatStyle.BRACES)
-end_time = time.time()
-print(f"Distinct formats ({{0..9}}): {padded_paths_distinct[:10]}...")  # Print only the first 10 for brevity
-print(f"Time taken with distinct formats ({{0..9}}): {end_time - start_time} seconds")
-
-start_time = time.time()
-padded_paths_single = SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=False, format_style=FormatStyle.BRACES)
-end_time = time.time()
-print(f"Single format ({{0..9}}): {padded_paths_single[:10]}...")  # Print only the first 10 for brevity
-print(f"Time taken with single format ({{0..9}}): {end_time - start_time} seconds")
-
-start_time = time.time()
-padded_paths_single = SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=False, format_style=FormatStyle.HASH_WITH_RANGE)
-end_time = time.time()
-print(f"Single format (nuke): {padded_paths_single[:10]}...")  # Print only the first 10 for brevity
-print(f"Time taken with single format (nuke): {end_time - start_time} seconds")
+    start_time = time.time()
+    padded_paths_single = SequenceFileUtils.convert_to_padded_format(file_paths, distinct_formats=True, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES)
+    end_time = time.time()
+    print(f"Single format (separate ranges): {padded_paths_single[:10]}...")  # Print only the first 10 for brevity
+    print(f"Time taken with single format (separate ranges): {end_time - start_time} seconds")
