@@ -1,6 +1,7 @@
 import os
+import re
 import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 import time
 from enum import Enum
 import random
@@ -8,7 +9,6 @@ from collections import defaultdict
 
 if os.name == 'nt':
     import win32security
-    import ntsecuritycon as con
 else:
     import pwd
 
@@ -66,7 +66,7 @@ class FileUtils:
         if os.name == 'nt':
             sd = win32security.GetFileSecurity(file_path, win32security.OWNER_SECURITY_INFORMATION)
             owner_sid = sd.GetSecurityDescriptorOwner()
-            name, domain, type = win32security.LookupAccountSid(None, owner_sid)
+            name, domain, _type = win32security.LookupAccountSid(None, owner_sid)
             return f"{domain}\\{name}"
         else:
             file_info = os.stat(file_path)
@@ -107,7 +107,7 @@ class FormatStyle(Enum):
     PERCENT_WITH_RANGE = 'percent_with_range'               # '%0Nd.ext 0-9'
     BRACKETS_SEPARATE_RANGES = 'brackets_separate_ranges'   # '[0-4,6-7,9]'
 
-    def requires_frame_range(self) -> bool:
+    def requires_range(self) -> bool:
         """Determines if the format style requires a range of frame numbers."""
         return self in {FormatStyle.BRACKETS, FormatStyle.BRACES, FormatStyle.HASH_WITH_RANGE, FormatStyle.PERCENT_WITH_RANGE}
 
@@ -115,7 +115,7 @@ class FormatStyle(Enum):
         """Determines if the format style requires separate ranges."""
         return self == FormatStyle.BRACKETS_SEPARATE_RANGES
 
-    def format_sequence(self, base_name: str, length: int, extension: str, ranges: Optional[List[str]] = None) -> str:
+    def format_sequence(self, base_name: str, length: int, extension: str, min_num: int = 0, max_num: int = 0, ranges: Optional[List[str]] = None) -> str:
         """Constructs the formatted sequence string based on the format style."""
         if self == FormatStyle.HASH:
             return f"{base_name}.{'#' * length}.{extension}"
@@ -124,12 +124,11 @@ class FormatStyle(Enum):
         elif self.requires_separate_ranges():
             ranges_str = ','.join(ranges)
             return f"{base_name}.[{ranges_str}].{extension}"
-        elif self.requires_frame_range():
-            min_num, max_num = ranges
+        elif self.requires_range():
             if self == FormatStyle.BRACKETS:
-                return f"{base_name}.[{str(min_num).zfill(length)}-{str(max_num).zfill(length)}].{extension}"
+                return f"{base_name}.[{min_num:0{length}}-{max_num:0{length}}].{extension}"
             elif self == FormatStyle.BRACES:
-                return f"{base_name}.{{{str(min_num).zfill(length)}..{str(max_num).zfill(length)}}}.{extension}"
+                return f"{base_name}.{{{min_num:0{length}}..{max_num:0{length}}}}.{extension}"
             elif self == FormatStyle.HASH_WITH_RANGE:
                 return f"{base_name}.{'#' * length}.{extension} {min_num}-{max_num}"
             elif self == FormatStyle.PERCENT_WITH_RANGE:
@@ -139,6 +138,19 @@ class FormatStyle(Enum):
 
 class SequenceFileUtils(FileUtils):
     """Utilities for working with sequence files."""
+
+    FORMAT_TO_REGEX = {
+        # NOTE: FormatStyle.HASH_WITH_RANGE and FormatStyle.PERCENT_WITH_RANGE
+        # should be ordered before FormatStyle.HASH and FormatStyle.PERCENT to ensure
+        # that the more specific patterns with ranges are matched first.
+        FormatStyle.HASH_WITH_RANGE: re.compile(r"(.*)\.(#+)\.(\w+) (\d+)-(\d+)"),
+        FormatStyle.PERCENT_WITH_RANGE: re.compile(r"(.*)\.%0(\d+)d\.(\w+) (\d+)-(\d+)"),
+        FormatStyle.HASH: re.compile(r"(.*)\.(#+)\.(\w+)"),
+        FormatStyle.PERCENT: re.compile(r"(.*)\.%0(\d+)d\.(\w+)"),
+        FormatStyle.BRACKETS: re.compile(r"(.*)\.\[(\d+)-(\d+)\]\.(\w+)"),
+        FormatStyle.BRACES: re.compile(r"(.*)\.\{(\d+)\.\.(\d+)\}\.(\w+)"),
+        FormatStyle.BRACKETS_SEPARATE_RANGES: re.compile(r"(.*)\.\[([0-9,\-]+)\]\.(\w+)"),
+    }
 
     @staticmethod
     def is_sequence_file(file_name: str) -> bool:
@@ -154,6 +166,40 @@ class SequenceFileUtils(FileUtils):
         if len(parts) < 3:
             return False
         return parts[-2].isdigit() and len(parts[-2]) > 1
+
+    @staticmethod
+    def detect_sequence_format(padded_format: str) -> Optional[FormatStyle]:
+        """Detects the format of the padded sequence.
+
+        Args:
+            padded_format (str): The padded sequence format.
+
+        Returns:
+            Optional[FormatStyle]: The detected format style, or None if no match is found.
+
+        Examples:
+            >>> SequenceFileUtils.detect_sequence_format('project/shot/comp_v1.######.exr')
+            <FormatStyle.HASH: 'hash'>
+
+            >>> SequenceFileUtils.detect_sequence_format('project/shot/comp_v1.%04d.exr')
+            <FormatStyle.PERCENT: 'percent'>
+
+            >>> SequenceFileUtils.detect_sequence_format('project/shot/comp_v1.[001001-001012].exr')
+            <FormatStyle.BRACKETS: 'brackets'>
+
+            >>> SequenceFileUtils.detect_sequence_format('project/shot/comp_v1.{1001..1002}.exr')
+            <FormatStyle.BRACES: 'braces'>
+
+            >>> SequenceFileUtils.detect_sequence_format('project/shot/comp_v1.[1001,1001-1002,1011-1012].exr')
+            <FormatStyle.BRACKETS_SEPARATE_RANGES: 'brackets_separate_ranges'>
+
+            >>> SequenceFileUtils.detect_sequence_format('project/shot/comp_v1.####.exr 0-9')
+            <FormatStyle.HASH_WITH_RANGE: 'hash_with_range'>
+
+            >>> SequenceFileUtils.detect_sequence_format('project/shot/comp_v1.%04d.exr 0-9')
+            <FormatStyle.PERCENT_WITH_RANGE: 'percent_with_range'>
+        """
+        return next((style for style, pattern in SequenceFileUtils.FORMAT_TO_REGEX.items() if pattern.match(padded_format)), None)
 
     @staticmethod
     def extract_sequence_info(file_name: str) -> Optional[Dict[str, str]]:
@@ -310,28 +356,62 @@ class SequenceFileUtils(FileUtils):
                     length_to_sequences[len(seq)].append(seq)
 
                 for length, sequences in length_to_sequences.items():
-                    ranges = None
-                    if format_style.requires_frame_range():
-                        ranges = SequenceFileUtils.get_sequence_range(sequences)
+                    if format_style.requires_range():
+                        min_num, max_num = SequenceFileUtils.get_sequence_range(sequences)
+                        padded_format = format_style.format_sequence(base_name, length, extension, min_num, max_num)
                     elif format_style.requires_separate_ranges():
                         ranges = SequenceFileUtils.get_sequence_ranges(sequences, preserve_length)
+                        padded_format = format_style.format_sequence(base_name, length, extension, ranges=ranges)
+                    else:
+                        padded_format = format_style.format_sequence(base_name, length, extension)
 
-                    padded_format = format_style.format_sequence(base_name, length, extension, ranges)
                     result.add(padded_format)
             else:
                 preserve_length = False
                 max_length = len(max(sequence_numbers, key=len))
-                ranges = None
-                if format_style.requires_frame_range():
-                    ranges = SequenceFileUtils.get_sequence_range(sequence_numbers)
+                if format_style.requires_range():
+                    min_num, max_num = SequenceFileUtils.get_sequence_range(sequence_numbers)
+                    padded_format = format_style.format_sequence(base_name, max_length, extension, min_num, max_num)
                 elif format_style.requires_separate_ranges():
                     ranges = SequenceFileUtils.get_sequence_ranges(sequence_numbers, preserve_length)
+                    padded_format = format_style.format_sequence(base_name, max_length, extension, ranges=ranges)
+                else:
+                    padded_format = format_style.format_sequence(base_name, max_length, extension)
 
-                padded_format = format_style.format_sequence(base_name, max_length, extension, ranges)
                 result.add(padded_format)
 
         return sorted(result)
 
+    @staticmethod
+    def calculate_total_size(base_path: Union[str, List[str]], start_frame: int = None, end_frame: int = None, extension: str = None) -> int:
+        """Calculates the total size of a sequence of files or a list of files.
+
+        Args:
+            base_path (Union[str, List[str]]): The base path of the sequence or a list of file paths.
+            start_frame (int, optional): The starting frame number. Required if base_path is a str.
+            end_frame (int, optional): The ending frame number. Required if base_path is a str.
+            extension (str, optional): The file extension. Required if base_path is a str.
+
+        Returns:
+            int: The total size of the sequence of files or the list of files.
+        """
+        file_paths = []
+
+        if isinstance(base_path, str):
+            if start_frame is None or end_frame is None or extension is None:
+                raise ValueError("start_frame, end_frame, and extension are required when base_path is a string")
+
+            for frame_number in range(start_frame, end_frame + 1):
+                filename = f"{base_path}.{str(frame_number).zfill(5)}{extension}"
+                file_paths.append(filename)
+
+        elif isinstance(base_path, list):
+            file_paths = base_path
+
+        else:
+            raise TypeError("base_path must be either a string or a list of strings")
+
+        return sum(map(os.path.getsize, file_paths))
 
 if __name__ == '__main__':
     import doctest
