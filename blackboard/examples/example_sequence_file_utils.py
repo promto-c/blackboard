@@ -115,27 +115,6 @@ class FormatStyle(Enum):
         """Determines if the format style requires separate ranges."""
         return self == FormatStyle.BRACKETS_SEPARATE_RANGES
 
-    def format_sequence(self, base_name: str, length: int, extension: str, min_num: int = 0, max_num: int = 0, ranges: Optional[List[str]] = None) -> str:
-        """Constructs the formatted sequence string based on the format style."""
-        if self == FormatStyle.HASH:
-            return f"{base_name}.{'#' * length}.{extension}"
-        elif self == FormatStyle.PERCENT:
-            return f"{base_name}.%0{length}d.{extension}"
-        elif self.requires_separate_ranges():
-            ranges_str = ','.join(ranges)
-            return f"{base_name}.[{ranges_str}].{extension}"
-        elif self.requires_range():
-            if self == FormatStyle.BRACKETS:
-                return f"{base_name}.[{min_num:0{length}}-{max_num:0{length}}].{extension}"
-            elif self == FormatStyle.BRACES:
-                return f"{base_name}.{{{min_num:0{length}}..{max_num:0{length}}}}.{extension}"
-            elif self == FormatStyle.HASH_WITH_RANGE:
-                return f"{base_name}.{'#' * length}.{extension} {min_num}-{max_num}"
-            elif self == FormatStyle.PERCENT_WITH_RANGE:
-                return f"{base_name}.%0{length}d.{extension} {min_num}-{max_num}"
-        else:
-            raise ValueError(f"Unsupported format style: {self}")
-
 class SequenceFileUtils(FileUtils):
     """Utilities for working with sequence files."""
 
@@ -151,6 +130,44 @@ class SequenceFileUtils(FileUtils):
         FormatStyle.BRACES: re.compile(r"(.*)\.\{(\d+)\.\.(\d+)\}\.(\w+)"),
         FormatStyle.BRACKETS_SEPARATE_RANGES: re.compile(r"(.*)\.\[([0-9,\-]+)\]\.(\w+)"),
     }
+
+    FORMAT_TO_STRING_PATTERNS = {
+        FormatStyle.HASH: "{base_name}.{range_str}.{extension}",
+        FormatStyle.PERCENT: "{base_name}.%0{length}d.{extension}",
+        FormatStyle.BRACKETS: "{base_name}.[{min_num:0{length}}-{max_num:0{length}}].{extension}",
+        FormatStyle.BRACES: "{base_name}.{{{min_num:0{length}}..{max_num:0{length}}}}.{extension}",
+        FormatStyle.HASH_WITH_RANGE: "{base_name}.{range_str}.{extension} {min_num}-{max_num}",
+        FormatStyle.PERCENT_WITH_RANGE: "{base_name}.%0{length}d.{extension} {min_num}-{max_num}",
+        FormatStyle.BRACKETS_SEPARATE_RANGES: "{base_name}.[{range_str}].{extension}",
+    }
+
+    @staticmethod
+    def format_sequence(style: FormatStyle, base_name: str, sequences: List[str], extension: str, length: int = 4, preserve_length: bool = False) -> str:
+        """Constructs the formatted sequence string based on the format style using cached patterns."""
+        format_string = SequenceFileUtils.FORMAT_TO_STRING_PATTERNS.get(style)
+        
+        if format_string is None:
+            raise ValueError(f"Unsupported format style: {style}")
+
+        range_str = None
+        min_num = None
+        max_num = None
+        if style in (FormatStyle.HASH, FormatStyle.HASH_WITH_RANGE):
+            range_str = '#' * length
+        elif style.requires_range():
+            min_num, max_num = SequenceFileUtils.get_sequence_range(sequences)
+        elif style.requires_separate_ranges():
+            ranges = SequenceFileUtils.get_sequence_ranges(sequences, preserve_length)
+            range_str = ','.join(ranges)
+
+        return format_string.format(
+            base_name=base_name,
+            length=length,
+            extension=extension,
+            min_num=min_num,
+            max_num=max_num,
+            range_str=range_str,
+        )
 
     @staticmethod
     def is_sequence_file(file_name: str) -> bool:
@@ -272,20 +289,18 @@ class SequenceFileUtils(FileUtils):
         for num in sequence_numbers_int[1:]:
             if num != previous_num + 1:
                 if range_start == previous_num:
-                    ranges.append(f"{str(range_start).zfill(length)}" if preserve_length else f"{range_start}")
+                    ranges.append(f'{range_start:0{length}}' if preserve_length else str(range_start))
                 else:
-                    range_start_str = str(range_start).zfill(length) if preserve_length else f"{range_start}"
-                    previous_num_str = str(previous_num).zfill(length) if preserve_length else f"{previous_num}"
-                    ranges.append(f"{range_start_str}-{previous_num_str}")
+                    ranges_str = f'{range_start:0{length}}-{previous_num:0{length}}' if preserve_length else f'{range_start}-{previous_num}'
+                    ranges.append(ranges_str)
                 range_start = num
             previous_num = num
 
         if range_start == previous_num:
-            ranges.append(f"{str(range_start).zfill(length)}" if preserve_length else f"{range_start}")
+            ranges.append(f'{range_start:0{length}}' if preserve_length else str(range_start))
         else:
-            range_start_str = str(range_start).zfill(length) if preserve_length else f"{range_start}"
-            previous_num_str = str(previous_num).zfill(length) if preserve_length else f"{previous_num}"
-            ranges.append(f"{range_start_str}-{previous_num_str}")
+            ranges_str = f'{range_start:0{length}}-{previous_num:0{length}}' if preserve_length else f'{range_start}-{previous_num}'
+            ranges.append(ranges_str)
 
         return ranges
 
@@ -350,33 +365,32 @@ class SequenceFileUtils(FileUtils):
 
         for (base_name, extension), sequence_numbers in sequence_dict.items():
             if distinct_formats:
-                preserve_length = True
                 length_to_sequences = defaultdict(list)
                 for seq in sequence_numbers:
                     length_to_sequences[len(seq)].append(seq)
 
-                for length, sequences in length_to_sequences.items():
-                    if format_style.requires_range():
-                        min_num, max_num = SequenceFileUtils.get_sequence_range(sequences)
-                        padded_format = format_style.format_sequence(base_name, length, extension, min_num, max_num)
-                    elif format_style.requires_separate_ranges():
-                        ranges = SequenceFileUtils.get_sequence_ranges(sequences, preserve_length)
-                        padded_format = format_style.format_sequence(base_name, length, extension, ranges=ranges)
-                    else:
-                        padded_format = format_style.format_sequence(base_name, length, extension)
+                padded_format_set = {
+                    SequenceFileUtils.format_sequence(
+                        style=format_style,
+                        base_name=base_name,
+                        sequences=sequences,
+                        extension=extension,
+                        length=length,
+                        preserve_length=True
+                    ) for length, sequences in length_to_sequences.items()
+                }
 
-                    result.add(padded_format)
+                result.update(padded_format_set)
+
             else:
-                preserve_length = False
-                max_length = len(max(sequence_numbers, key=len))
-                if format_style.requires_range():
-                    min_num, max_num = SequenceFileUtils.get_sequence_range(sequence_numbers)
-                    padded_format = format_style.format_sequence(base_name, max_length, extension, min_num, max_num)
-                elif format_style.requires_separate_ranges():
-                    ranges = SequenceFileUtils.get_sequence_ranges(sequence_numbers, preserve_length)
-                    padded_format = format_style.format_sequence(base_name, max_length, extension, ranges=ranges)
-                else:
-                    padded_format = format_style.format_sequence(base_name, max_length, extension)
+                padded_format = SequenceFileUtils.format_sequence(
+                    style=format_style,
+                    base_name=base_name,
+                    sequences=sequence_numbers, 
+                    extension=extension,
+                    length=len(max(sequence_numbers, key=len)),
+                    preserve_length=False
+                )
 
                 result.add(padded_format)
 
