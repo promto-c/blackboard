@@ -5,8 +5,13 @@ from typing import Dict, List, Generator
 
 # Standard Library Imports
 # ------------------------
-import glob, os, pwd, datetime
+import glob, os, datetime
 from itertools import product
+
+if os.name == 'nt':
+    import win32security
+else:
+    import pwd
 
 # Local Imports
 # -------------
@@ -15,9 +20,8 @@ from blackboard.utils.path_utils import PathPattern
 
 # Class Definitions
 # -----------------
-class FileUtils:
-    """Utilities for working with files.
-    """
+class FileUtil:
+    """Utilities for working with files."""
     # Units for formatting file sizes
     UNITS = ['bytes', 'kB', 'MB', 'GB', 'TB', 'PB']
     FILE_INFO_FIELDS = ['file_name', 'file_path', 'file_size', 'file_extension', 'last_modified', 'file_owner']
@@ -40,10 +44,10 @@ class FileUtils:
         """
         # Retrieve file statistics and details: file info, owner, last modified time, extension, and formatted size
         file_info = os.stat(file_path)
-        owner = pwd.getpwuid(file_info.st_uid).pw_name
+        owner = FileUtil.get_file_owner(file_path)
         modified_time = datetime.datetime.fromtimestamp(file_info.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-        extension = file_path.rsplit('.', 1)[-1] if '.' in file_path else ''
-        readable_size = FileUtils.format_size(file_info.st_size)
+        extension = FileUtil.get_file_extension(file_path)
+        readable_size = FileUtil.format_size(file_info.st_size)
 
         # Compile the file details into a dictionary
         details = {
@@ -58,6 +62,37 @@ class FileUtils:
         return details
 
     @staticmethod
+    def get_file_extension(file_path: str) -> str:
+        """Gets the file extension of a file.
+
+        Args:
+            file_path (str): Path to the file.
+
+        Returns:
+            str: The file extension, or an empty string if the file has no extension.
+        """
+        return file_path.rsplit('.', 1)[-1] if '.' in file_path else ''
+
+    @staticmethod
+    def get_file_owner(file_path: str) -> str:
+        """Gets the owner of a file.
+
+        Args:
+            file_path (str): Path to the file.
+
+        Returns:
+            str: The name of the file owner.
+        """
+        if os.name == 'nt':
+            sd = win32security.GetFileSecurity(file_path, win32security.OWNER_SECURITY_INFORMATION)
+            owner_sid = sd.GetSecurityDescriptorOwner()
+            name, domain, _type = win32security.LookupAccountSid(None, owner_sid)
+            return f"{domain}\\{name}"
+        else:
+            file_info = os.stat(file_path)
+            return pwd.getpwuid(file_info.st_uid).pw_name
+
+    @staticmethod
     def format_size(size: int, precision: int = 2) -> str:
         """Converts a file size to a human-readable form with adjustable precision.
 
@@ -69,7 +104,7 @@ class FileUtils:
             str: File size in a human-readable format, such as '1.23 MB'.
         """
         # Loop through each unit until the size is smaller than 1024
-        for unit in FileUtils.UNITS:
+        for unit in FileUtil.UNITS:
             if size < 1024:
                 # Use the appropriate format string based on the unit
                 formatted_size = f"{size:.{precision}f} {unit}" if unit != 'bytes' else f"{size} {unit}"
@@ -164,7 +199,7 @@ class FilePatternQuery:
                 continue
 
             # Extract file information dict from the path
-            file_info = FileUtils.extract_file_info(path)
+            file_info = FileUtil.extract_file_info(path)
 
             # Extract variables from the path based on the pattern and merge it with file information
             data_dict = self.extract_variables(path)
@@ -178,7 +213,7 @@ class FilePatternQuery:
     def fields(self) -> List[str]:
         """Returns the list of fields extracted from the pattern.
         """
-        return PathPattern.extract_variable_names(self._pattern) + FileUtils.FILE_INFO_FIELDS
+        return PathPattern.extract_variable_names(self._pattern) + FileUtil.FILE_INFO_FIELDS
 
     @property
     def pattern(self) -> str:

@@ -1,5 +1,5 @@
 import pytest
-from blackboard.utils.file_utils import FileUtils, FilePatternQuery
+from blackboard.utils.file_utils import FileUtil, FilePatternQuery
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ def test_extract_file_info_param(tmp_path, file_content, expected):
     temp_file = tmp_path / f"temp.{expected['file_extension']}"
     temp_file.write_text(file_content)
 
-    file_info = FileUtils.extract_file_info(str(temp_file))
+    file_info = FileUtil.extract_file_info(str(temp_file))
 
     assert file_info['file_name'] == temp_file.name
     assert file_info['file_extension'] == expected['file_extension']
@@ -37,7 +37,7 @@ def test_extract_file_info_param(tmp_path, file_content, expected):
 ])
 def test_format_size_param(size, precision, expected):
     """Test for format_size method with different sizes and precisions."""
-    assert FileUtils.format_size(size, precision) == expected
+    assert FileUtil.format_size(size, precision) == expected
 
 
 @pytest.fixture(scope="module")
