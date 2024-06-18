@@ -147,13 +147,13 @@ class SequenceFileUtil(FileUtil):
     }
 
     FORMAT_TO_PADDING_RULES = {
-        FormatStyle.BRACKETS: lambda match_data: len(match_data['start_frame']),
-        FormatStyle.BRACES: lambda match_data: len(match_data['start_frame']),
-        FormatStyle.HASH_WITH_RANGE: lambda match_data: len(match_data.get('hashes', '')) or int(match_data.get('padding', '')),
-        FormatStyle.PERCENT_WITH_RANGE: lambda match_data: len(match_data.get('hashes', '')) or int(match_data.get('padding', '')),
         FormatStyle.HASH: lambda match_data: len(match_data['hashes']),
         FormatStyle.PERCENT: lambda match_data: int(match_data['padding']),
-        FormatStyle.BRACKETS_SEPARATE_RANGES: lambda details: len(details['ranges'].split(',')[0].split('-')[0]),
+        FormatStyle.BRACKETS: lambda match_data: len(match_data['start_frame']),
+        FormatStyle.BRACES: lambda match_data: len(match_data['start_frame']),
+        FormatStyle.HASH_WITH_RANGE: lambda match_data: len(match_data['hashes']),
+        FormatStyle.PERCENT_WITH_RANGE: lambda match_data: int(match_data['padding']),
+        FormatStyle.BRACKETS_SEPARATE_RANGES: lambda match_data: len(match_data['ranges'].split(',')[0].split('-')[0]),
     }
 
     FORMAT_TO_STRING_PATTERNS = {
@@ -167,7 +167,7 @@ class SequenceFileUtil(FileUtil):
     }
 
     @staticmethod
-    def extract_sequence_details(sequence_path_format: str, format_style: Optional[FormatStyle] = None) -> dict:
+    def extract_sequence_details(sequence_path_format: str, format_style: Optional['FormatStyle'] = None) -> Dict[str, str]:
         """Extracts groups from the sequence path format.
 
         Args:
@@ -175,7 +175,7 @@ class SequenceFileUtil(FileUtil):
             format_style (Optional[FormatStyle]): The format style to use, if not provided, it will be detected.
 
         Returns:
-            dict: The extracted groups from the sequence path format.
+            Dict[str, str]: The extracted groups from the sequence path format.
         """
         format_style = format_style or SequenceFileUtil.detect_sequence_format(sequence_path_format)
         if not format_style:
@@ -188,7 +188,7 @@ class SequenceFileUtil(FileUtil):
         return match.groupdict()
 
     @staticmethod
-    def get_padding(input_data: Union[dict, str], format_style: Optional[FormatStyle] = None) -> int:
+    def get_padding(input_data: Union[Dict[str, str], str], format_style: Optional[FormatStyle] = None) -> int:
         """Determines the padding for sequence numbers based on the format style and match groups or sequence path format.
 
         Args:
@@ -198,17 +198,21 @@ class SequenceFileUtil(FileUtil):
         Returns:
             int: The number of digits to pad the sequence numbers.
         """
+        # Detect format style and extract sequence details if input_data is a sequence path format string
         if isinstance(input_data, str):
+            format_style = format_style or SequenceFileUtil.detect_sequence_format(input_data)
             sequence_data = SequenceFileUtil.extract_sequence_details(input_data, format_style)
+        # Use input_data directly if it's already a dictionary of sequence details
         elif isinstance(input_data, dict):
             sequence_data = input_data
         else:
             raise TypeError("input_data must be a dict or str")
 
-        format_style = format_style or SequenceFileUtil.detect_sequence_format(input_data if isinstance(input_data, str) else '')
+        # Ensure the format style is valid
         if not format_style:
             raise ValueError("Unsupported format style")
 
+        # Determine and return the padding based on the format style and sequence details
         return SequenceFileUtil.FORMAT_TO_PADDING_RULES.get(format_style, lambda _: SequenceFileUtil.DEFAULT_PADDING)(sequence_data)
 
     @staticmethod
@@ -288,11 +292,11 @@ class SequenceFileUtil(FileUtil):
         return parts[-2].isdigit()
 
     @staticmethod
-    def detect_sequence_format(sequence_format: str) -> Optional[FormatStyle]:
-        """Detects the format of the padded sequence.
+    def detect_sequence_format(sequence_path_format: str) -> Optional['FormatStyle']:
+        """Detects the format of the sequence path format.
 
         Args:
-            sequence_format (str): The padded sequence format.
+            sequence_path_format (str): The sequence path format.
 
         Returns:
             Optional[FormatStyle]: The detected format style, or None if no match is found.
@@ -319,11 +323,11 @@ class SequenceFileUtil(FileUtil):
             >>> SequenceFileUtil.detect_sequence_format('project/shot/comp_v1.%04d.exr 0-9')
             <FormatStyle.PERCENT_WITH_RANGE: 'percent_with_range'>
         """
-        return next((style for style, pattern in SequenceFileUtil.FORMAT_TO_REGEX.items() if pattern.match(sequence_format)), None)
+        return next((style for style, pattern in SequenceFileUtil.FORMAT_TO_REGEX.items() if pattern.match(sequence_path_format)), None)
 
     @staticmethod
-    def generate_file_paths(base_name: str, frames: List[int], extension: str, padding: int) -> List[str]:
-        """Generates file paths based on the base name, list of frames, and extension.
+    def construct_file_paths(base_name: str, frames: List[int], extension: str, padding: int) -> List[str]:
+        """Constructs file paths based on the base name, list of frames, and extension.
 
         Args:
             base_name (str): The base name of the sequence.
@@ -332,59 +336,69 @@ class SequenceFileUtil(FileUtil):
             padding (int): The number of digits in the frame number.
 
         Returns:
-            List[str]: A list of generated file paths.
+            List[str]: A list of constructed file paths.
         """
         return [f"{base_name}.{frame:0{padding}}.{extension}" for frame in frames]
 
     @staticmethod
-    def extract_paths_from_format(sequence_format: str, sequence_range: Optional[Tuple[int, int]] = None, format_style: Optional[FormatStyle] = None) -> List[str]:
-        """Extracts individual file paths from a sequence format.
+    def extract_paths_from_format(sequence_path_format: str, sequence_range: Optional[Tuple[int, int]] = None, format_style: Optional['FormatStyle'] = None) -> List[str]:
+        """Extracts individual file paths from a sequence path format.
 
         Args:
-            sequence_format (str): The sequence format.
+            sequence_path_format (str): The sequence path format.
             sequence_range (Optional[Tuple[int, int]]): An optional range of sequence numbers (start, end).
             format_style (Optional[FormatStyle]): The format style to use, if not provided, it will be detected.
 
         Returns:
             List[str]: A list of individual file paths.
         """
-        format_style = format_style or SequenceFileUtil.detect_sequence_format(sequence_format)
+        # Detect the format style if not provided
+        format_style = format_style or SequenceFileUtil.detect_sequence_format(sequence_path_format)
         if not format_style:
             raise ValueError("Unsupported format style")
 
+        # Initialize file paths list
         file_paths = []
-        sequence_data = SequenceFileUtil.extract_sequence_details(sequence_format, format_style)
+
+        # Extract details from the sequence path format
+        sequence_data = SequenceFileUtil.extract_sequence_details(sequence_path_format, format_style=format_style)
         base_name = sequence_data['base_name']
         extension = sequence_data['extension']
-        padding = SequenceFileUtil.get_padding(sequence_data, format_style)
+        padding = SequenceFileUtil.get_padding(sequence_data, format_style=format_style)
 
+        # Handle formats that include a range of frames
         if format_style.requires_range():
             start_frame = int(sequence_data['start_frame'])
             end_frame = int(sequence_data['end_frame'])
-            file_paths = SequenceFileUtil.generate_file_paths(base_name, range(start_frame, end_frame + 1), extension, padding)
-
+            file_paths = SequenceFileUtil.construct_file_paths(base_name, range(start_frame, end_frame + 1), extension, padding)
+        
+        # Handle formats that include separate ranges
         elif format_style.requires_separate_ranges():
             ranges = sequence_data['ranges'].split(',')
             frames = SequenceFileUtil.ranges_to_sequence_numbers(ranges)
-            file_paths = SequenceFileUtil.generate_file_paths(base_name, frames, extension, padding)
-
+            file_paths = SequenceFileUtil.construct_file_paths(base_name, frames, extension, padding)
+        
+        # Handle other formats
         else:
+            # If a sequence range is provided, use it
             if sequence_range:
                 start_frame, end_frame = sequence_range
-                file_paths = SequenceFileUtil.generate_file_paths(base_name, range(start_frame, end_frame + 1), extension, padding)
+                file_paths = SequenceFileUtil.construct_file_paths(base_name, range(start_frame, end_frame + 1), extension, padding)
 
+            # Otherwise, determine the sequence range from the files on disk
             else:
-                dir_name = os.path.dirname(sequence_format) or '.'
+                # Replace format placeholders with '?' for glob pattern
                 if format_style == FormatStyle.HASH:
-                    pattern = sequence_format.replace('#', '?')
+                    pattern = sequence_path_format.replace('#', '?')
                 elif format_style == FormatStyle.PERCENT:
-                    pattern = sequence_format.replace(f'%0{padding}d', '?' * padding)
+                    pattern = sequence_path_format.replace(f'%0{padding}d', '?' * padding)
                 else:
                     raise ValueError("Sequence range must be provided for this format style")
 
-                file_paths = glob.glob(os.path.join(dir_name, pattern))
+                # Use glob to find matching files
+                file_paths = glob.glob(pattern)
 
-        return file_paths
+        return sorted(file_paths)
 
     @staticmethod
     def parse_sequence_file_name(file_name: str) -> Tuple[str, str, str]:
@@ -394,7 +408,8 @@ class SequenceFileUtil(FileUtil):
             file_name (str): The file name to extract information from.
 
         Returns:
-            Tuple[str, str, str]: A tuple containing the base name, sequence number, and extension if the file name follows the sequence pattern, otherwise an empty tuple.
+            Tuple[str, str, str]: A tuple containing the base name, sequence number, and extension
+                if the file name follows the sequence pattern, otherwise a tuple of Nones.
         """
         parts = file_name.rsplit('.', 2)
         if len(parts) == 3 and parts[1].isdigit():
@@ -404,7 +419,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def get_sequence_range(sequence_numbers: List[str]) -> Tuple[int, int]:
-        """Gets the range of sequence numbers from a list of sequence files.
+        """Gets the range of sequence numbers from a list of sequence numbers.
 
         Args:
             sequence_numbers (List[str]): A list of sequence numbers.
@@ -412,6 +427,7 @@ class SequenceFileUtil(FileUtil):
         Returns:
             Tuple[int, int]: The minimum and maximum sequence numbers in the list.
         """
+        # Convert all sequence numbers to integers and return the minimum and maximum sequence numbers
         sequence_numbers = [int(num) for num in sequence_numbers if num.isdigit()]
         return min(sequence_numbers), max(sequence_numbers)
 
@@ -464,19 +480,19 @@ class SequenceFileUtil(FileUtil):
         return ranges
 
     @staticmethod
-    def ranges_to_sequence_numbers(ranges: Union[List[str], str]) -> List[int]:
+    def ranges_to_sequence_numbers(ranges: List[str]) -> List[int]:
         """Converts ranges in the format 'start-end' or individual numbers as strings to a list of integers.
 
         Args:
-            ranges (Union[List[str], str]): The ranges to convert.
+            ranges (List[str]): The ranges to convert.
 
         Returns:
             List[int]: A list of sequence numbers.
         """
-        if isinstance(ranges, str):
-            ranges = ranges.split(',')
-
+        # Initialize the list to hold sequence numbers
         sequence_numbers = []
+
+        # Process each part of the ranges
         for part in ranges:
             if '-' in part:
                 start, end = map(int, part.split('-'))
@@ -484,19 +500,20 @@ class SequenceFileUtil(FileUtil):
             else:
                 sequence_numbers.append(int(part))
 
+        # Return the list of sequence numbers
         return sequence_numbers
 
     @staticmethod
-    def convert_to_sequence_format(file_paths: List[str], distinct_formats: bool = True, format_style: 'FormatStyle' = FormatStyle.HASH) -> List[str]:
-        """Converts a list of file paths to a list with padded sequence formats.
+    def convert_to_sequence_format(file_paths: List[str], format_style: 'FormatStyle' = FormatStyle.HASH, use_unique_padding: bool = True) -> List[str]:
+        """Converts a list of file paths to a list with sequence path formats.
 
         Args:
             file_paths (List[str]): A list of file paths.
-            distinct_formats (bool): Whether to include distinct formats for each sequence length.
             format_style (FormatStyle): The format style to use for padding.
+            use_unique_padding (bool): Whether to include distinct formats for each sequence length.
 
         Returns:
-            List[str]: A list of file paths with padded sequence formats.
+            List[str]: A list of file paths with sequence path formats.
 
         Examples:
             >>> file_paths = [
@@ -513,7 +530,7 @@ class SequenceFileUtil(FileUtil):
             >>> SequenceFileUtil.convert_to_sequence_format(file_paths)
             ['project/shot/comp_v1.######.exr', 'project/shot/comp_v1.####.exr', 'project/shot/comp_v1.####.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> SequenceFileUtil.convert_to_sequence_format(file_paths, distinct_formats=False)
+            >>> SequenceFileUtil.convert_to_sequence_format(file_paths, use_unique_padding=False)
             ['project/shot/comp_v1.######.exr', 'project/shot/comp_v1.####.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
             >>> SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.PERCENT)
@@ -528,26 +545,27 @@ class SequenceFileUtil(FileUtil):
             >>> SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES)
             ['project/shot/comp_v1.[001001,001011-001012].exr', 'project/shot/comp_v1.[1001-1002].exr', 'project/shot/comp_v1.[1001-1002].jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> SequenceFileUtil.convert_to_sequence_format(file_paths, distinct_formats=False, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES)
+            >>> SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES, use_unique_padding=False)
             ['project/shot/comp_v1.[001001-001002,001011-001012].exr', 'project/shot/comp_v1.[1001-1002].jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
         """
-        # Initialize dictionaries to store sequences and results
-        sequence_dict = defaultdict(list)
-        result = set()
+        # Initialize dictionary to store sequences and results
+        sequence_dict: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+        formatted_paths = set()
 
         # Parse each file path and categorize them into sequences
         for file_path in file_paths:
+            # Extract the base name, sequence number, and extension from the file path
             base_name, sequence_number, extension = SequenceFileUtil.parse_sequence_file_name(file_path)
             if all([base_name, sequence_number, extension]):
-                key = (base_name, extension)
-                sequence_dict[key].append(sequence_number)
+                sequence_dict[(base_name, extension)].append(sequence_number)
+            # If the file path does not match the sequence pattern, add it directly to the formatted paths
             else:
-                result.add(file_path)
+                formatted_paths.add(file_path)
 
         # Process each sequence to generate formatted paths
         for (base_name, extension), sequence_numbers in sequence_dict.items():
-            # Handle distinct formats for each sequence length if specified
-            if distinct_formats:
+            # Handle unique padding for each sequence length if specified
+            if use_unique_padding:
                 # Group sequences by their padding length
                 padding_to_sequences = defaultdict(list)
                 for seq in sequence_numbers:
@@ -564,11 +582,11 @@ class SequenceFileUtil(FileUtil):
                     ) for padding, sequences in padding_to_sequences.items()
                 }
 
-                result.update(sequence_format_set)
+                formatted_paths.update(sequence_format_set)
 
             else:
-                # Generate a single sequence format for all sequences
-                sequence_format = SequenceFileUtil.construct_sequence_file_path(
+                # Generate a single sequence path format for all sequences
+                sequence_path_format = SequenceFileUtil.construct_sequence_file_path(
                     format_style=format_style,
                     base_name=base_name,
                     frame_numbers=sequence_numbers, 
@@ -576,23 +594,36 @@ class SequenceFileUtil(FileUtil):
                     padding=len(max(sequence_numbers, key=len)),
                 )
 
-                result.add(sequence_format)
+                formatted_paths.add(sequence_path_format)
 
-        return sorted(result)
+        return sorted(formatted_paths)
 
     @staticmethod
-    def calculate_total_size(sequence_file_path: str) -> int:
+    def calculate_total_size(sequence_path_format: str) -> int:
         """Calculates the total size of the files in bytes.
 
         Args:
-            sequence_file_path (str): The path to the sequence file.
+            sequence_path_format (str): The path to the sequence file.
 
         Returns:
             int: The total size of the files in bytes.
         """
-        file_paths = SequenceFileUtil.extract_paths_from_format(sequence_file_path)
+        file_paths = SequenceFileUtil.extract_paths_from_format(sequence_path_format)
 
         return sum(map(os.path.getsize, file_paths))
+
+    @staticmethod
+    def extract_frame_number(file_name: str) -> Optional[int]:
+        """Extracts the frame number from a sequence file name.
+
+        Args:
+            file_name (str): The file name to extract the frame number from.
+
+        Returns:
+            Optional[str]: The frame number if the file name follows the sequence pattern, otherwise None.
+        """
+        _, frame_number, _ = SequenceFileUtil.parse_sequence_file_name(file_name)
+        return frame_number
 
     @staticmethod
     def extract_file_info(file_path: str) -> Dict[str, str]:
@@ -611,7 +642,7 @@ class SequenceFileUtil(FileUtil):
                 - file_owner: The owner of the file.
                 - sequence_range: The range of sequence numbers if the file is part of a sequence.
         """
-        # 
+        # Detect if the file path is a sequence path format
         format_style = SequenceFileUtil.detect_sequence_format(file_path)
         if not format_style:
             return FileUtil.extract_file_info(file_path)
@@ -623,13 +654,16 @@ class SequenceFileUtil(FileUtil):
 
         # Retrieve file statistics and details: file info, owner, last modified time, extension, and formatted size
         file_info = os.stat(latest_file)
-        owner = FileUtil.get_file_owner(file_info)
+        owner = FileUtil.get_file_owner(latest_file)
         modified_time = datetime.datetime.fromtimestamp(file_info.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
         extension = FileUtil.get_file_extension(latest_file)
         readable_size = FileUtil.format_size(total_size)
-        #
-        start_frame, end_frame = SequenceFileUtil.get_sequence_range(file_path)
 
+        # Get the sequence range directly from the sorted sequence files
+        start_frame = SequenceFileUtil.extract_frame_number(sequence_files[0])
+        end_frame = SequenceFileUtil.extract_frame_number(sequence_files[-1])
+
+        # Compile the details into a dictionary
         details = {
             "file_name": os.path.basename(latest_file),
             "file_path": file_path,
@@ -646,7 +680,7 @@ if __name__ == '__main__':
     import doctest
     doctest.testmod()
 
-    def generate_file_paths(num_files: int) -> List[str]:
+    def construct_file_paths(num_files: int) -> List[str]:
         sequence_bases = ['file', 'image', 'video', 'audio']
         non_sequence_files = ['config.conf', 'readme.txt', 'data.log', 'notes.doc']
         extensions = ['exr', 'jpg', 'png', 'mp4', 'mp3']
@@ -667,7 +701,7 @@ if __name__ == '__main__':
         return file_paths
 
     # Generate 2000 file paths for testing
-    file_paths = generate_file_paths(2000)
+    file_paths = construct_file_paths(2000)
 
     start_time = time.time()
     padded_paths_single = SequenceFileUtil.convert_to_sequence_format(file_paths, distinct_formats=True, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES)
