@@ -27,6 +27,9 @@ class ApplicationUtils:
     This class provides static methods to interact with MIME types, find associated
     applications, and manage .desktop files for applications.
     """
+    # Class constants for common paths
+    APPLICATIONS_PATH = '/usr/share/applications/'
+    USER_APPLICATIONS_PATH = os.path.expanduser('~/.local/share/applications/')
 
     @staticmethod
     def get_mime_type(file_path: str) -> str:
@@ -133,7 +136,7 @@ class ApplicationUtils:
         Returns:
             Optional[str]: The full path to the .desktop file, or None if not found.
         """
-        search_paths = ['/usr/share/applications/', os.path.expanduser('~/.local/share/applications/')]
+        search_paths = [ApplicationUtils.APPLICATIONS_PATH, ApplicationUtils.USER_APPLICATIONS_PATH]
         for path in search_paths:
             desktop_file = os.path.join(path, app_name)
             if os.path.isfile(desktop_file):
@@ -167,3 +170,20 @@ class ApplicationUtils:
             subprocess.run(['gio', 'launch', desktop_file, file_path])
         else:
             print("No .desktop file found for the selected application.")
+
+    @staticmethod
+    def open_directory_in_terminal(path: str) -> None:
+        """Opens the specified directory in a new terminal window.
+
+        Args:
+            path (str): The path to open in the terminal.
+        """
+        if not os.path.isdir(path):
+            path = os.path.dirname(path)
+
+        if os.name == 'nt':  # Windows
+            os.startfile(path)
+        elif os.name == 'posix':  # macOS or Linux
+            subprocess.Popen(['xdg-open', path])
+        else:
+            raise NotImplementedError(f"Unsupported operating system: {os.name}")
