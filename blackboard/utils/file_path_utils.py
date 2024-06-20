@@ -798,8 +798,8 @@ class FilePathWalker:
     @staticmethod
     def traverse_files(root: str, is_skip_hidden: bool = True, is_return_relative: bool = False,
                        excluded_folders: List[str] = list(), excluded_extensions: List[str] = list(),
-                       use_sequence_format: bool = False) -> Generator[str, None, None]:
-        """Traverse file paths from a root directory, optionally returning relative paths.
+                       use_sequence_format: bool = False, max_depth: Optional[int] = None) -> Generator[str, None, None]:
+        """Traverse file paths from a root directory, optionally returning relative paths and supporting depth limit.
 
         Args:
             root (str): A string specifying the root directory path.
@@ -808,6 +808,7 @@ class FilePathWalker:
             excluded_folders (List[str]): A list of folder names to be excluded from the traversal.
             excluded_extensions (List[str]): A list of file extensions to be excluded from the traversal.
             use_sequence_format (bool): A boolean indicating whether to convert files to sequence formats.
+            max_depth (Optional[int]): Maximum depth of directory traversal. None for no limit.
 
         Yields:
             Generator[str, None, None]: File paths from the root, either absolute or relative.
@@ -816,11 +817,12 @@ class FilePathWalker:
         root = os.path.normpath(root)
         root_len = len(root) + 1
 
-        def _traverse(directory: str) -> Generator[str, None, None]:
+        def _traverse(directory: str, current_depth: int = 0) -> Generator[str, None, None]:
             """Helper function to recursively traverse files.
 
             Args:
                 directory (str): The current directory path.
+                current_depth (int): The current depth of the traversal.
 
             Yields:
                 Generator[str, None, None]: File paths based on the specified criteria.
@@ -839,8 +841,11 @@ class FilePathWalker:
                     continue
 
                 if entry.is_dir():
+                    # Check if the max depth limit is reached
+                    if max_depth is not None and current_depth >= max_depth:
+                        continue
                     # Recurse into subdirectories
-                    yield from _traverse(entry.path)
+                    yield from _traverse(entry.path, current_depth + 1)
                 else:
                     # Check file extension
                     if any(entry.name.endswith(ext) for ext in excluded_extensions):
