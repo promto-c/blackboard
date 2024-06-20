@@ -846,6 +846,7 @@ class FilePathWalker:
                         continue
                     # Recurse into subdirectories
                     yield from _traverse(entry.path, current_depth + 1)
+
                 else:
                     # Check file extension
                     if any(entry.name.endswith(ext) for ext in excluded_extensions):
@@ -866,6 +867,53 @@ class FilePathWalker:
                 yield from SequenceFileUtil.convert_to_sequence_format(file_paths)
 
         yield from _traverse(root)
+
+    @staticmethod
+    def traverse_files_walk(search_root: str, is_skip_hidden: bool = True, use_sequence_format: bool = False,
+                            excluded_folders: List[str] = list(), included_extensions: Optional[List[str]] = None,
+                            excluded_extensions: Optional[List[str]] = None) -> Generator[str, None, None]:
+        """Traverse file paths from a root directory using os.walk, optionally converting to sequence formats.
+
+        Args:
+            search_root (str): A string specifying the root directory path.
+            is_skip_hidden (bool): A boolean indicating whether to skip hidden files and directories (those starting with '.').
+            use_sequence_format (bool): A boolean indicating whether to convert files to sequence formats.
+            excluded_folders (List[str]): A list of folder names to be excluded from the traversal.
+            included_extensions (Optional[List[str]]): A list of file extensions to be included in the traversal.
+            excluded_extensions (Optional[List[str]]): A list of file extensions to be excluded from the traversal.
+
+        Yields:
+            Generator[str, None, None]: File paths from the root. If `use_sequence_format` is True,
+                files are converted to sequence formats before yielding.
+        """
+        # Normalize the root directory path to ensure a consistent format
+        search_root = os.path.normpath(search_root)
+        
+        # Traverse the root directory
+        for root, dirnames, filenames in os.walk(search_root):
+
+            # Skip hidden directories and excluded folders
+            dirnames[:] = [
+                dirname for dirname in dirnames 
+                if not (
+                    (is_skip_hidden and dirname.startswith('.')) or
+                    (dirname in excluded_folders)
+                )
+            ]
+
+            # Convert filenames to sequence format if required
+            if use_sequence_format:
+                filenames = SequenceFileUtil.convert_to_sequence_format(filenames)
+
+            # Filter files by included and excluded extensions
+            for filename in filenames:
+                file_extension = FileUtil.get_file_extension(filename)
+                if ((is_skip_hidden and filename.startswith('.')) or 
+                    (file_extension in excluded_extensions) or
+                    (included_extensions and file_extension not in included_extensions)):
+                    continue
+
+                yield os.path.join(root, filename)
 
 class FilePatternQuery:
     """Queries files matching a specified pattern.
