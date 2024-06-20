@@ -6,7 +6,7 @@ import dateutil.parser as date_parser
 from qtpy import QtCore, QtGui, QtWidgets
 
 from blackboard.utils.color_utils import ColorUtils
-from blackboard.utils.file_utils import SequenceFileUtil
+from blackboard.utils.file_path_utils import SequenceFileUtil
 from blackboard.utils.qimage_utils import ThumbnailUtils, ThumbnailLoader
 from blackboard.utils.thread_pool import ThreadPoolManager, RunnableTask
 

@@ -161,7 +161,7 @@ def main():
     """Create the application and main window, and show the widget.
     """
     import sys
-    from blackboard.utils.file_utils import FilePatternQuery
+    from blackboard.utils.file_path_utils import FilePatternQuery
 
     # Create the application and the main window
     app = QtWidgets.QApplication(sys.argv)
