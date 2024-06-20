@@ -548,7 +548,7 @@ class SequenceFileUtil(FileUtil):
     @staticmethod
     def convert_to_sequence_format(file_paths: List[str], format_style: 'FormatStyle' = FormatStyle.HASH,
                                    use_unique_padding: bool = True, is_skip_hidden: bool = True
-                                  ) -> List[str]:
+                                  ) -> Generator[str, None, None]:
         """Converts a list of file paths to a list with sequence path formats.
 
         Args:
@@ -557,8 +557,8 @@ class SequenceFileUtil(FileUtil):
             use_unique_padding (bool): Whether to include distinct formats for each sequence length.
             is_skip_hidden (bool): Whether to skip hidden files.
 
-        Returns:
-            List[str]: A list of file paths with sequence path formats.
+        Yields:
+            Generator[str, None, None]: A generator yielding file paths with sequence path formats.
 
         Examples:
             >>> file_paths = [
@@ -573,30 +573,29 @@ class SequenceFileUtil(FileUtil):
             ... 'project/shot/reference_image.png',
             ... 'project/shot/notes.txt'
             ... ]
-            >>> SequenceFileUtil.convert_to_sequence_format(file_paths)
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths))
             ['project/shot/comp_v1.######.exr', 'project/shot/comp_v1.####.exr', 'project/shot/comp_v1.####.jpg', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> SequenceFileUtil.convert_to_sequence_format(file_paths, use_unique_padding=False)
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, use_unique_padding=False))
             ['project/shot/comp_v1.######.exr', 'project/shot/comp_v1.####.jpg', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.PERCENT)
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.PERCENT))
             ['project/shot/comp_v1.%04d.exr', 'project/shot/comp_v1.%04d.jpg', 'project/shot/comp_v1.%06d.exr', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACKETS)
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACKETS))
             ['project/shot/comp_v1.[001001-001012].exr', 'project/shot/comp_v1.[1001-1002].exr', 'project/shot/comp_v1.[1001-1002].jpg', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACES)
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACES))
             ['project/shot/comp_v1.{001001..001012}.exr', 'project/shot/comp_v1.{1001..1002}.exr', 'project/shot/comp_v1.{1001..1002}.jpg', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES)
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES))
             ['project/shot/comp_v1.[001001,001011-001012].exr', 'project/shot/comp_v1.[1001-1002].exr', 'project/shot/comp_v1.[1001-1002].jpg', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES, use_unique_padding=False)
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES, use_unique_padding=False))
             ['project/shot/comp_v1.[001001-001002,001011-001012].exr', 'project/shot/comp_v1.[1001-1002].jpg', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
         """
         # Initialize dictionary to store sequences and results
         sequence_dict: Dict[Tuple[str, str], List[str]] = defaultdict(list)
-        formatted_paths = set()
 
         # Parse each file path and categorize them into sequences
         for file_path in file_paths:
@@ -610,13 +609,13 @@ class SequenceFileUtil(FileUtil):
                 sequence_dict[(base_name, extension)].append(sequence_number)
             # If the file path does not match the sequence pattern, add it directly to the formatted paths
             else:
-                formatted_paths.add(file_path)
+                yield file_path
 
         # Process each sequence to generate formatted paths
         for (base_name, extension), sequence_numbers in sequence_dict.items():
             # Handle the case where there is only one frame in the sequence
             if len(sequence_numbers) == 1:
-                formatted_paths.add(f"{base_name}.{sequence_numbers[0]}.{extension}")
+                yield f"{base_name}.{sequence_numbers[0]}.{extension}"
                 continue
 
             # Handle unique padding for each sequence length if specified
@@ -637,7 +636,7 @@ class SequenceFileUtil(FileUtil):
                     ) for padding, sequences in padding_to_sequences.items()
                 }
 
-                formatted_paths.update(sequence_format_set)
+                yield from sequence_format_set
 
             else:
                 # Generate a single sequence path format for all sequences
@@ -649,9 +648,7 @@ class SequenceFileUtil(FileUtil):
                     padding=len(max(sequence_numbers, key=len)),
                 )
 
-                formatted_paths.add(sequence_path_format)
-
-        return sorted(formatted_paths)
+                yield sequence_path_format
 
     @staticmethod
     def calculate_total_size(sequence_path_format: str) -> int:
@@ -737,6 +734,133 @@ class SequenceFileUtil(FileUtil):
             "sequence_range": f"{start_frame}-{end_frame}",
         }
         return details
+
+class FilePathWalker:
+
+    @staticmethod
+    def traverse_directories(root: str, target_depth: Optional[int] = None, is_skip_hidden: bool = True,
+                             is_return_relative: bool = False, excluded_folders: List[str] = list(),
+                            ) -> Generator[str, None, None]:
+        """Traverse directory paths from a root directory, optionally returning relative paths.
+
+        If a target_depth is specified, only directories at that depth are yielded.
+
+        Args:
+            root (str): A string specifying the root directory path.
+            target_depth (Optional[int]): An optional integer specifying the target depth to yield directories from.
+                   If not specified, all directories are yielded.
+            is_skip_hidden (bool): A boolean indicating whether to skip hidden directories (those starting with '.').
+            is_return_relative (bool): A boolean indicating whether to return relative paths instead of absolute paths.
+            excluded_folders (List[str]): A list of folder names to be excluded from the traversal.
+
+        Yields:
+            Generator[str, None, None]: Directory paths from the root, either absolute or relative.
+            If target_depth is specified, only directories at that depth are yielded.
+        """
+        # Normalize the root directory path to ensure a consistent format
+        root = os.path.normpath(root)
+        root_len = len(root) + 1
+
+        def _traverse(directory: str, current_depth: int = 0) -> Generator[str, None, None]:
+            """Helper function to recursively traverse directories.
+
+            Args:
+                directory (str): The current directory path.
+                current_depth (int): The current depth level of traversal.
+
+            Yields:
+                Generator[str, None, None]: Directory paths based on the specified criteria.
+            """
+            # Determine the path to yield (relative or absolute)
+            path = directory[root_len:] if is_return_relative else directory
+
+            # Check if the current depth matches the target depth
+            if target_depth is None and current_depth:
+                yield path
+            elif current_depth == target_depth:
+                yield path
+                return
+
+            # Check if the directory can be accessed, skip if not 
+            if not os.access(directory, os.R_OK):
+                return
+
+            # Continue traversal for subdirectories
+            for entry in os.scandir(directory):
+                # Skip non-directories, hidden directories, and excluded folders
+                if not entry.is_dir() or (is_skip_hidden and entry.name.startswith('.')) or entry.name in excluded_folders:
+                    continue
+
+                yield from _traverse(entry.path, current_depth + 1)
+
+        yield from _traverse(root)
+
+    @staticmethod
+    def traverse_files(root: str, is_skip_hidden: bool = True, is_return_relative: bool = False,
+                       excluded_folders: List[str] = list(), excluded_extensions: List[str] = list(),
+                       use_sequence_format: bool = False) -> Generator[str, None, None]:
+        """Traverse file paths from a root directory, optionally returning relative paths.
+
+        Args:
+            root (str): A string specifying the root directory path.
+            is_skip_hidden (bool): A boolean indicating whether to skip hidden files and directories (those starting with '.').
+            is_return_relative (bool): A boolean indicating whether to return relative paths instead of absolute paths.
+            excluded_folders (List[str]): A list of folder names to be excluded from the traversal.
+            excluded_extensions (List[str]): A list of file extensions to be excluded from the traversal.
+            use_sequence_format (bool): A boolean indicating whether to convert files to sequence formats.
+
+        Yields:
+            Generator[str, None, None]: File paths from the root, either absolute or relative.
+        """
+        # Normalize the root directory path to ensure a consistent format
+        root = os.path.normpath(root)
+        root_len = len(root) + 1
+
+        def _traverse(directory: str) -> Generator[str, None, None]:
+            """Helper function to recursively traverse files.
+
+            Args:
+                directory (str): The current directory path.
+
+            Yields:
+                Generator[str, None, None]: File paths based on the specified criteria.
+            """
+            # Initialize a list to collect file paths if sequence format is used
+            file_paths = []
+            
+            # Check if the directory can be accessed, skip if not 
+            if not os.access(directory, os.R_OK):
+                return
+
+            # Traverse entries in the directory
+            for entry in os.scandir(directory):
+                # Skip hidden files/directories and excluded folders
+                if (is_skip_hidden and entry.name.startswith('.')) or entry.name in excluded_folders:
+                    continue
+
+                if entry.is_dir():
+                    # Recurse into subdirectories
+                    yield from _traverse(entry.path)
+                else:
+                    # Check file extension
+                    if any(entry.name.endswith(ext) for ext in excluded_extensions):
+                        continue
+
+                    # Determine the path to yield (relative or absolute)
+                    path = entry.path[root_len:] if is_return_relative else entry.path
+
+                    # If using sequence format, collect file paths to process later
+                    if use_sequence_format:
+                        file_paths.append(path)
+                        continue
+
+                    yield path
+
+            # Convert and yield the formatted file paths if applicable
+            if use_sequence_format:
+                yield from SequenceFileUtil.convert_to_sequence_format(file_paths)
+
+        yield from _traverse(root)
 
 class FilePatternQuery:
     """Queries files matching a specified pattern.
@@ -861,14 +985,3 @@ class FilePatternQuery:
 if __name__ == '__main__':
     import doctest
     doctest.testmod()
-
-    from pprint import pprint
-    # Example usage
-    pattern = "blackboard/examples/projects/{project_name}/seq_{sequence_name}/{shot_name}/{asset_type}"
-    filters = {
-        'project_name': ['ProjectA'],
-        'shot_name': ['shot01', 'shot02'],
-    }
-
-    work_file_query = FilePatternQuery(pattern)
-    pprint(list(work_file_query.query_files()))

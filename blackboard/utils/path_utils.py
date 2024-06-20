@@ -1,69 +1,21 @@
-from typing import Dict, List, Generator, Optional
-import glob, re, os
+# Type Checking Imports
+# ---------------------
+from typing import Dict, List
+
+# Standard Library Imports
+# ------------------------
+import glob, re
 from pathlib import Path
 from numbers import Number
 
+
+# Constant Definitions
+# --------------------
 PACKAGE_ROOT = Path(__file__).parent.parent
 
-class PathUtil:
 
-    @staticmethod
-    def traverse_directories(root: str, target_depth: Optional[int] = None, is_skip_hidden: bool = True,
-                             is_return_relative: bool = False, excluded_folders: List[str] = list(),
-                            ) -> Generator[str, None, None]:
-        """Traverse directory paths from a root directory, optionally returning relative paths.
-
-        If a target_depth is specified, only directories at that depth are yielded.
-
-        Args:
-            root (str): A string specifying the root directory path.
-            target_depth (Optional[int]): An optional integer specifying the target depth to yield directories from.
-                   If not specified, all directories are yielded.
-            is_skip_hidden (bool): A boolean indicating whether to skip hidden directories (those starting with '.').
-            is_return_relative (bool): A boolean indicating whether to return relative paths instead of absolute paths.
-            excluded_folders (List[str]): A list of folder names to be excluded from the traversal.
-
-        Yields:
-            Generator[str, None, None]: Directory paths from the root, either absolute or relative.
-            If target_depth is specified, only directories at that depth are yielded.
-        """
-        # Normalize the root directory path to ensure a consistent format
-        root = os.path.normpath(root)
-
-        def _traverse(directory: str, current_depth: int = 0) -> Generator[str, None, None]:
-            """Helper function to recursively traverse directories.
-
-            Args:
-                directory (str): The current directory path.
-                current_depth (int): The current depth level of traversal.
-
-            Yields:
-                Generator[str, None, None]: Directory paths based on the specified criteria.
-            """
-            # Determine the path to yield (relative or absolute)
-            path = directory[len(root) + 1:] if is_return_relative else directory
-
-            # Check if the current depth matches the target depth
-            if target_depth is None and current_depth:
-                yield path
-            elif current_depth == target_depth:
-                yield path
-                return
-
-            # Check if the directory can be accessed, skip if not 
-            if not os.access(directory, os.R_OK):
-                return
-
-            # Continue traversal for subdirectories
-            for entry in os.scandir(directory):
-                # Skip non-directories, hidden directories, and excluded folders
-                if not entry.is_dir() or (is_skip_hidden and entry.name.startswith('.')) or entry.name in excluded_folders:
-                    continue
-
-                yield from _traverse(entry.path, current_depth + 1)
-
-        yield from _traverse(root)
-
+# Class Definitions
+# -----------------
 class PathSequence:
     def __init__(self, path: str):
         self.path = str(path)
@@ -211,17 +163,3 @@ class PathPattern:
 if __name__ == '__main__':
     import doctest
     doctest.testmod()
-
-    path = 'example_exr_plates\C0653.####.exr'
-    path_sequence = PathSequence(path)
-
-    print(path_sequence.get_frame_range())
-    print(path_sequence.padding_length)
-
-    from pprint import pprint
-    pprint(PathPattern.extract_variables(
-        "projects/{project_name}/seq_{sequence_name}/shot/{shot_name}/work_files", 
-        "projects/ProjectB/seq_seq01/test/shot/shot03/work_files/texture.png"
-    ))
-
-    # {'project_name': 'ProjectB', 'sequence_name': 'seq01/test', 'shot_name': 'shot03'}
