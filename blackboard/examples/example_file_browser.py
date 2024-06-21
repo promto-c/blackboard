@@ -23,17 +23,20 @@ from blackboard.utils.application_utils import ApplicationUtils, ApplicationSect
 # Class Definitions
 # -----------------
 class AppSelectionDialog(QtWidgets.QDialog):
+
+    WINDOW_TITLE = 'Select Application'
+
     def __init__(self, file_path, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Select Application')
+        self.setWindowTitle(self.WINDOW_TITLE)
         layout = QtWidgets.QVBoxLayout(self)
-        self.listWidget = QtWidgets.QListWidget()
-        layout.addWidget(self.listWidget)
+        self.app_list_widget = QtWidgets.QListWidget(self)
+        layout.addWidget(self.app_list_widget)
         self.selected_application = None
 
         applications = self.get_applications_for_mime_type(file_path)
         if not applications:
-            self.listWidget.addItem(QtWidgets.QListWidgetItem("No applications found"))
+            self.app_list_widget.addItem(QtWidgets.QListWidgetItem("No applications found"))
         for desktop_file in applications:
             name, icon_path = ApplicationUtils.parse_desktop_file(desktop_file)
             if not name:
@@ -44,9 +47,9 @@ class AppSelectionDialog(QtWidgets.QDialog):
                 icon = QtGui.QIcon.fromTheme(icon_path)
                 if not icon.isNull():
                     item.setIcon(icon)
-            self.listWidget.addItem(item)
+            self.app_list_widget.addItem(item)
 
-        self.listWidget.itemDoubleClicked.connect(self.item_double_clicked)
+        self.app_list_widget.itemDoubleClicked.connect(self.item_double_clicked)
 
     def item_double_clicked(self, item):
         self.selected_application = item.data(QtCore.Qt.ItemDataRole.UserRole)

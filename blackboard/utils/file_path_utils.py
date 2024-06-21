@@ -788,7 +788,7 @@ class FilePathWalker:
             # Continue traversal for subdirectories
             for entry in os.scandir(directory):
                 # Skip non-directories, hidden directories, and excluded folders
-                if not entry.is_dir() or (is_skip_hidden and entry.name.startswith('.')) or entry.name in excluded_folders:
+                if not entry.is_dir() or FilePathWalker._is_skip_directory(entry.name, is_skip_hidden, excluded_folders):
                     continue
 
                 yield from _traverse(entry.path, current_depth + 1)
@@ -837,7 +837,7 @@ class FilePathWalker:
             # Traverse entries in the directory
             for entry in os.scandir(directory):
                 # Skip hidden files/directories and excluded folders
-                if (is_skip_hidden and entry.name.startswith('.')) or entry.name in excluded_folders:
+                if FilePathWalker._is_skip_directory(entry.name, is_skip_hidden, excluded_folders):
                     continue
 
                 if entry.is_dir():
@@ -849,7 +849,7 @@ class FilePathWalker:
 
                 else:
                     # Check file extension
-                    if any(entry.name.endswith(ext) for ext in excluded_extensions):
+                    if FilePathWalker._is_skip_file(entry.name, is_skip_hidden, excluded_extensions):
                         continue
 
                     # Determine the path to yield (relative or absolute)
@@ -890,30 +890,51 @@ class FilePathWalker:
         search_root = os.path.normpath(search_root)
         
         # Traverse the root directory
-        for root, dirnames, filenames in os.walk(search_root):
-
+        for root, dir_names, file_names in os.walk(search_root):
             # Skip hidden directories and excluded folders
-            dirnames[:] = [
-                dirname for dirname in dirnames 
-                if not (
-                    (is_skip_hidden and dirname.startswith('.')) or
-                    (dirname in excluded_folders)
+            dir_names[:] = [
+                dir_name for dir_name in dir_names 
+                if not FilePathWalker._is_skip_directory(
+                    dir_name, is_skip_hidden=is_skip_hidden, 
+                    excluded_folders=excluded_folders
                 )
             ]
 
-            # Convert filenames to sequence format if required
-            if use_sequence_format:
-                filenames = SequenceFileUtil.convert_to_sequence_format(filenames)
+            # Convert file names to sequence format if required
+            file_names = SequenceFileUtil.convert_to_sequence_format(file_names) if use_sequence_format else file_names
 
-            # Filter files by included and excluded extensions
-            for filename in filenames:
-                file_extension = FileUtil.get_file_extension(filename)
-                if ((is_skip_hidden and filename.startswith('.')) or 
-                    (file_extension in excluded_extensions) or
-                    (included_extensions and file_extension not in included_extensions)):
-                    continue
+            # Yield file paths that are not skipped based on the specified criteria
+            yield from (
+                # Construct the full path for each file name
+                os.path.join(root, file_name) for file_name in file_names
+                # Check if the file should be skipped based on the criteria
+                if not FilePathWalker._is_skip_file(
+                    file_name, is_skip_hidden=is_skip_hidden, 
+                    excluded_extensions=excluded_extensions, 
+                    included_extensions=included_extensions,
+                )
+            )
 
-                yield os.path.join(root, filename)
+    @staticmethod
+    def _is_skip_file(file_name: str, is_skip_hidden: bool = False, excluded_extensions: List[str] = list(),
+                      included_extensions: Optional[List[str]] = None) -> bool:
+        """Check if a file should be skipped based on the specified criteria.
+        """
+        file_extension = FileUtil.get_file_extension(file_name)
+        return (
+            (is_skip_hidden and file_name.startswith('.')) or 
+            (file_extension in excluded_extensions) or
+            (included_extensions and file_extension not in included_extensions)
+        )
+
+    @staticmethod
+    def _is_skip_directory(dir_name: str, is_skip_hidden: bool = False, excluded_folders: List[str] = list()) -> bool:
+        """Check if a directory should be skipped based on the specified criteria.
+        """
+        return (
+            (is_skip_hidden and dir_name.startswith('.')) or
+            (dir_name in excluded_folders)
+        )
 
 class FilePatternQuery:
     """Queries files matching a specified pattern.
@@ -998,7 +1019,7 @@ class FilePatternQuery:
                 continue
 
             # Extract file information dict from the path
-            file_info = FileUtil.extract_file_info(path)
+            file_info = SequenceFileUtil.extract_file_info(path)
 
             # Extract variables from the path based on the pattern and merge it with file information
             data_dict = self.extract_variables(path)
