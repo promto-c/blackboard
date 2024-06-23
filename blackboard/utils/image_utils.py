@@ -1,10 +1,17 @@
-from typing import Optional, Union
+# Type Checking Imports
+# ---------------------
+from typing import Optional, Union, BinaryIO, Dict, Union, Tuple
 
+# Standard Library Imports
+# ------------------------
 import os, math
 from pathlib import Path
 import numpy as np
 from numbers import Number
 from functools import lru_cache
+
+# Third Party Imports
+# -------------------
 try:
     import OpenEXR
     import Imath
@@ -13,10 +20,19 @@ except ImportError:
 else:
     IS_SUPPORT_OPENEXR_LIB = True
 import cv2
-import struct
-from blackboard.utils.path_utils import PathSequence
 
+# Local Imports
+# -------------
+from blackboard.utils.path_utils import PathSequence
+from blackboard.utils.file_path_utils import FileUtil
+from blackboard.utils.external.dpx_metadata_reader import DPXMetadata
+
+
+# Class Definitions
+# -----------------
 class ImageReader:
+
+    MOVIE_CLIP_FORMATS = ['mov', 'mp4', 'avi']
 
     @classmethod
     def read_image(cls, file_path: Union[str, Path]):
@@ -42,38 +58,27 @@ class ImageReader:
             image reading capabilities, which supports a wide range of image formats.
         """
         if isinstance(file_path, Path):
-            file_path_str = file_path.as_posix()
-        else:
-            file_path_str = file_path
-            # Convert string path to Path object
-            file_path = Path(file_path)
-
-        path = Path(file_path)
+            file_path = file_path.as_posix()
 
         # Check if the path is a file
-        if not path.is_file():
-            raise FileNotFoundError(f"The path {file_path_str} does not exist or is not a file.")
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"The path {file_path} does not exist or is not a file.")
     
         file_type_handlers = {
-                'exr': cls.read_exr,
-                'dpx': cls.read_dpx,
+                'exr': cls.read_exr if IS_SUPPORT_OPENEXR_LIB else cls.cv2_read_image,
+                'dpx': DpxReader.read_dpx,
             }
+
+        file_extension = FileUtil.get_file_extension(file_path)
+
         # Determine if the video file type supports
-        video_formats = ['mov', 'mp4', 'avi']
-                
-        file_extension = path.suffix[1:].lower()
-        
-        if file_extension in video_formats:
-            return cls.read_video(file_path_str)
+        if file_extension in cls.MOVIE_CLIP_FORMATS:
+            return cls.read_video(file_path)
 
         # Lookup read method for given file extension
         read_method = file_type_handlers.get(file_extension, cls.cv2_read_image)
 
-        # if not read_method:
-        #     supported_types = ", ".join(self.file_type_handlers.keys())
-        #     raise ValueError(f"Unsupported file type: {file_extension}. Supported types are: {supported_types}")
-
-        return read_method(file_path_str)
+        return read_method(file_path)
 
     @staticmethod
     def cv2_read_image(file_path: str):
@@ -105,9 +110,6 @@ class ImageReader:
         """
         if not os.path.isfile(image_path):
             return
-
-        if not IS_SUPPORT_OPENEXR_LIB:
-            return cls.cv2_read_image(image_path)
 
         # Open the EXR file for reading
         exr_file = OpenEXR.InputFile(image_path)
@@ -141,47 +143,67 @@ class ImageReader:
         return image_data.transpose(1, 2, 0)
 
     @staticmethod
-    def read_dpx_header(file):
-        headers = {}
-        
-        generic_file_header_format = ">I I 8s I I I I I 100s 24s 100s 200s 200s I 104s"
-        headers['GenericFileHeader'] = struct.unpack(
-            generic_file_header_format, file.read(768)
-        )
+    def read_video(file_path: str, frame_number: Optional[int] = None):
+        """Generalized method to read a specific frame from a video file.
 
-        # Determine endianness based on magic number
-        magic_number = headers['GenericFileHeader'][0]
-        if magic_number == 0x53445058:
-            headers['endianness'] = 'be'  # big-endian
-        elif magic_number == 0x58504453:
-            headers['endianness'] = 'le'  # little-endian
+        Args:
+            file_path (str): Path to the video file.
+            frame_number (int): Frame number to read, defaults to 0 (first frame).
 
-        generic_image_header_format = ">H H I I"
-        headers['GenericImageHeader'] = struct.unpack(
-            generic_image_header_format, file.read(12)
-        )
-    
-        return headers
+        Returns:
+            np.ndarray: Image data as a NumPy array.
+        """
+        cap = cv2.VideoCapture(file_path)
+        if frame_number is not None:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+        ret, frame = cap.read()
+
+        if not ret:
+            print("Failed to read frame")
+            return None
+
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        return frame
+
+
+class DpxReader:
+
+    _DEPTH_PACKING_TO_METHOD: Dict[Tuple[int, int], str] = {
+        # (10, 0): 'read_dpx_10bit_packed',
+        (10, 1): 'read_dpx_10bit_filled',
+        (12, 0): 'read_dpx_12bit_packed',
+        # (12, 1): 'read_dpx_12bit_filled',
+    }
+
+    @staticmethod
+    def read_dpx_metadata(file: BinaryIO):
+        return DPXMetadata.read_metadata(file)
 
     @classmethod
     def read_dpx(cls, image_path: str) -> np.ndarray:
-        # TODO: Check from metadata
-        try:
-            return cls.read_dpx_12bit_packed(image_path)
-        except ValueError:
-            return cls.read_dpx_10bit_filled(image_path)
-
-    @classmethod
-    def read_dpx_10bit_filled(cls, image_path: str) -> np.ndarray:
         with open(image_path, "rb") as file:
+            meta = cls.read_dpx_metadata(file)
+            if meta is None:
+                raise ValueError("Invalid DPX file")
 
-            meta = cls.read_dpx_header(file)
-            width = meta['GenericImageHeader'][2]
-            height = meta['GenericImageHeader'][3]
-            offset = meta['GenericFileHeader'][1]
+            depth = meta['depth']
+            packing = meta['packing']
 
-            file.seek(offset)
-            raw = np.fromfile(file, dtype=np.int32, count=width*height)
+            reader_method_name = cls._DEPTH_PACKING_TO_METHOD.get((depth, packing))
+            if reader_method_name is None:
+                raise ValueError("Unsupported DPX format")
+
+            reader_method = getattr(cls, reader_method_name)
+            return reader_method(file, meta)
+
+    @staticmethod
+    def read_dpx_10bit_filled(file_obj: BinaryIO, meta: Dict[str, Union[str, int]]) -> np.ndarray:
+        width = meta['width']
+        height = meta['height']
+        offset = meta['offset']
+
+        file_obj.seek(offset)
+        raw = np.fromfile(file_obj, dtype=np.int32, count=width * height)
 
         raw = raw.reshape(height, width)
 
@@ -200,33 +222,39 @@ class ImageReader:
 
         return image_data.transpose(1, 2, 0)
 
-    @classmethod
-    def read_dpx_12bit_packed(cls, image_path: str) -> np.ndarray:
-        with open(image_path, "rb") as file:
+    @staticmethod
+    def read_dpx_12bit_packed(file_obj: BinaryIO, meta: Dict[str, Union[str, int]]) -> np.ndarray:
+        width = meta['width']
+        height = meta['height']
+        offset = meta['offset']
+        descriptor = meta['descriptor']
 
-            meta = cls.read_dpx_header(file)
-            width = meta['GenericImageHeader'][2]
-            height = meta['GenericImageHeader'][3]
-            offset = meta['GenericFileHeader'][1]
+        # Determine the number of channels from the descriptor
+        descriptor_channels = {
+            50: 3,  # RGB
+            51: 4,  # RGBA
+            52: 4,  # ABGR
+        }
 
-            file.seek(offset)
+        if descriptor not in descriptor_channels:
+            raise ValueError("Unsupported DPX descriptor")
 
-            words_per_line = math.ceil(width * 9/4)
-            raw = np.fromfile(file, dtype=np.uint16, count=words_per_line*height)
+        components_per_pixel = descriptor_channels[descriptor]
+
+        file_obj.seek(offset)
+
+        words_per_line = math.ceil(width * 9 / 4)
+        raw = np.fromfile(file_obj, dtype=np.uint16, count=words_per_line * height)
 
         word_lines = raw.reshape(height, words_per_line)
 
         if meta['endianness'] == 'be':
             raw.byteswap(True)
 
-        # TODO: read num channels from metadata
-        # Constants for the process
-        components_per_pixel = 3  # RGB components
-
         # Extract 8 components from 6 halfwords (read as 16bit)
-        # word1: B5 B6 B7 B8 B9 B10 B11 B12  G1 G2 G3 G4 G5 G6 G7 G8    G9 G10 G11 G12  R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12
-        # word2: BBBBGGGGGGGGGGGG RRRRRRRRRRRR B1 B2 B3 B4
-        # word3: GGGGGGGGGGGGRRRR RRRRRRRRBBBBBBBB
+        # Word 1: | B05 B06 B07 B08 B09 B10 B11 B12|G01 G02 G03 G04 G05 G06 G07 G08 || G09 G10 G11 G12|R01 R02 R03 R04 R05 R06 R07 R08 R09 R10 R11 R12 |
+        # Word 2: | B09 B10 B11 B12|G01 G02 G03 G04 G05 G06 G07 G08 G09 G10 G11 G12 || R01 R02 R03 R04 R05 R06 R07 R08 R09 R10 R11 R12|B01 B02 B03 B04 |
+        # Word 3: | G01 G02 G03 G04 G05 G06 G07 G08 G09 G10 G11 G12|R01 R02 R03 R04 || R05 R06 R07 R08 R09 R10 R11 R12|B01 B02 B03 B04 B05 B06 B07 B08 |
         image_data = np.array([
             (word_lines[:, 1::6] & 0xFFF),
             ((word_lines[:, 0::6] & 0xFF) << 4) | (word_lines[:, 1::6] >> 12),
@@ -243,29 +271,6 @@ class ImageReader:
         image_data /= 0x0FFF
 
         return image_data
-
-    @staticmethod
-    def read_video(file_path: str, frame_number: Optional[int] = None):
-        """Generalized method to read a specific frame from a video file.
-
-        Args:
-            file_path (str): Path to the video file.
-            frame_number (int): Frame number to read, defaults to 0 (first frame).
-
-        Returns:
-            np.ndarray: Image data as a NumPy array.
-        """
-        cap = cv2.VideoCapture(file_path)
-        if frame_number is not None:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-        ret, frame = cap.read()
-        
-        if not ret:
-            print("Failed to read frame")
-            return None
-        
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        return frame
 
 class ImageSequence:
 
