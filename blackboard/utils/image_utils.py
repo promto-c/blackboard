@@ -169,10 +169,14 @@ class ImageReader:
 class DpxReader:
 
     _DEPTH_PACKING_TO_METHOD: Dict[Tuple[int, int], str] = {
+        (8, 0): 'read_dpx_8bit',
+        (8, 1): 'read_dpx_8bit',
         # (10, 0): 'read_dpx_10bit_packed',
         (10, 1): 'read_dpx_10bit_filled',
         (12, 0): 'read_dpx_12bit_packed',
-        # (12, 1): 'read_dpx_12bit_filled',
+        (12, 1): 'read_dpx_12bit_filled',
+        (16, 0): 'read_dpx_16bit',
+        (16, 1): 'read_dpx_16bit',
     }
 
     @staticmethod
@@ -186,6 +190,10 @@ class DpxReader:
             if meta is None:
                 raise ValueError("Invalid DPX file")
 
+            encoding = meta['encoding']
+            if encoding != 0:
+                raise NotImplementedError("RLE compression is not supported")
+
             depth = meta['depth']
             packing = meta['packing']
 
@@ -195,6 +203,32 @@ class DpxReader:
 
             reader_method = getattr(cls, reader_method_name)
             return reader_method(file, meta)
+
+    @staticmethod
+    def read_dpx_8bit(file_obj: BinaryIO, meta: Dict[str, Union[str, int]]) -> np.ndarray:
+        width = meta['width']
+        height = meta['height']
+        offset = meta['offset']
+        descriptor = meta['descriptor']
+
+        # Determine the number of channels from the descriptor
+        descriptor_channels = {
+            50: 3,  # RGB
+            51: 4,  # RGBA
+            52: 4,  # ABGR
+        }
+
+        if descriptor not in descriptor_channels:
+            raise ValueError("Unsupported DPX descriptor")
+
+        components_per_pixel = descriptor_channels[descriptor]
+
+        file_obj.seek(offset)
+        raw = np.fromfile(file_obj, dtype=np.uint8, count=width * height * components_per_pixel)
+
+        image_data = raw.reshape(height, width, components_per_pixel)
+
+        return image_data
 
     @staticmethod
     def read_dpx_10bit_filled(file_obj: BinaryIO, meta: Dict[str, Union[str, int]]) -> np.ndarray:
@@ -269,6 +303,75 @@ class DpxReader:
         # Convert to float32 and normalize
         image_data = image_data.astype(np.float32)
         image_data /= 0x0FFF
+
+        return image_data
+
+    @staticmethod
+    def read_dpx_12bit_filled(file_obj: BinaryIO, meta: Dict[str, Union[str, int]]) -> np.ndarray:
+        width = meta['width']
+        height = meta['height']
+        offset = meta['offset']
+        descriptor = meta['descriptor']
+
+        # Determine the number of channels from the descriptor
+        descriptor_channels = {
+            50: 3,  # RGB
+            51: 4,  # RGBA
+            52: 4,  # ABGR
+        }
+
+        if descriptor not in descriptor_channels:
+            raise ValueError("Unsupported DPX descriptor")
+
+        components_per_pixel = descriptor_channels[descriptor]
+
+        file_obj.seek(offset)
+        raw = np.fromfile(file_obj, dtype=np.uint16, count=width * height * components_per_pixel)
+
+        raw = raw.reshape(height, width, components_per_pixel)
+
+        if meta['endianness'] == 'be':
+            raw.byteswap(True)
+
+        # Extract the 12-bit pixel values
+        image_data = raw >> 4  # Right shift by 4 bits to discard the lower 4 bits
+
+        # Convert to float32 and normalize
+        image_data = image_data.astype(np.float32)
+        image_data /= 0xFFF
+
+        return image_data
+
+    @staticmethod
+    def read_dpx_16bit(file_obj: BinaryIO, meta: Dict[str, Union[str, int]]) -> np.ndarray:
+        width = meta['width']
+        height = meta['height']
+        offset = meta['offset']
+        descriptor = meta['descriptor']
+
+        # Determine the number of channels from the descriptor
+        descriptor_channels = {
+            50: 3,  # RGB
+            51: 4,  # RGBA
+            52: 4,  # ABGR
+        }
+
+        if descriptor not in descriptor_channels:
+            raise ValueError("Unsupported DPX descriptor")
+
+        components_per_pixel = descriptor_channels[descriptor]
+
+        file_obj.seek(offset)
+        raw = np.fromfile(file_obj, dtype=np.uint16, count=width * height * components_per_pixel)
+
+        raw = raw.reshape(height, width, components_per_pixel)
+
+        if meta['endianness'] == 'be':
+            raw.byteswap(True)
+
+        # Convert to float32 and normalize
+        image_data = raw.astype(np.float32)
+        image_data /= 0xFFFF
 
         return image_data
 
