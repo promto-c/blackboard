@@ -1,4 +1,3 @@
-
 # Type Checking Imports
 # ---------------------
 from typing import Dict, List, Generator, Optional, Tuple, Union
