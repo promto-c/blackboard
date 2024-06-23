@@ -41,7 +41,11 @@ class ApplicationUtils:
         Returns:
             str: The MIME type of the file.
         """
-        mime_type = subprocess.check_output(['file', '--mime-type', '-b', file_path]).decode().strip()
+        if os.name == 'nt':
+            import mimetypes
+            mime_type, _ = mimetypes.guess_type(file_path)
+        else:
+            mime_type = subprocess.check_output(['file', '--mime-type', '-b', file_path]).decode().strip()
         return mime_type
 
     @staticmethod

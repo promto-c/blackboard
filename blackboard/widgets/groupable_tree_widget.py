@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Union, Tuple, Optional, Generator, Iterable
 import time, uuid, os
 from numbers import Number
 from itertools import islice
+from collections import defaultdict
 
 # Third Party Imports
 # -------------------
@@ -231,7 +232,7 @@ class ColumnMangementWidget(QtWidgets.QTreeWidget):
         self.itemClicked.connect(self.toggle_check_state)
         self.itemChanged.connect(self.set_column_visibility)
 
-    def toggle_check_state(self, tree_item, column):
+    def toggle_check_state(self, tree_item: QtWidgets.QTreeWidgetItem, column: int):
         # Toggles the checkbox state when an item's text (second column) is clicked
         if column != 1:
             return
@@ -627,8 +628,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         Returns:
             Dict[str, List[TreeWidgetItem]]: A dictionary mapping group names to lists of tree items.
         """
-        # Create a dictionary to store the groups
-        groups = {}
+        # Create a defaultdict to store the groups
+        groups = defaultdict(list)
 
         # Group the data
         for i, item_data in enumerate(data):
@@ -638,12 +639,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
             # Add the tree item to the appropriate group
             item = self.topLevelItem(i)
-            if item_data in groups:
-                groups[item_data].append(item)
-            else:
-                groups[item_data] = [item]
+            groups[item_data].append(item)
 
-        return groups
+        return dict(groups)
 
     def _apply_scroll_momentum(self, velocity: QtCore.QPointF, momentum_factor: float = 0.5) -> None:
         """Applies momentum to the scroll bars based on the given velocity.
@@ -803,42 +801,45 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.highlight_item_delegate.clear()
         self.update()
 
-    # NOTE: for refactoring
     def set_row_height(self, height: Optional[int] = None):
+        """Set the row height for all items in the tree widget.
+
+        Args:
+            height (Optional[int]): The desired row height. If None, use the current row height.
+        """
+        # Set the row height for all items
         self._row_height = height or self._row_height
 
         if self._row_height == -1:
             self.reset_row_height()
             return
 
-        if not self.topLevelItem(0):
+        top_level_item = self.topLevelItem(0)
+        if not top_level_item:
             return
 
         self.setUniformRowHeights(True)
 
         for column_index in range(self.columnCount()):
             size_hint = self.sizeHintForColumn(column_index)
-            self.topLevelItem(0).setSizeHint(column_index, QtCore.QSize(size_hint, self._row_height))
+            top_level_item.setSizeHint(column_index, QtCore.QSize(size_hint, self._row_height))
 
     def reset_row_height(self):
-
-        if not self.topLevelItem(0):
+        top_level_item = self.topLevelItem(0)
+        if not top_level_item:
             return
 
         self.setUniformRowHeights(False)
 
         for column_index in range(self.columnCount()):
             size_hint = self.sizeHintForColumn(column_index)
-            self.topLevelItem(0).setSizeHint(column_index, QtCore.QSize(size_hint, -1))
+            top_level_item.setSizeHint(column_index, QtCore.QSize(size_hint, -1))
 
-    def toggle_expansion_for_selected(self, item):
+    def toggle_expansion_for_selected(self, reference_item: QtWidgets.QTreeWidgetItem):
         """Toggles the expansion state of selected items.
 
         Args:
-            item: The clicked item whose expansion state will be used as a reference.
-
-        Returns:
-            None.
+            reference_item: The clicked item whose expansion state will be used as a reference.
         """
         # Get the currently selected items
         selected_items = self.selectedItems()
@@ -849,7 +850,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Set the expanded state of all selected items to match the expanded state of the clicked item
         for i in selected_items:
-            i.setExpanded(item.isExpanded())
+            i.setExpanded(reference_item.isExpanded())
 
     def get_column_value_range(self, column: int, child_level: int = 0) -> Tuple[Optional[Number], Optional[Number]]:
         """Get the value range of a specific column at a given child level.
@@ -1028,10 +1029,10 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         data = [self.topLevelItem(row).data(column, QtCore.Qt.ItemDataRole.UserRole) for row in range(self.topLevelItemCount())]
         
         # Group the data and add the tree items to the appropriate group
-        groups = self._create_item_groups(data)
+        group_to_tree_items = self._create_item_groups(data)
 
         # Iterate through each group and its items
-        for group_name, items in groups.items():
+        for group_name, items in group_to_tree_items.items():
             # Create a new QTreeWidgetItem for the group
             group_item = TreeWidgetItem(self, [group_name])
             
@@ -1062,34 +1063,10 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     def fit_column_in_view(self) -> None:
         """Adjust the width of all columns to fit the entire view.
     
-            This method resizes columns so that their sum is equal to the width of the view minus the width of the vertical scroll bar. 
-            It starts by reducing the width of the column with the largest width by 10% until all columns fit within the expected width.
+        This method resizes columns so that their sum is equal to the width of the view minus the width of the vertical scroll bar. 
+        It starts by reducing the width of the column with the largest width by 10% until all columns fit within the expected width.
         """
-        # Resize all columns to fit their contents
-        self.resize_to_contents()
-        
-        # Get the expected width of the columns (the width of the view minus the width of the scroll bar)
-        expect_column_width = self.size().width() - self.verticalScrollBar().width()
-        # Calculate the sum of the current column widths
-        column_width_sum = sum(self.columnWidth(column) for column in range(self.columnCount()))
-        
-        # Loop until all columns fit within the expected width
-        while column_width_sum > expect_column_width:
-            # Find the column with the largest width
-            largest_column = max(range(self.columnCount()), key=lambda x: self.columnWidth(x))
-            # Reduce the width of the largest column by 10%
-            new_width = max(self.columnWidth(largest_column) - expect_column_width // 10, 0)
-            self.setColumnWidth(largest_column, new_width)
-            # Update the sum of the column widths
-            column_width_sum -= self.columnWidth(largest_column) - new_width
-
-    def resize_to_contents(self) -> None:
-        """Resize all columns in the object to fit their contents.
-        """
-        # Iterate through all columns
-        for column_index in range(self.columnCount()):  
-            # Resize the column to fit its contents
-            self.resizeColumnToContents(column_index) 
+        bb.utils.TreeUtil.fit_column_in_view(self)
 
     def ungroup_all(self) -> None:
         """Ungroup all the items in the tree widget.
@@ -1139,46 +1116,44 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         return bb.utils.TreeUtil.get_child_items(self)
 
     def copy_selected_cells(self):
-        # NOTE: For refactoring
-        #
-        #
+        """Copy selected cells to clipboard.
+        """
+        
         model = self.selectionModel()
-        model_indexes = model.selectedIndexes()
+        selected_indexes = model.selectedIndexes()
 
         all_items = self.get_all_items()
         # Sort the cells based on their global row and column
         sorted_indexes = sorted(
-            model_indexes, 
-            key=lambda model_index: (
-                all_items.index(self.itemFromIndex(model_index)),
-                model_index.column()
-                )
+            selected_indexes, 
+            key=lambda index: (
+                all_items.index(self.itemFromIndex(index)),
+                index.column()
             )
+        )
 
-        cell_dict = dict()
-        column_set = set()
+        # Use defaultdict for cleaner initialization
+        cell_dict = defaultdict(lambda: defaultdict(str))
+        columns = set()
 
-        for model_index in sorted_indexes:
-            tree_item = self.itemFromIndex(model_index)
-
+        # Fill the cell_dict with cell texts
+        for index in sorted_indexes:
+            tree_item = self.itemFromIndex(index)
             global_row = all_items.index(tree_item)
-            column = model_index.column()
+            column = index.column()
 
             cell_value = tree_item.get_value(column)
-            cell_text = str() if cell_value is None else str(cell_value)
-            cell_text = f'"{cell_text}"' if '\t' in cell_text or '\n' in cell_text else cell_text
+            cell_text = str(cell_value or '')
+            cell_text = f'"{cell_text}"' if ('\t' in cell_text or '\n' in cell_text) else cell_text
 
-            cell_dict.setdefault(global_row, dict())
             cell_dict[global_row][column] = cell_text
-            column_set.add(column)
+            columns.add(column)
 
-        for row_dict in cell_dict.values():
-            for column in column_set:
-                row_dict.setdefault(column, str())
-
-        row_texts = ['\t'.join(row_dict[column] for column in sorted(column_set)) for row_dict in cell_dict.values()]
+        # Create row texts ensuring all columns are included
+        row_texts = ['\t'.join(row[column] for column in sorted(columns)) for row in cell_dict.values()]
         full_text = '\n'.join(row_texts)
 
+        # Copy to clipboard
         clipboard = QtWidgets.QApplication.clipboard()
         clipboard.setText(full_text)
 
@@ -1383,7 +1358,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     def save_state(self, settings: QtCore.QSettings, group_name='tree_widget'):
         settings.beginGroup(group_name)
         settings.setValue('header_state', self.header().saveState())
-        # TODO: Store self.color_adaptive_columns when apply color adaptive
         settings.setValue('color_adaptive_columns', self.color_adaptive_columns)
         settings.setValue('group_column_name', self.grouped_column_name)
         settings.setValue('uniform_row_height', self._row_height)

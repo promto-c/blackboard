@@ -1,3 +1,4 @@
+import os
 import pytest
 from blackboard.utils.file_path_utils import FileUtil, FilePatternQuery, FilePathWalker
 
@@ -84,7 +85,7 @@ class TestFilePathWalker:
             str(root / "image.0005.jpg"),
         ]
 
-        result_files = list(FilePathWalker.traverse_files(root, excluded_extensions=[".log"], use_sequence_format=False))
+        result_files = list(FilePathWalker.traverse_files(root, excluded_extensions=["log"], use_sequence_format=False))
         assert sorted(result_files) == sorted(expected_files)
 
     def test_traverse_files_excluded_folders(self, setup_test_directory):
@@ -219,7 +220,8 @@ class TestFilePatternQuery:
         assert 'file_size' in result
         assert 'last_modified' in result
         assert 'file_owner' in result
-        assert result['file_path'].endswith('dir1/subdir1/file1.txt')
+        expected_path = os.path.join('dir1', 'subdir1', 'file1.txt')
+        assert result['file_path'].endswith(expected_path)
 
 
 # Run the tests

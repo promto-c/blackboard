@@ -837,7 +837,7 @@ class FilePathWalker:
             # Traverse entries in the directory
             for entry in os.scandir(directory):
                 # Skip hidden files/directories and excluded folders
-                if (is_skip_hidden and entry.name.startswith('.')) or entry.name in excluded_folders:
+                if FilePathWalker._is_skip_directory(entry.name, is_skip_hidden, excluded_folders):
                     continue
 
                 if entry.is_dir():
@@ -849,7 +849,7 @@ class FilePathWalker:
 
                 else:
                     # Check file extension
-                    if any(entry.name.endswith(ext) for ext in excluded_extensions):
+                    if FilePathWalker._is_skip_file(entry.name, is_skip_hidden, excluded_extensions):
                         continue
 
                     # Determine the path to yield (relative or absolute)
