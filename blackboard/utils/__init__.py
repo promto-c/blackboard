@@ -4,5 +4,6 @@ from .date_utils import DateUtil
 from .text_utils import TextExtraction
 from .proxy_model import FlatProxyModel, CheckableProxyModel
 from .completer import MatchContainsCompleter
+from .scroll_handler import MomentumScrollHandler
 
-__all__ = ['KeyBinder', 'TreeUtil', 'DateUtil', 'TextExtraction', 'FlatProxyModel', 'CheckableProxyModel', 'MatchContainsCompleter']
+__all__ = ['KeyBinder', 'TreeUtil', 'DateUtil', 'TextExtraction', 'FlatProxyModel', 'CheckableProxyModel', 'MatchContainsCompleter', 'MomentumScrollHandler']
