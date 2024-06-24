@@ -103,7 +103,6 @@ class DPXMetadata:
 
     PROPERTYMAP = [
         # (field name, offset, length, type)
-
         ('magic', 0, 4, 'magic'),
         ('offset', 4, 4, 'I'),
         ('dpx_version', 8, 8, 'utf8'),
@@ -133,7 +132,7 @@ class DPXMetadata:
         ('image_element_description', 820, 32, 'utf8'),
 
         ('input_device_name', 1556, 32, 'utf8'),
-        ('input_device_sn', 1588, 32, 'utf8')
+        ('input_device_sn', 1588, 32, 'utf8'),
     ]
 
     @staticmethod
@@ -146,31 +145,40 @@ class DPXMetadata:
         Returns:
             A dictionary containing the DPX metadata, or None if the file is not a valid DPX file.
         """
+        # Ensure the file pointer is at the beginning
         file_obj.seek(0)
         bytes_read = file_obj.read(4)
+        # Read the magic number to determine file validity
         magic = bytes_read.decode(encoding='UTF-8')
         if magic not in ["SDPX", "XPDS"]:
             return None
+        # Determine endianness based on the magic number
         endianness = ">" if magic == "SDPX" else "<"
 
-        metadata = {}
+        # Initialize metadata dictionary with magic and endianness
+        metadata = {
+            'magic': magic,
+            'endianness': endianness,
+        }
 
+        # Read the entire metadata block at once
+        file_obj.seek(0)
+        metadata_block = file_obj.read(1620)
+
+        # Process each property in the PROPERTYMAP
         for prop in DPXMetadata.PROPERTYMAP:
-            file_obj.seek(prop[1])
-            bytes_read = file_obj.read(prop[2])
-            if prop[3] == 'magic':
-                metadata[prop[0]] = bytes_read.decode(encoding='UTF-8')
-                metadata['endianness'] = "be" if magic == "SDPX" else "le"
-            elif prop[3] == 'utf8':
+            # Extract field information
+            field_name, offset, length, dtype = prop
+            bytes_read = metadata_block[offset:offset + length]
+
+            # Decode or unpack the bytes based on the data type
+            if dtype == 'utf8':
                 try:
-                    metadata[prop[0]] = bytes_read.decode(encoding='UTF-8')
+                    metadata[field_name] = bytes_read.decode(encoding='UTF-8')
                 except UnicodeDecodeError:
-                    metadata[prop[0]] = bytes_read.decode(encoding='ISO-8859-1')
-            elif prop[3] == 'B':
-                metadata[prop[0]] = struct.unpack(endianness + 'B', bytes_read)[0]
-            elif prop[3] == 'H':
-                metadata[prop[0]] = struct.unpack(endianness + 'H', bytes_read)[0]
-            elif prop[3] == 'I':
-                metadata[prop[0]] = struct.unpack(endianness + 'I', bytes_read)[0]
+                    metadata[field_name] = bytes_read.decode(encoding='ISO-8859-1')
+            # Unpack binary data
+            elif dtype in ['B', 'H', 'I']:
+                metadata[field_name] = struct.unpack(endianness + dtype, bytes_read)[0]
 
         return metadata

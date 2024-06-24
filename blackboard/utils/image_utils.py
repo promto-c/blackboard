@@ -66,7 +66,7 @@ class ImageReader:
     
         file_type_handlers = {
                 'exr': cls.read_exr if IS_SUPPORT_OPENEXR_LIB else cls.cv2_read_image,
-                'dpx': DpxReader.read_dpx,
+                'dpx': DPXReader.read_dpx,
             }
 
         file_extension = FileUtil.get_file_extension(file_path)
@@ -166,7 +166,7 @@ class ImageReader:
         return frame
 
 
-class DpxReader:
+class DPXReader:
 
     _DEPTH_PACKING_TO_METHOD: Dict[Tuple[int, int], str] = {
         (8, 0): 'read_dpx_8bit',
@@ -177,6 +177,12 @@ class DpxReader:
         (12, 1): 'read_dpx_12bit_filled',
         (16, 0): 'read_dpx_16bit',
         (16, 1): 'read_dpx_16bit',
+    }
+
+    _DESCRIPTOR_TO_CHANNELS = {
+        50: 3,  # RGB
+        51: 4,  # RGBA
+        52: 4,  # ABGR
     }
 
     @staticmethod
@@ -204,31 +210,28 @@ class DpxReader:
             reader_method = getattr(cls, reader_method_name)
             return reader_method(file, meta)
 
+    @classmethod
+    def get_channels_from_meta(cls, meta: Dict[str, Union[str, int]]) -> int:
+        descriptor = meta.get('descriptor')
+        if descriptor not in cls._DESCRIPTOR_TO_CHANNELS:
+            raise ValueError("Unsupported DPX descriptor")
+        return cls._DESCRIPTOR_TO_CHANNELS[descriptor]
+
     @staticmethod
     def read_dpx_8bit(file_obj: BinaryIO, meta: Dict[str, Union[str, int]]) -> np.ndarray:
         width = meta['width']
         height = meta['height']
         offset = meta['offset']
-        descriptor = meta['descriptor']
-
-        # Determine the number of channels from the descriptor
-        descriptor_channels = {
-            50: 3,  # RGB
-            51: 4,  # RGBA
-            52: 4,  # ABGR
-        }
-
-        if descriptor not in descriptor_channels:
-            raise ValueError("Unsupported DPX descriptor")
-
-        components_per_pixel = descriptor_channels[descriptor]
+        components_per_pixel = DPXReader.get_channels_from_meta(meta)
 
         file_obj.seek(offset)
         raw = np.fromfile(file_obj, dtype=np.uint8, count=width * height * components_per_pixel)
+        raw = raw.reshape(height, width, components_per_pixel)
 
-        image_data = raw.reshape(height, width, components_per_pixel)
+        if meta['endianness'] == '>':
+            raw.byteswap(True)
 
-        return image_data
+        return raw
 
     @staticmethod
     def read_dpx_10bit_filled(file_obj: BinaryIO, meta: Dict[str, Union[str, int]]) -> np.ndarray:
@@ -238,10 +241,9 @@ class DpxReader:
 
         file_obj.seek(offset)
         raw = np.fromfile(file_obj, dtype=np.int32, count=width * height)
-
         raw = raw.reshape(height, width)
 
-        if meta['endianness'] == 'be':
+        if meta['endianness'] == '>':
             raw.byteswap(True)
 
         image_data = np.array([raw >> 22, raw >> 12, raw >> 2], dtype=np.uint16)
@@ -261,29 +263,16 @@ class DpxReader:
         width = meta['width']
         height = meta['height']
         offset = meta['offset']
-        descriptor = meta['descriptor']
-
-        # Determine the number of channels from the descriptor
-        descriptor_channels = {
-            50: 3,  # RGB
-            51: 4,  # RGBA
-            52: 4,  # ABGR
-        }
-
-        if descriptor not in descriptor_channels:
-            raise ValueError("Unsupported DPX descriptor")
-
-        components_per_pixel = descriptor_channels[descriptor]
+        components_per_pixel = DPXReader.get_channels_from_meta(meta)
 
         file_obj.seek(offset)
-
         words_per_line = math.ceil(width * 9 / 4)
         raw = np.fromfile(file_obj, dtype=np.uint16, count=words_per_line * height)
 
-        word_lines = raw.reshape(height, words_per_line)
-
-        if meta['endianness'] == 'be':
+        if meta['endianness'] == '>':
             raw.byteswap(True)
+
+        word_lines = raw.reshape(height, words_per_line)
 
         # Extract 8 components from 6 halfwords (read as 16bit)
         # Word 1: | B05 B06 B07 B08 B09 B10 B11 B12|G01 G02 G03 G04 G05 G06 G07 G08 || G09 G10 G11 G12|R01 R02 R03 R04 R05 R06 R07 R08 R09 R10 R11 R12 |
@@ -298,7 +287,7 @@ class DpxReader:
             ((word_lines[:, 5::6] & 0xFF) << 4) | (word_lines[:, 2::6] >> 12),
             ((word_lines[:, 4::6] & 0xF) << 8) | (word_lines[:, 5::6] >> 8),
             (word_lines[:, 4::6] >> 4 & 0xFFF)
-        ], dtype=np.uint16).transpose(1, 2, 0).reshape(height, width, components_per_pixel)  # Reshape to (height, width, components_per_pixel)
+        ], dtype=np.uint16).transpose(1, 2, 0).reshape(height, width, components_per_pixel)
 
         # Convert to float32 and normalize
         image_data = image_data.astype(np.float32)
@@ -311,26 +300,13 @@ class DpxReader:
         width = meta['width']
         height = meta['height']
         offset = meta['offset']
-        descriptor = meta['descriptor']
-
-        # Determine the number of channels from the descriptor
-        descriptor_channels = {
-            50: 3,  # RGB
-            51: 4,  # RGBA
-            52: 4,  # ABGR
-        }
-
-        if descriptor not in descriptor_channels:
-            raise ValueError("Unsupported DPX descriptor")
-
-        components_per_pixel = descriptor_channels[descriptor]
+        components_per_pixel = DPXReader.get_channels_from_meta(meta)
 
         file_obj.seek(offset)
         raw = np.fromfile(file_obj, dtype=np.uint16, count=width * height * components_per_pixel)
-
         raw = raw.reshape(height, width, components_per_pixel)
 
-        if meta['endianness'] == 'be':
+        if meta['endianness'] == '>':
             raw.byteswap(True)
 
         # Extract the 12-bit pixel values
@@ -347,26 +323,13 @@ class DpxReader:
         width = meta['width']
         height = meta['height']
         offset = meta['offset']
-        descriptor = meta['descriptor']
-
-        # Determine the number of channels from the descriptor
-        descriptor_channels = {
-            50: 3,  # RGB
-            51: 4,  # RGBA
-            52: 4,  # ABGR
-        }
-
-        if descriptor not in descriptor_channels:
-            raise ValueError("Unsupported DPX descriptor")
-
-        components_per_pixel = descriptor_channels[descriptor]
+        components_per_pixel = DPXReader.get_channels_from_meta(meta)
 
         file_obj.seek(offset)
         raw = np.fromfile(file_obj, dtype=np.uint16, count=width * height * components_per_pixel)
-
         raw = raw.reshape(height, width, components_per_pixel)
 
-        if meta['endianness'] == 'be':
+        if meta['endianness'] == '>':
             raw.byteswap(True)
 
         # Convert to float32 and normalize

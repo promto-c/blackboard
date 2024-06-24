@@ -201,7 +201,7 @@ class ColumnMangementWidget(QtWidgets.QTreeWidget):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, tree_widget: 'GroupableTreeWidget') -> None:
+    def __init__(self, tree_widget: 'GroupableTreeWidget'):
         super().__init__(tree_widget)
 
         # Store the arguments
@@ -471,14 +471,15 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.setColumnWidth(0, 10)
         self.sortByColumn(1, QtCore.Qt.SortOrder.AscendingOrder)
 
-        # Initializes scroll modes for the widget.
+        # Initializes scroll modes for the widget
         self.setVerticalScrollMode(QtWidgets.QTreeWidget.ScrollMode.ScrollPerPixel)
         self.setHorizontalScrollMode(QtWidgets.QTreeWidget.ScrollMode.ScrollPerPixel)
 
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragOnly)
 
-        # Set up the context menu for the header
+        # Set up the context menu
         self.header().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
 
         # Enable sorting in the tree widget
         self.setSortingEnabled(True)
@@ -511,7 +512,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """Set up signal connections between widgets and slots.
         """
         # Connect signal of header
-        self.header().customContextMenuRequested.connect(self._on_header_context_menu)
+        self.header().customContextMenuRequested.connect(self._show_header_context_menu)
         
         self.itemExpanded.connect(self.toggle_expansion_for_selected)
         self.itemCollapsed.connect(self.toggle_expansion_for_selected)
@@ -553,44 +554,44 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             +-------------------------------+
         """
         # Create the context menu
-        self.menu = QtWidgets.QMenu()
-        self.menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.header_menu = QtWidgets.QMenu()
+        self.header_menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        self.add_label_action(self.menu, 'Grouping')
+        self.add_label_action(self.header_menu, 'Grouping')
 
         # Create the 'Group by this column' action and connect it to the 'group_by_column' method. Pass in the selected column as an argument.
-        self.group_by_action = self.menu.addAction('Group by this column')
+        self.group_by_action = self.header_menu.addAction('Group by this column')
         self.group_by_action.triggered.connect(lambda: self.group_by_column(self._current_column_index))
 
         # Create the 'Ungroup all' action and connect it to the 'ungroup_all' method
-        ungroup_all_action = self.menu.addAction('Ungroup all')
+        ungroup_all_action = self.header_menu.addAction('Ungroup all')
         ungroup_all_action.triggered.connect(self.ungroup_all)
 
         # Add a separator
-        self.menu.addSeparator()
+        self.header_menu.addSeparator()
 
-        self.add_label_action(self.menu, 'Visualization')
+        self.add_label_action(self.header_menu, 'Visualization')
 
         # Create the 'Set Color Adaptive' action and connect it to the 'apply_column_color_adaptive' method
-        apply_color_adaptive_action = self.menu.addAction('Set Color Adaptive')
+        apply_color_adaptive_action = self.header_menu.addAction('Set Color Adaptive')
         apply_color_adaptive_action.triggered.connect(lambda: self.apply_column_color_adaptive(self._current_column_index))
 
         # Create the 'Reset All Color Adaptive' action and connect it to the 'reset_all_color_adaptive_column' method
-        reset_all_color_adaptive_action = self.menu.addAction('Reset All Color Adaptive')
+        reset_all_color_adaptive_action = self.header_menu.addAction('Reset All Color Adaptive')
         reset_all_color_adaptive_action.triggered.connect(self.reset_all_color_adaptive_column)
 
         # Add a separator
-        self.menu.addSeparator()
+        self.header_menu.addSeparator()
 
         # Add the 'Fit in View' action and connect it to the 'fit_column_in_view' method
-        fit_column_in_view_action = self.menu.addAction('Fit in View')
+        fit_column_in_view_action = self.header_menu.addAction('Fit in View')
         fit_column_in_view_action.triggered.connect(self.fit_column_in_view)
 
         # Add a separator
-        self.menu.addSeparator()
+        self.header_menu.addSeparator()
 
-        self.add_label_action(self.menu, 'Manage Columns')
-        show_hide_column = self.menu.addMenu('Show/Hide Columns')
+        self.add_label_action(self.header_menu, 'Manage Columns')
+        show_hide_column = self.header_menu.addMenu('Show/Hide Columns')
         show_hide_column.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.column_list_widget = ColumnMangementWidget(self)
@@ -598,10 +599,10 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         action.setDefaultWidget(self.column_list_widget)
         show_hide_column.addAction(action)
 
-        hide_this_column = self.menu.addAction('Hide This Column')
+        hide_this_column = self.header_menu.addAction('Hide This Column')
         hide_this_column.triggered.connect(lambda: self.hideColumn(self._current_column_index))
 
-    def _on_header_context_menu(self, pos: QtCore.QPoint) -> None:
+    def _show_header_context_menu(self, pos: QtCore.QPoint):
         """Show a context menu for the header of the tree widget.
 
         Args:
@@ -611,13 +612,10 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self._current_column_index = self.header().logicalIndexAt(pos)
 
         # Disable 'Group by this column' on the first column
-        if not self._current_column_index:
-            self.group_by_action.setDisabled(True)
-        else:
-            self.group_by_action.setDisabled(False)
+        self.group_by_action.setEnabled(bool(self._current_column_index))
 
         # Show the context menu
-        self.menu.popup(QtGui.QCursor.pos())
+        self.header_menu.popup(QtGui.QCursor.pos())
 
     def _create_item_groups(self, data: List[str]) -> Dict[str, List[TreeWidgetItem]]:
         """Group the data into a dictionary mapping group names to lists of tree items.
@@ -643,7 +641,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         return dict(groups)
 
-    def _apply_scroll_momentum(self, velocity: QtCore.QPointF, momentum_factor: float = 0.5) -> None:
+    def _apply_scroll_momentum(self, velocity: QtCore.QPointF, momentum_factor: float = 0.5):
         """Applies momentum to the scroll bars based on the given velocity.
 
         Args:
@@ -658,7 +656,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self._animate_scroll(self.horizontalScrollBar(), horizontal_momentum)
         self._animate_scroll(self.verticalScrollBar(), vertical_momentum)
 
-    def _animate_scroll(self, scroll_bar: QtWidgets.QScrollBar, momentum: int) -> None:
+    def _animate_scroll(self, scroll_bar: QtWidgets.QScrollBar, momentum: int):
         """Animates the scrolling of the given scroll bar to the target value over the specified duration.
 
         Args:
@@ -738,15 +736,25 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.setItemDelegateForColumn(thumbnail_column, self.thumbnail_delegate)
 
     def add_label_action(self, parent_menu: QtWidgets.QMenu, text: str):
+        """Adds a non-interactive label action to the given parent menu.
+
+        Args:
+            parent_menu (QtWidgets.QMenu): The menu to which the label action will be added.
+            text (str): The text to be displayed in the label.
+        """
+        # Create a label widget with the specified text
         label = QtWidgets.QLabel(text, parent_menu)
+        # Disable the label to make it non-interactive
         label.setDisabled(True)
         label.setStyleSheet(
             'color: rgb(144, 144, 144); padding: 6px;'
         )
 
+        # Create a widget action and set the label as its default widget
         action = QtWidgets.QWidgetAction(parent_menu)
         action.setDefaultWidget(label)
 
+        # Add the action to the parent menu
         parent_menu.addAction(action)
 
     def show_items(self, items: List[QtWidgets.QTreeWidgetItem]):
@@ -928,8 +936,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         # Check if the column name is not in the column_names
         if column_name not in self.column_names:
-            # Raise an exception with a descriptive error message
-            raise ValueError(f"Invalid column name: {column_name}")
+            return None
 
         # Return the index of the column if found
         return self.column_names.index(column_name)
@@ -1003,7 +1010,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for data_dict in data_dicts:
             self.add_item(data_dict)
 
-    def group_by_column(self, column: Union[int, str]) -> None:
+    def group_by_column(self, column: Union[int, str]):
         """Group the items in the tree widget by the values in the specified column.
 
         Args:
@@ -1060,7 +1067,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Emit signal for grouped by column with column name
         self.grouped_by_column.emit(self.grouped_column_name)
         
-    def fit_column_in_view(self) -> None:
+    def fit_column_in_view(self):
         """Adjust the width of all columns to fit the entire view.
     
         This method resizes columns so that their sum is equal to the width of the view minus the width of the vertical scroll bar. 
@@ -1068,7 +1075,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         bb.utils.TreeUtil.fit_column_in_view(self)
 
-    def ungroup_all(self) -> None:
+    def ungroup_all(self):
         """Ungroup all the items in the tree widget.
         """
         # Return if there are no groups to ungroup

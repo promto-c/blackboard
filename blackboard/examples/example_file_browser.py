@@ -17,7 +17,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 # Local Imports
 # -------------
-from blackboard.utils.application_utils import ApplicationUtils, ApplicationSection
+from blackboard.utils.application_utils import ApplicationUtil, ApplicationSection
 
 
 # Class Definitions
@@ -38,7 +38,7 @@ class AppSelectionDialog(QtWidgets.QDialog):
         if not applications:
             self.app_list_widget.addItem(QtWidgets.QListWidgetItem("No applications found"))
         for desktop_file in applications:
-            name, icon_path = ApplicationUtils.parse_desktop_file(desktop_file)
+            name, icon_path = ApplicationUtil.parse_desktop_file(desktop_file)
             if not name:
                 continue
             item = QtWidgets.QListWidgetItem(name)
@@ -57,8 +57,8 @@ class AppSelectionDialog(QtWidgets.QDialog):
 
     def get_applications_for_mime_type(self, file_path: str) -> List[str]:
         try:
-            mime_type = ApplicationUtils.get_mime_type(file_path)
-            applications = ApplicationUtils.get_associated_apps(mime_type, section=ApplicationSection.REGISTERED)
+            mime_type = ApplicationUtil.get_mime_type(file_path)
+            applications = ApplicationUtil.get_associated_apps(mime_type, section=ApplicationSection.REGISTERED)
             return applications
         except subprocess.CalledProcessError:
             return []
@@ -115,21 +115,20 @@ class CustomTreeView(QtWidgets.QTreeView):
 
     def open_file(self, index):
         file_path = self.model().filePath(index)
-        subprocess.run(['xdg-open', file_path])
+        ApplicationUtil.open_file(file_path)
 
     def open_file_with(self, index):
         file_path = self.model().filePath(index)
         dialog = AppSelectionDialog(file_path, self)
         if dialog.exec_() == QtWidgets.QDialog.DialogCode.Accepted and dialog.selected_application:
             try:
-                ApplicationUtils.open_file_with_application(file_path, dialog.selected_application)
+                ApplicationUtil.open_file_with_application(file_path, dialog.selected_application)
             except Exception as e:
                 QtWidgets.QMessageBox.warning(self, "Error", f"Failed to launch application: {str(e)}")
 
     def open_containing_folder(self, index):
         file_path = self.model().filePath(index)
-        folder_path = os.path.dirname(file_path)
-        subprocess.run(['xdg-open', folder_path])
+        ApplicationUtil.open_containing_folder(file_path)
 
     def open_in_terminal(self, index):
         file_path = self.model().filePath(index)
