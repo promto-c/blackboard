@@ -23,6 +23,7 @@ from blackboard.widgets.header_view import SearchableHeaderView
 from blackboard.utils.thread_pool import ThreadPoolManager, GeneratorWorker
 from blackboard.widgets.animate_button import DataFetchingButtons
 
+
 # Class Definitions
 # -----------------
 class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
@@ -465,6 +466,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.threshold_to_fetch_more = 50
         self.has_more_items_to_fetch = False
 
+        self.scroll_handler = bb.utils.MomentumScrollHandler(self)
+
     def __init_ui(self):
         """Set up the UI for the widget, including creating widgets and layouts.
         """
@@ -640,71 +643,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             groups[item_data].append(item)
 
         return dict(groups)
-
-    def _apply_scroll_momentum(self, velocity: QtCore.QPointF, momentum_factor: float = 0.5):
-        """Applies momentum to the scroll bars based on the given velocity.
-
-        Args:
-            velocity (QtCore.QPointF): The velocity of the mouse movement.
-            momentum_factor (float, optional): The factor to control the momentum strength. Defaults to 0.5.
-        """
-        # Calculate horizontal and vertical momentum based on velocity and momentum factor
-        horizontal_momentum = int(velocity.x() * momentum_factor)
-        vertical_momentum = int(velocity.y() * momentum_factor)
-
-        # Scroll horizontally and vertically with animation using the calculated momenta
-        self._animate_scroll(self.horizontalScrollBar(), horizontal_momentum)
-        self._animate_scroll(self.verticalScrollBar(), vertical_momentum)
-
-    def _animate_scroll(self, scroll_bar: QtWidgets.QScrollBar, momentum: int):
-        """Animates the scrolling of the given scroll bar to the target value over the specified duration.
-
-        Args:
-            scroll_bar (QtWidgets.QScrollBar): The scroll bar to animate.
-            momentum (int): The momentum value to scroll.
-        """
-        # Get the current value of the scroll bar
-        current_value = scroll_bar.value()
-        # Calculate the target value by subtracting the momentum from the current value
-        target_value = current_value - momentum
-
-        # Calculate the duration of the animation based on the absolute value of the momentum
-        duration = min(abs(momentum) * 20, 500)
-
-        # Get the start time of the animation
-        start_time = time.time()
-
-        def _perform_scroll_animation():
-            """Animates the scrolling of the given scroll bar to the target value over the specified duration.
-
-            The animation interpolates the scroll bar value from the current value to the target value based on the elapsed time.
-            """
-            # Access the current_value variable from the enclosing scope
-            nonlocal current_value
-
-            # Stop the animation if the middle mouse button is pressed
-            if self._is_middle_button_pressed:
-                return
-
-            # Calculate the elapsed time since the start of the animation
-            elapsed_time = int((time.time() - start_time) * 1000)
-
-            # Check if the elapsed time has reached the duration
-            if elapsed_time >= duration:
-                # Animation complete
-                scroll_bar.setValue(target_value)
-                return
-
-            # Calculate the interpolated value based on elapsed time and duration
-            progress = elapsed_time / duration
-            interpolated_value = int(current_value + (target_value - current_value) * progress)
-
-            # Update the scroll bar value and schedule the next animation frame
-            scroll_bar.setValue(interpolated_value)
-            QtCore.QTimer.singleShot(10, _perform_scroll_animation)
-
-        # Start the animation
-        _perform_scroll_animation()
 
     def _highlight_selected_items(self):
         """Highlight the specified `tree_items` in the tree widget.
@@ -1112,10 +1050,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.ungrouped_all.emit()
 
     def get_all_items(self) -> List[TreeWidgetItem]:
-        """This function returns all the items in the tree widget as a list.
-
-        The items are sorted based on their order in the tree structure, 
-        with children appearing after their parent items for each grouping.
+        """Returns all items in the tree widget as a list.
 
         Returns:
             List[TreeWidgetItem]: A list containing all the items in the tree widget.
@@ -1125,11 +1060,10 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     def copy_selected_cells(self):
         """Copy selected cells to clipboard.
         """
-        
-        model = self.selectionModel()
-        selected_indexes = model.selectedIndexes()
-
+        # Get selected indexes from the view
+        selected_indexes = self.selectedIndexes()
         all_items = self.get_all_items()
+
         # Sort the cells based on their global row and column
         sorted_indexes = sorted(
             selected_indexes, 
@@ -1298,10 +1232,11 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         if event.button() == QtCore.Qt.MouseButton.MiddleButton:
             # Set middle button press flag to True
             self._is_middle_button_pressed = True
+            self.scroll_handler.stop()
             # Record the initial position where mouse button is pressed
             self._middle_button_start_pos = event.pos()
             # Change the cursor to SizeAllCursor
-            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.SizeAllCursor)
+            self.setCursor(QtCore.Qt.CursorShape.SizeAllCursor)
         else:
             # If not middle button, call the parent class method to handle the event
             super().mousePressEvent(event)
@@ -1323,9 +1258,10 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             # NOTE: The + 0.01 is added to avoid division by zero
             velocity = (event.pos() - self._middle_button_prev_pos) / ((time.time() - self._mouse_move_timestamp + 0.01))
             # Apply momentum based on velocity
-            self._apply_scroll_momentum(velocity)
+            self.scroll_handler.start(QtCore.QPointF(velocity))
             # Restore the cursor to default
-            QtWidgets.QApplication.restoreOverrideCursor()
+            self.unsetCursor()
+
         else:
             # If not middle button, call the parent class method to handle the event
             super().mouseReleaseEvent(event)

@@ -165,7 +165,6 @@ class ImageReader:
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         return frame
 
-
 class DPXReader:
 
     _DEPTH_PACKING_TO_METHOD: Dict[Tuple[int, int], str] = {
