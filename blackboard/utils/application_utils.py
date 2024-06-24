@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Tuple, Optional, List, Union
+from typing import Tuple, Optional, List, Union, Dict
 
 # Standard Library Imports
 # ------------------------
@@ -21,7 +21,7 @@ class ApplicationSection(Enum):
     def __str__(self):
         return self.value
 
-class ApplicationUtils:
+class ApplicationUtil:
     """Utility class for handling application-related operations.
 
     This class provides static methods to interact with MIME types, find associated
@@ -30,6 +30,13 @@ class ApplicationUtils:
     # Class constants for common paths
     APPLICATIONS_PATH = '/usr/share/applications/'
     USER_APPLICATIONS_PATH = os.path.expanduser('~/.local/share/applications/')
+
+    # Class constants for regex patterns used in MIME type associations
+    MIME_TYPE_TO_ASSOCIATION_REGEX = {
+        'default': re.compile(r'Default application for “.+?”: (.+)'),
+        'registered': re.compile(r'Registered applications:\n((?:\s+.+\.desktop\n)+)'),
+        'recommended': re.compile(r'Recommended applications:\n((?:\s+.+\.desktop\n)+)'),
+    }
 
     @staticmethod
     def get_mime_type(file_path: str) -> str:
@@ -49,7 +56,7 @@ class ApplicationUtils:
         return mime_type
 
     @staticmethod
-    def get_mime_type_associations(mime_type: str) -> dict:
+    def get_mime_type_associations(mime_type: str) -> Dict[str, Union[str, List[str]]]:
         """Retrieve MIME type associations using the 'gio mime' command.
 
         Args:
@@ -62,19 +69,15 @@ class ApplicationUtils:
 
         data = {'default': None, 'registered': [], 'recommended': []}
 
-        patterns = {
-            'default': re.compile(r'Default application for “.+?”: (.+)'),
-            'registered': re.compile(r'Registered applications:\n((?:\s+.+\.desktop\n)+)'),
-            'recommended': re.compile(r'Recommended applications:\n((?:\s+.+\.desktop\n)+)')
-        }
-
-        for key, pattern in patterns.items():
+        for key, pattern in ApplicationUtil.MIME_TYPE_TO_ASSOCIATION_REGEX.items():
             match = pattern.search(result)
-            if match:
-                if key == 'default':
-                    data[key] = match.group(1).strip()
-                else:
-                    data[key] = [app.strip() for app in match.group(1).strip().split('\n')]
+            if not match:
+                continue
+
+            if key == 'default':
+                data[key] = match.group(1).strip()
+            else:
+                data[key] = [app.strip() for app in match.group(1).strip().split('\n')]
 
         return data
 
@@ -100,7 +103,7 @@ class ApplicationUtils:
                 raise ValueError(f"Invalid section '{section}'. Choose from 'default', 'registered', 'recommended'.")
 
         # Fetch the associated applications data for the given MIME type
-        parsed_data = ApplicationUtils.get_mime_type_associations(mime_type)
+        parsed_data = ApplicationUtil.get_mime_type_associations(mime_type)
 
         # Validate and return the requested section
         if section not in ApplicationSection:
@@ -108,9 +111,9 @@ class ApplicationUtils:
 
         # Return the appropriate data based on the section
         if section == ApplicationSection.DEFAULT:
-            return ApplicationUtils.find_desktop_file(parsed_data[section.value])
+            return ApplicationUtil.find_desktop_file(parsed_data[section.value])
         else:
-            return ApplicationUtils.find_desktop_files(parsed_data[section.value])
+            return ApplicationUtil.find_desktop_files(parsed_data[section.value])
 
     @staticmethod
     def parse_desktop_file(desktop_file: str) -> Tuple[Optional[str], Optional[str]]:
@@ -140,7 +143,7 @@ class ApplicationUtils:
         Returns:
             Optional[str]: The full path to the .desktop file, or None if not found.
         """
-        search_paths = [ApplicationUtils.APPLICATIONS_PATH, ApplicationUtils.USER_APPLICATIONS_PATH]
+        search_paths = [ApplicationUtil.APPLICATIONS_PATH, ApplicationUtil.USER_APPLICATIONS_PATH]
         for path in search_paths:
             desktop_file = os.path.join(path, app_name)
             if os.path.isfile(desktop_file):
@@ -148,16 +151,16 @@ class ApplicationUtils:
         return
 
     @staticmethod
-    def find_desktop_files(app_list: List[str]) -> List[Optional[str]]:
+    def find_desktop_files(app_names: List[str]) -> List[Optional[str]]:
         """Find the full paths of .desktop files for a list of specified applications.
 
         Args:
-            app_list (List[str]): A list of application names for which to find .desktop files.
+            app_names (List[str]): A list of application names for which to find .desktop files.
 
         Returns:
             List[Optional[str]]: A list of full paths to the .desktop files. The list will be empty if no .desktop files are found.
         """
-        return [ApplicationUtils.find_desktop_file(app) for app in app_list if ApplicationUtils.find_desktop_file(app)]
+        return [ApplicationUtil.find_desktop_file(app) for app in app_names if ApplicationUtil.find_desktop_file(app)]
 
     @staticmethod
     def open_file_with_application(file_path: str, desktop_file: str):
@@ -175,19 +178,65 @@ class ApplicationUtils:
         else:
             print("No .desktop file found for the selected application.")
 
+    # @staticmethod
+    # def open_directory_in_terminal(path: str) -> None:
+    #     """Opens the specified directory in a new terminal window.
+
+    #     Args:
+    #         path (str): The path to open in the terminal.
+    #     """
+    #     if not os.path.isdir(path):
+    #         path = os.path.dirname(path)
+
+    #     if os.name == 'nt':  # Windows
+    #         os.startfile(path)
+    #     elif os.name == 'posix':  # macOS or Linux
+    #         subprocess.Popen(['xdg-open', path])
+    #     else:
+    #         raise NotImplementedError(f"Unsupported operating system: {os.name}")
+
     @staticmethod
-    def open_directory_in_terminal(path: str) -> None:
-        """Opens the specified directory in a new terminal window.
+    def open_containing_folder(file_path: str) -> None:
+        """Opens the folder containing the specified file.
 
         Args:
-            path (str): The path to open in the terminal.
+            file_path (str): The path to the file whose containing folder is to be opened.
         """
-        if not os.path.isdir(path):
-            path = os.path.dirname(path)
+        folder_path = os.path.dirname(file_path) if os.path.isfile(file_path) else file_path
+        ApplicationUtil.open_file(folder_path)
 
+    @staticmethod
+    def open_file(file_path: str):
+        """Opens the specified file in a new terminal window.
+
+        Args:
+            file_path (str): The path to the file to be opened.
+        """
         if os.name == 'nt':  # Windows
-            os.startfile(path)
+            os.startfile(file_path)
         elif os.name == 'posix':  # macOS or Linux
-            subprocess.Popen(['xdg-open', path])
+            subprocess.run(['xdg-open', file_path])
         else:
             raise NotImplementedError(f"Unsupported operating system: {os.name}")
+
+    @staticmethod
+    def open_directory_in_terminal(directories: Union[str, List[str]]):
+        """Opens directories in Terminal if one directory will open in new Terminal else open in tabs.
+
+        Args:
+            directories (Union[str, List[str]]): The path to open in the terminal.
+        """
+        directories = [directories] if isinstance(directories, str) else directories
+        directories = list({os.path.dirname(directory) if os.path.isfile(directory) else directory for directory in directories})
+
+        if len(directories) == 1:
+            # Prepare command to open in new Terminal for one directory
+            commands = ['gnome-terminal', f'--working-directory={directories[0]}']
+        else:
+            # Prepare command to open in new Terminal with tabs for multiple directories
+            commands = ['gnome-terminal']
+            for directory in directories:
+                commands.extend(['--tab', f'--working-directory={directory}'])
+
+        # Call subprocess to launch Terminal
+        subprocess.Popen(commands)
