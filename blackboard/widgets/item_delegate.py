@@ -1,78 +1,68 @@
+# Type Checking Imports
+# ---------------------
 from typing import Dict, List, Optional, Union
+
+# Standard Library Imports
+# ------------------------
+import zlib
 from numbers import Number
 import datetime
-import dateutil.parser as date_parser
 
+# Third Party Imports
+# -------------------
 from qtpy import QtCore, QtGui, QtWidgets
 
+# Local Imports
+# -------------
 from blackboard.utils.color_utils import ColorUtils
 from blackboard.utils.file_path_utils import SequenceFileUtil
 from blackboard.utils.qimage_utils import ThumbnailUtils, ThumbnailLoader
 from blackboard.utils.thread_pool import ThreadPoolManager, RunnableTask
+from blackboard.utils.date_utils import DateUtil
 
 
-def create_pastel_color(color: QtGui.QColor, saturation: float = 0.4, value: float = 0.9) -> QtGui.QColor:
-    """Create a pastel version of the given color.
-
-    Args:
-        color (QtGui.QColor): The original color.
-        saturation (float): The desired saturation factor (default: 0.4).
-        value (float): The desired value/brightness factor (default: 0.9).
-
-    Returns:
-        QtGui.QColor: The pastel color.
-    """
-    h, s, v, a = color.getHsvF()
-
-    # Decrease saturation and value to achieve a more pastel look
-    s *= saturation
-    v *= value
-
-    pastel_color = QtGui.QColor.fromHsvF(h, s, v, a)
-    return pastel_color
-
-def parse_date(date_string: str) -> Optional[datetime.datetime]:
-    """Parse the given date string into a datetime.datetime object.
-
-    Args:
-        date_string: The date string to parse.
-
-    Returns:
-        The parsed datetime object, or None if parsing fails.
-    """
-    try:
-        parsed_date = date_parser.parse(date_string)
-        return parsed_date
-    except ValueError:
-        return None
-
+# Class Definitions
+# -----------------
 class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
     """Custom item delegate class that highlights the rows specified by the `target_model_indexes` list.
     """
-    # List of target model index for highlighting
-    target_model_indexes: List[QtCore.QModelIndex] = list()
-    target_focused_model_indexes: List[QtCore.QModelIndex] = list()
-    target_selected_model_indexes: List[QtCore.QModelIndex] = list()
-
     # Define default highlight color
     DEFAULT_HIGHLIGHT_COLOR = QtGui.QColor(165, 165, 144, 65)
     DEFAULT_SELECTION_COLOR = QtGui.QColor(102, 119, 119, 51)
-    
+
+    # Initialization and Setup
+    # ------------------------
     def __init__(self, parent=None, highlight_color: QtGui.QColor = DEFAULT_HIGHLIGHT_COLOR, 
                  selection_color: QtGui.QColor = DEFAULT_SELECTION_COLOR):
         """Initialize the highlight item delegate.
 
         Args:
             parent (QtWidgets.QWidget, optional): The parent widget. Defaults to None.
-            color (QtGui.QColor, optional): The color to use for highlighting. Defaults to a light grayish-yellow.
+            highlight_color (QtGui.QColor, optional): The color to use for highlighting. Defaults to DEFAULT_HIGHLIGHT_COLOR.
+            selection_color (QtGui.QColor, optional): The color to use for selection. Defaults to DEFAULT_SELECTION_COLOR.
         """
         # Initialize the super class
         super().__init__(parent)
 
-        # Set the color attribute
+        # Store the arguments
         self.highlight_color = highlight_color
         self.selection_color = selection_color
 
+        # Initialize lists of target model indexes for different types of highlighting
+        self.target_model_indexes: List[QtCore.QModelIndex] = list()
+        self.target_focused_model_indexes: List[QtCore.QModelIndex] = list()
+        self.target_selected_model_indexes: List[QtCore.QModelIndex] = list()
+
+    # Public Methods
+    # --------------
+    def clear(self):
+        """Clear the target model indexes.
+        """
+        self.target_model_indexes.clear()
+        self.target_focused_model_indexes.clear()
+
+    # Overridden Methods
+    # ------------------
     def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, model_index: QtCore.QModelIndex):
         """Paint the delegate.
         
@@ -87,10 +77,10 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
             super().paint(painter, option, model_index)
             return
 
-        # ...
+        # Initialize color from the painter's background
         color = painter.background().color()
 
-        # ...
+        # Check if the model_index is in various target lists and blend colors accordingly
         if model_index in self.target_model_indexes:
             color = ColorUtils.blend_colors(color, self.highlight_color)
         if model_index in self.target_focused_model_indexes:
@@ -108,13 +98,8 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
         # Paint the item normally using the parent implementation
         super().paint(painter, option, model_index)
 
-    def clear(self):
-        # Reset the previous target model indexes
-        self.target_model_indexes.clear()
-        self.target_focused_model_indexes.clear()
-
 class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
-    """A delegate class for adaptive color mapping in Qt items.
+    """Delegate class for adaptive color mapping in Qt items.
 
     This delegate maps values to colors based on specified rules and color definitions.
     It provides functionality to map numerical values, keywords, and date strings to colors.
@@ -134,8 +119,8 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
     # Class constants
     # ---------------
     COLOR_DICT = {
-        'pastel_green': create_pastel_color(QtGui.QColor(65, 144, 0)),
-        'pastel_red': create_pastel_color(QtGui.QColor(144, 0, 0)),
+        'pastel_green': ColorUtils.create_pastel_color(QtGui.QColor(65, 144, 0)),
+        'pastel_red': ColorUtils.create_pastel_color(QtGui.QColor(144, 0, 0)),
         'red': QtGui.QColor(183, 26, 28),
         'light_red': QtGui.QColor(183, 102, 77),
         'light_green': QtGui.QColor(170, 140, 88),
@@ -149,12 +134,12 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(
         self,
         parent: Optional[QtCore.QObject] = None,
-        min_value: Optional[Number] = None,
-        max_value: Optional[Number] = None,
+        min_value: Optional['Number'] = None,
+        max_value: Optional['Number'] = None,
         min_color: QtGui.QColor = COLOR_DICT['pastel_green'],
         max_color: QtGui.QColor = COLOR_DICT['pastel_red'],
-        keyword_color_dict: Dict[str, QtGui.QColor] = dict(),
-        date_color_dict: Dict[str, QtGui.QColor] = dict(),
+        keyword_color_dict: Dict[str, QtGui.QColor] = {},
+        date_color_dict: Dict[str, QtGui.QColor] = {},
         date_format: str = '%Y-%m-%d',
     ):
         """Initialize the AdaptiveColorMappingDelegate.
@@ -185,7 +170,7 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
 
     # Private Methods
     # ---------------
-    def _interpolate_color(self, value: Number) -> QtGui.QColor:
+    def _interpolate_color(self, value: 'Number') -> QtGui.QColor:
         """Interpolate between the min_color and max_color based on the given value.
 
         Args:
@@ -227,12 +212,12 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
             return self.keyword_color_dict[keyword]
 
         # Generate a new color for the keyword
-        hue = (hash(keyword) % 360) / 360
+        hue = (zlib.crc32(keyword.encode()) % 360) / 360
         saturation, value = 0.6, 0.6
         keyword_color = QtGui.QColor.fromHsvF(hue, saturation, value)
 
         # Optionally create a pastel version of the color
-        keyword_color = create_pastel_color(keyword_color, 0.6, 0.9) if is_pastel_color else keyword_color
+        keyword_color = ColorUtils.create_pastel_color(keyword_color, 0.6, 0.9) if is_pastel_color else keyword_color
 
         # Cache the color in the keyword_color_dict
         self.keyword_color_dict[keyword] = keyword_color
@@ -249,11 +234,11 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
             QtGui.QColor: The color corresponding to the difference.
         """
         color_palette = {
-            0: self.COLOR_DICT['red'],              # Red (today's deadline)
-            1: self.COLOR_DICT['light_red'],        # Slightly lighter tone for tomorrow
-            2: self.COLOR_DICT['light_green'],      # Light green for the day after tomorrow
+            0: self.COLOR_DICT['red'],
+            1: self.COLOR_DICT['light_red'],
+            2: self.COLOR_DICT['light_green'],
             **{diff: self.COLOR_DICT['dark_green'] 
-               for diff in range(3, 8)},            # Dark green for the next 3-7 days
+               for diff in range(3, 8)},
         }
 
         if difference >= 7:
@@ -286,8 +271,8 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
             # Use datetime.strptime to parse the date string
             parsed_date = datetime.datetime.strptime(date_value, self.date_format).date()
         else:
-            # Otherwise, use the parse_date function to parse the date string
-            parsed_date = parse_date(date_value).date()
+            # Otherwise, use the DateUtil.parse_date function to parse the date string
+            parsed_date = DateUtil.parse_date(date_value).date()
 
         # Calculate the difference in days between the parsed date and today
         difference = (parsed_date - today).days
@@ -295,15 +280,15 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
         # Get the color based on the difference in days
         date_color = self._get_deadline_color(difference)
         # Optionally create a pastel version of the color
-        date_color = create_pastel_color(date_color, 0.6, 0.9) if is_pastel_color else date_color
+        date_color = ColorUtils.create_pastel_color(date_color, 0.6, 0.9) if is_pastel_color else date_color
 
         # Cache the color in the date_color_dict
         self.date_color_dict[date_value] = date_color
 
         return date_color
 
-    # Event Handling or Override Methods
-    # ----------------------------------
+    # Overridden Methods
+    # ------------------
     def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, model_index: QtCore.QModelIndex):
         """Paint the delegate.
         
@@ -319,7 +304,7 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
             # If the value is numerical, use _interpolate_color
             color = self._interpolate_color(value)
         elif isinstance(value, str):
-            if not parse_date(value):
+            if not DateUtil.parse_date(value):
                 # If the value is a string and not a date, use _get_keyword_color
                 color = self._get_keyword_color(value)
             else:
@@ -337,82 +322,101 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
         # Fill the rect with the background brush
         painter.fillRect(option.rect, option.backgroundBrush)
 
-        # Paint the item normally using the parent implementation
+        # Paint the item using the base class implementation
         super().paint(painter, option, model_index)
 
 class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
-    """A delegate that highlights text matches within items."""
-    
-    def __init__(self, parent=None, highlight_text: str = ''):
-        """Initializes the HighlightDelegate with optional highlighting text.
+    """Delegate that highlights text matches within items.
+    """
+    # Initialization and Setup
+    # ------------------------
+    def __init__(self, parent: QtWidgets.QWidget = None, 
+                 highlight_color: QtGui.QColor = QtGui.QColor(255, 255, 0, 65), highlight_radius: int = 2,
+                 outline_color: QtGui.QColor = QtGui.QColor("#777"), 
+                 outline_style: QtCore.Qt.PenStyle = QtCore.Qt.PenStyle.DashLine
+                ):
+        """Initialize the HighlightDelegate with optional highlighting text and customizable colors and styles.
         
         Args:
             parent: The parent widget.
-            highlight_text: The text to highlight within the delegate's items.
+            highlight_color: The color to use for highlighting text with alpha. Defaults to yellow with alpha 65.
+            highlight_radius: The radius for the rounded rectangle highlight. Defaults to 2.
+            outline_color: The color of the pen used for the dashed outline. Defaults to '#777'.
+            outline_style: The style of the pen used for the dashed outline. Defaults to DashLine.
         """
         super().__init__(parent)
-        self.highlight_text = highlight_text
+
+        # Store the arguments
+        self.highlight_color = highlight_color
+        self.highlight_radius = highlight_radius
 
         # Get the QApplication instance (creating a new one if necessary) and retrieve the frame margin for highlight positioning.
         app_instance = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
         self.spacing = app_instance.style().pixelMetric(QtWidgets.QStyle.PixelMetric.PM_FocusFrameHMargin)
 
-        # Highlight color
-        self.highlight_color = QtGui.QColor(QtCore.Qt.yellow)
-        self.highlight_color.setAlpha(65)
-    
-        # Create a pen with the custom color and set its style to DashLine
-        pen_color = QtGui.QColor("#777")
-        self.pen = QtGui.QPen(pen_color)
-        self.pen.setStyle(QtCore.Qt.PenStyle.DashLine)
+        # Initialize the text to be highlighted
+        self.highlight_text = ''
 
+        # Create a pen with the custom color and style for the outline
+        self.pen = QtGui.QPen(outline_color)
+        self.pen.setStyle(outline_style)
+
+    # Public Methods
+    # --------------
     def set_highlight_text(self, text: str):
-        """Updates the delegate with the current filter text.
+        """Update the delegate with the current filter text.
         """
-        self.highlight_text = text
+        self.highlight_text = text.lower()
 
+    # Overridden Methods
+    # ------------------
     def paint(self, painter, option, index):
-        """Paints the delegate's items, highlighting matches of the highlight text.
+        """Paint the delegate's items, highlighting matches of the highlight text.
         
         Args:
             painter: The QPainter instance used for painting the item.
             option: The style options for the item.
             index: The index of the item in the model.
         """
+        # Check if there is any text to highlight
         if self.highlight_text:
-            # Custom painting code here
+            # Retrieve the text from the model
             text = index.data(QtCore.Qt.ItemDataRole.DisplayRole)
+            text = text.lower()
+
+            # Calculate the bounding rect for the highlight text
             painter.save()
 
             # Apply the highlight color and pen to the painter
             painter.setBrush(self.highlight_color)
             painter.setPen(self.pen)
+            font_metrics = painter.fontMetrics()
 
             # Find all occurrences of the highlight text
             start_pos = 0
             while True:
-                start_pos = text.lower().find(self.highlight_text.lower(), start_pos)
+                start_pos = text.find(self.highlight_text, start_pos)
                 if start_pos == -1:
                     break
                 end_pos = start_pos + len(self.highlight_text)
 
                 # Calculate the bounding rect for the highlight text
-                font_metrics = painter.fontMetrics()
                 before_text_width = font_metrics.width(text[:start_pos])
                 highlight_text_width = font_metrics.width(text[start_pos:end_pos])
 
                 # Adjust highlight_rect to include padding
-                highlight_rect = QtCore.QRect(option.rect.left() + before_text_width + self.spacing, option.rect.top(),
-                                            highlight_text_width + self.spacing, option.rect.height())
+                highlight_rect = QtCore.QRect(
+                    option.rect.left() + before_text_width + self.spacing, option.rect.top(),
+                    highlight_text_width + self.spacing, option.rect.height()
+                )
         
-                radius = 2
                 # Fill the background of the highlight text
-                painter.drawRoundedRect(highlight_rect, radius, radius)
+                painter.drawRoundedRect(highlight_rect, self.highlight_radius, self.highlight_radius)
                 start_pos += len(self.highlight_text)
 
             painter.restore()
 
-        # Call the base class to do the default painting
+        # Paint the item using the base class implementation
         super().paint(painter, option, index)
 
 class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
@@ -432,29 +436,43 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         self.__init_attributes()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         # Private Attributes
         # ------------------
         self._thumbnail_column = None
         self._source_column = None
         self._sequence_range_column = None
-        self._sequence_range_column = None
-        self._loading_threads = dict()
-        self._loaded_thumbnails = dict()
+        self._loading_threads = {}
+        self._loaded_thumbnails = {}
 
     # Public Methods
     # --------------
     def set_source_column(self, column: int):
+        """Set the source column.
+        """
         self._source_column = column
 
     def set_thumbnail_column(self, column: int):
+        """Set the thumbnail column.
+        """
         self._thumbnail_column = column
 
     def set_sequence_range_column(self, column: int):
+        """Set the sequence range column.
+        """
         self._sequence_range_column = column
 
     def load_thumbnail(self, file_path: str, is_background_process: bool = True) -> QtGui.QPixmap:
+        """Load the thumbnail image.
+
+        Args:
+            file_path (str): The path to the file.
+            is_background_process (bool): Whether to load the thumbnail in the background. Defaults to True.
+
+        Returns:
+            QtGui.QPixmap: The loaded thumbnail image.
+        """
         if is_background_process:
             pixmap = self._load_thumbnail_using_worker(file_path)
         else:
@@ -466,6 +484,16 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
     # ---------------
     @staticmethod
     def create_pixmap_round_rect_path(start_point: Union[QtCore.QPoint, QtCore.QPointF], pixmap: QtGui.QPixmap, corner_radius: int = 4):
+        """Create a rounded rectangle path for a pixmap.
+
+        Args:
+            start_point (Union[QtCore.QPoint, QtCore.QPointF]): The starting point of the path.
+            pixmap (QtGui.QPixmap): The pixmap for which to create the path.
+            corner_radius (int): The corner radius for the rounded rectangle. Defaults to 4.
+
+        Returns:
+            QtGui.QPainterPath: The created painter path.
+        """
         painter_path = QtGui.QPainterPath(start_point)
         painter_path.addRoundedRect(
             QtCore.QRectF(start_point, QtCore.QSizeF(pixmap.size())), 
@@ -477,23 +505,36 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
     # Private Methods
     # ---------------
     def _load_thumbnail_using_worker(self, file_path: str):
+        """Load the thumbnail using a worker.
+
+        Args:
+            file_path (str): The path to the file.
+
+        Returns:
+            QtGui.QPixmap: The loaded thumbnail image.
+        """
         if file_path in self._loading_threads:
             return
 
-        elif file_path not in self._loaded_thumbnails:
+        if file_path not in self._loaded_thumbnails:
             worker = ThumbnailLoader(file_path, self.thumbnail_height)
-            # runnable = RunnableTask(worker)
             worker.thumbnail_loaded.connect(self.on_thumbnail_loaded)
             self._loading_threads[file_path] = worker
 
             # Use the shared thread pool to start the worker
             ThreadPoolManager.thread_pool().start(worker.run)
-            # ThreadPoolManager.thread_pool().start(runnable)
             return
 
         return self._loaded_thumbnails[file_path]
 
     def _paint_pixmap(self, painter: QtGui.QPainter, rect: QtCore.QRect, pixmap: QtGui.QPixmap):
+        """Paint the pixmap.
+
+        Args:
+            painter (QtGui.QPainter): The painter to use for drawing.
+            rect (QtCore.QRect): The rectangle to paint the pixmap in.
+            pixmap (QtGui.QPixmap): The pixmap to paint.
+        """
         scaled_pixmap = pixmap.scaled(
             int(rect.width() - 2 * self.top_margin), 
             int(rect.height() - 2 * self.top_margin), 
@@ -522,17 +563,40 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         painter.restore()
 
     def on_thumbnail_loaded(self, file_path, pixmap):
+        """Handle the event when a thumbnail is loaded.
+
+        Args:
+            file_path (str): The path to the file.
+            pixmap (QtGui.QPixmap): The loaded thumbnail image.
+        """
         self._loaded_thumbnails[file_path] = pixmap
         del self._loading_threads[file_path]
-        self.parent().viewport().update()  # Request a repaint
+        self.parent().viewport().update()
 
     def get_sibling_data(self, index: QtCore.QModelIndex, column: int, data_role: QtCore.Qt.ItemDataRole = QtCore.Qt.ItemDataRole.DisplayRole):
+        """Get data from a sibling index.
+
+        Args:
+            index (QtCore.QModelIndex): The current index.
+            column (int): The column of the sibling index.
+            data_role (QtCore.Qt.ItemDataRole): The data role. Defaults to DisplayRole.
+
+        Returns:
+            Any: The data from the sibling index.
+        """
         sibling_index = index.sibling(index.row(), column)
         return sibling_index.data(data_role)
 
     # Overridden Methods
     # ------------------
     def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex):
+        """Paint the delegate.
+
+        Args:
+            painter (QtGui.QPainter): The painter to use for drawing.
+            option (QtWidgets.QStyleOptionViewItem): The style option to use for drawing.
+            index (QtCore.QModelIndex): The model index of the item to be painted.
+        """
         super().paint(painter, option, index)
 
         file_path = self.get_sibling_data(index, self._source_column)
@@ -549,7 +613,6 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         pixmap = self.load_thumbnail(file_path)
 
         if pixmap is None or pixmap.isNull():
-            # TODO: Paint loading pixmap
             return
 
         self._paint_pixmap(painter, option.rect, pixmap)

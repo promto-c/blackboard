@@ -2,6 +2,7 @@
 # ------------------------
 from typing import Optional, List, Union
 import datetime
+import dateutil.parser as date_parser
 
 
 class DateUtil:
@@ -57,6 +58,21 @@ class DateUtil:
         date_list = [date.strftime(date_format) for date in date_list] if input_type is str else date_list
 
         return date_list
+
+    def parse_date(date_string: str) -> Optional[datetime.datetime]:
+        """Parse the given date string into a datetime.datetime object.
+
+        Args:
+            date_string: The date string to parse.
+
+        Returns:
+            The parsed datetime object, or None if parsing fails.
+        """
+        try:
+            parsed_date = date_parser.parse(date_string)
+            return parsed_date
+        except ValueError:
+            return None
 
 
 if __name__ == "__main__":

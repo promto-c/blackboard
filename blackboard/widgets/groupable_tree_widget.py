@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Union, Tuple, Optional, Generator, Iterable
 
 # Standard Library Imports
 # ------------------------
-import time, uuid, os
+import uuid
 from numbers import Number
 from itertools import islice
 from collections import defaultdict
@@ -156,7 +156,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         return self.get_value(key)
 
     def __lt__(self, other_item: 'TreeWidgetItem') -> bool:
-        """Sort the items in the tree widget based on their data.
+        """Compare this item with another item to determine the sort order.
 
         Args:
             other_item (TreeWidgetItem): The item to compare with.
@@ -213,7 +213,8 @@ class ColumnMangementWidget(QtWidgets.QTreeWidget):
         self.__init_signal_connections()
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts."""
+        """Initialize the UI of the widget.
+        """
         self.setHeaderHidden(True)
         self.setColumnCount(2)
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
@@ -225,7 +226,7 @@ class ColumnMangementWidget(QtWidgets.QTreeWidget):
         self.setColumnWidth(0, 20)  # Adjust the size of the first column
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
         self.tree_widget.header().sectionMoved.connect(self.update_columns)
         self.tree_widget.model().headerDataChanged.connect(self.update_columns)
@@ -313,7 +314,7 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         self.__init_signal_connections()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         # Attributes
         # ----------
@@ -324,7 +325,7 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         ...
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
+        """Initialize the UI of the widget.
         """
         self.setFixedHeight(24)
         # Create Layouts
@@ -378,7 +379,7 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         self.addWidget(self.refresh_button)
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
         # Connect signals to slots
         self.fit_in_view_button.clicked.connect(self.tree_widget.fit_column_in_view)
@@ -397,11 +398,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     Attributes:
         column_names (List[str]): The list of column names to be displayed in the tree widget.
         groups (Dict[str, TreeWidgetItem]): A dictionary mapping group names to their tree widget items.
-        _is_middle_button_pressed (bool): Indicates if the middle mouse button is pressed.
-            It's used for scrolling functionality when the middle button is pressed and the mouse is moved.
-        _middle_button_prev_pos (QtCore.QPoint): The previous position of the mouse when the middle button was pressed.
-        _middle_button_start_pos (QtCore.QPoint): The initial position of the mouse when the middle button was pressed.
-        _mouse_move_timestamp (float): The timestamp of the last mouse movement.
     """
     # Set default to index 1, cause of first column willl be "id"
     DEFAULT_DRAG_DATA_COLUMN = 1
@@ -423,18 +419,13 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.__init_signal_connections()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         # Attributes
         # ----------
         # Store the current grouped column name
         self.grouped_column_name = str()
-
         self.column_names = list()
-
-        self._drag_data_column = self.DEFAULT_DRAG_DATA_COLUMN
-
-        #
         self.id_to_tree_item = dict()
         self.color_adaptive_columns = list()
 
@@ -444,20 +435,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Private Attributes
         # ------------------
-        # Initialize middle button pressed flag
-        self._is_middle_button_pressed = False
-
-        # Previous position of the middle mouse button
-        self._middle_button_prev_pos = QtCore.QPoint()
-        # Initial position of the middle mouse button
-        self._middle_button_start_pos = QtCore.QPoint()
-
-        # Timestamp of the last mouse move event
-        self._mouse_move_timestamp = float()
-
         self._row_height = 24
-
         self._current_column_index = 0
+        self._drag_data_column = self.DEFAULT_DRAG_DATA_COLUMN
 
         self.generator = None
         self._current_task = None
@@ -469,7 +449,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.scroll_handler = bb.utils.MomentumScrollHandler(self)
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets and layouts.
+        """Initialize the UI of the widget.
         """
         self.setColumnWidth(0, 10)
         self.sortByColumn(1, QtCore.Qt.SortOrder.AscendingOrder)
@@ -512,7 +492,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.position_fetch_more_button()
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
         # Connect signal of header
         self.header().customContextMenuRequested.connect(self._show_header_context_menu)
@@ -798,7 +778,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for i in selected_items:
             i.setExpanded(reference_item.isExpanded())
 
-    def get_column_value_range(self, column: int, child_level: int = 0) -> Tuple[Optional[Number], Optional[Number]]:
+    def get_column_value_range(self, column: int, child_level: int = 0) -> Tuple[Optional['Number'], Optional['Number']]:
         """Get the value range of a specific column at a given child level.
 
         Args:
@@ -1073,8 +1053,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             )
         )
 
-        # Use defaultdict for cleaner initialization
-        cell_dict = defaultdict(lambda: defaultdict(str))
+        # Initialize a dictionary to store cell texts and a set to store columns
+        cell_dict: Dict[int, Dict[int, str]] = defaultdict(lambda: defaultdict(str))
         columns = set()
 
         # Fill the cell_dict with cell texts
@@ -1084,7 +1064,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             column = index.column()
 
             cell_value = tree_item.get_value(column)
-            cell_text = str(cell_value or '')
+            cell_text = '' if cell_value is None else str(cell_value)
             cell_text = f'"{cell_text}"' if ('\t' in cell_text or '\n' in cell_text) else cell_text
 
             cell_dict[global_row][column] = cell_text
@@ -1101,7 +1081,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Show tooltip message
         self.show_tool_tip(f'Copied:\n{full_text}', 5000)
 
-    def show_tool_tip(self, text: str, msc_show_time: Number = 1000):
+    def show_tool_tip(self, text: str, msc_show_time: 'Number' = 1000):
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text, self, QtCore.QRect(), msc_show_time)
 
     def paste_cells_from_clipboard(self):
@@ -1188,7 +1168,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         super().hideColumn(column_index)
 
     def startDrag(self, supported_actions: QtCore.Qt.DropActions):
-        """Handles drag event of tree widget
+        """Handle drag event of tree widget
         """
         items = self.selectedItems()
 
@@ -1220,7 +1200,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         super().clear()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent):
-        """Handles mouse press event.
+        """Handle mouse press event.
         
         Overrides the parent class method to handle the event where the middle mouse button is pressed.
         If the middle button is pressed, sets the cursor to SizeAllCursor.
@@ -1230,19 +1210,13 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         # Check if middle mouse button is pressed
         if event.button() == QtCore.Qt.MouseButton.MiddleButton:
-            # Set middle button press flag to True
-            self._is_middle_button_pressed = True
-            self.scroll_handler.stop()
-            # Record the initial position where mouse button is pressed
-            self._middle_button_start_pos = event.pos()
-            # Change the cursor to SizeAllCursor
-            self.setCursor(QtCore.Qt.CursorShape.SizeAllCursor)
+            self.scroll_handler.handle_mouse_press(event)
         else:
             # If not middle button, call the parent class method to handle the event
             super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
-        """Handles mouse release event.
+        """Handle mouse release event.
         
         Overrides the parent class method to handle the event where the middle mouse button is released.
         If the middle button is released, restores the cursor to the default.
@@ -1252,22 +1226,14 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         # Check if middle mouse button is released
         if event.button() == QtCore.Qt.MouseButton.MiddleButton:
-            # Set middle button press flag to False
-            self._is_middle_button_pressed = False
-            # Calculate the velocity based on the change in mouse position and the elapsed time
-            # NOTE: The + 0.01 is added to avoid division by zero
-            velocity = (event.pos() - self._middle_button_prev_pos) / ((time.time() - self._mouse_move_timestamp + 0.01))
-            # Apply momentum based on velocity
-            self.scroll_handler.start(QtCore.QPointF(velocity))
-            # Restore the cursor to default
-            self.unsetCursor()
+            self.scroll_handler.handle_mouse_release(event)
 
         else:
             # If not middle button, call the parent class method to handle the event
             super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent):
-        """Handles mouse move event.
+        """Handle mouse move event.
         
         Overrides the parent class method to handle the event where the mouse is moved.
         If the middle button is pressed, adjusts the scroll bar values according to the mouse movement.
@@ -1275,28 +1241,13 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         Args:
             event: The mouse event.
         """
-        # Check if middle mouse button is pressed
-        if self._is_middle_button_pressed:
-            # Calculate the change in mouse position
-            delta = event.pos() - self._middle_button_start_pos
+        is_success = self.scroll_handler.handle_mouse_move(event)
 
-            # Get the scroll bars
-            horizontal_scroll_bar = self.horizontalScrollBar()
-            vertical_scroll_bar = self.verticalScrollBar()
-
-            # Adjust the scroll bar values according to mouse movement
-            horizontal_scroll_bar.setValue(horizontal_scroll_bar.value() - int(delta.x()))
-            vertical_scroll_bar.setValue(vertical_scroll_bar.value() - int(delta.y()))
-
-            # Update the previous and start positions of the middle mouse button
-            self._middle_button_prev_pos = self._middle_button_start_pos
-            self._middle_button_start_pos = event.pos()
-
-            # Set the timestamp of the last mouse move event
-            self._mouse_move_timestamp = time.time()
-        else:
-            # If middle button is not pressed, call the parent class method to handle the event
-            super().mouseMoveEvent(event)
+        if is_success:
+            event.ignore()
+            return
+        
+        super().mouseMoveEvent(event)
 
     def save_state(self, settings: QtCore.QSettings, group_name='tree_widget'):
         settings.beginGroup(group_name)
@@ -1322,15 +1273,20 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.group_by_column(grouped_column_name)
         self.set_row_height(uniform_row_height)
 
+    # TODO: Separate class
+    # Generator
+    # ---------
     def set_generator(self, generator: Generator):
-        self.clear()
-
+        """Set a new generator, clearing the existing task before setting the new generator.
+        """
         # Clear old task
         if self._current_task is not None:
             self._current_task.stop()
             self._current_task = None
 
         self.generator = generator
+
+        self.clear()
 
         if not self.generator:
             return
@@ -1342,6 +1298,65 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self.data_fetching_buttons.show()
         self._fetch_more_data(first_batch_size)
+
+    def calculate_dynamic_batch_size(self):
+        """Estimates the number of items that can fit in the current view.
+
+        Returns:
+            int: Estimated number of items that can fit in the view.
+        """
+        # Add a temporary item to calculate its size
+        temp_item = QtWidgets.QTreeWidgetItem(["Temporary Item"])
+        self.addTopLevelItem(temp_item)
+        item_height = self.visualItemRect(temp_item).height()
+        # Remove the temporary item
+        self.takeTopLevelItem(0)
+
+        # Calculate the visible area height
+        visible_height = self.viewport().height()
+
+        # Calculate and return the number of items that can fit in the view
+        estimated_items = (visible_height // item_height) + 1 if item_height > 0 else self.batch_size
+        
+        # Adjust the batch size based on the estimate
+        # You may want to add some buffer (e.g., 10% more items) to ensure the view is fully populated
+        return max(estimated_items, self.batch_size)
+
+    def stop_fetch(self):
+        # Assuming `current_task` is your currently running FetchDataTask instance
+        if self._current_task:
+            self._current_task.pause()
+
+    def fetch_more(self):
+        # Fetch more data
+        self._fetch_more_data(self.batch_size)
+
+    def fetch_all(self):
+        # Fetch more data
+        self._fetch_more_data()
+
+    def show_fetching_indicator(self):
+        # Position and show the fetching indicator
+        self.fetch_more_button.hide()
+        self.fetch_all_button.hide()
+        self.stop_fetch_button.show()
+
+    def show_fetch_buttons(self):
+        # Once fetching is finished, change the button text back to "Fetch More" and enable it
+        self.fetch_more_button.show()
+        self.fetch_all_button.show()
+        self.stop_fetch_button.hide()
+        self._current_task = None
+
+    def position_fetch_more_button(self):
+        if self.data_fetching_buttons.isHidden():
+            return
+
+        # Position the Fetch More button at the center bottom of the tree widget
+        x = (self.width() - self.data_fetching_buttons.width()) / 2
+        y = self.height() - self.data_fetching_buttons.height() - 30  # 10 pixels from the bottom
+
+        self.data_fetching_buttons.move(int(x), int(y))
 
     def _restore_color_adaptive_column(self, columns):
         self.reset_all_color_adaptive_column()
@@ -1386,66 +1401,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         scroll_bar = self.verticalScrollBar()
         if value >= scroll_bar.maximum() - self.threshold_to_fetch_more:
             self._fetch_more_data(self.batch_size)
-
-    def calculate_dynamic_batch_size(self):
-        """Estimates the number of items that can fit in the current view.
-
-        Returns:
-            int: Estimated number of items that can fit in the view.
-        """
-        # Add a temporary item to calculate its size
-        temp_item = QtWidgets.QTreeWidgetItem(["Temporary Item"])
-        self.addTopLevelItem(temp_item)
-        item_height = self.visualItemRect(temp_item).height()
-        # Remove the temporary item
-        self.takeTopLevelItem(0)
-
-        # Calculate the visible area height
-        visible_height = self.viewport().height()
-
-        # Calculate and return the number of items that can fit in the view
-        estimated_items = (visible_height // item_height) + 1 if item_height > 0 else self.batch_size
-        
-        # Adjust the batch size based on the estimate
-        # You may want to add some buffer (e.g., 10% more items) to ensure the view is fully populated
-        return max(estimated_items, self.batch_size)
-
-    def stop_fetch(self):
-        # Assuming `current_task` is your currently running FetchDataTask instance
-        if self._current_task:
-            self._current_task.stop()
-
-    # NOTE: Fetch more data button
-    def fetch_more(self):
-        # Fetch more data
-        self._fetch_more_data(self.batch_size)
-
-    def fetch_all(self):
-        # Fetch more data
-        self._fetch_more_data()
-
-    def show_fetching_indicator(self):
-        # Position and show the fetching indicator
-        self.fetch_more_button.hide()
-        self.fetch_all_button.hide()
-        self.stop_fetch_button.show()
-
-    def show_fetch_buttons(self):
-        # Once fetching is finished, change the button text back to "Fetch More" and enable it
-        self.fetch_more_button.show()
-        self.fetch_all_button.show()
-        self.stop_fetch_button.hide()
-        self._current_task = None
-
-    def position_fetch_more_button(self):
-        if self.data_fetching_buttons.isHidden():
-            return
-
-        # Position the Fetch More button at the center bottom of the tree widget
-        x = (self.width() - self.data_fetching_buttons.width()) / 2
-        y = self.height() - self.data_fetching_buttons.height() - 30  # 10 pixels from the bottom
-
-        self.data_fetching_buttons.move(int(x), int(y))
 
     def resizeEvent(self, event):
         # Override resize event to reposition the Fetch More button when the widget is resized

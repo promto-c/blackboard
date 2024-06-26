@@ -25,7 +25,7 @@ class AnimatedButton(QtWidgets.QPushButton):
         self.__init_signal_connections()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         self.collapse_width = 24
         self.expand_width = 140
@@ -46,7 +46,7 @@ class AnimatedButton(QtWidgets.QPushButton):
         self.is_animating_text = False  # Flag to indicate if text animation is active
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
+        """Initialize the UI of the widget.
         """
         self.setIcon(self.default_icon)
 
@@ -58,7 +58,7 @@ class AnimatedButton(QtWidgets.QPushButton):
         self.style().polish(self)
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
         # Connect signals to slots
         self.entered.connect(self.set_property_hover)
@@ -67,10 +67,13 @@ class AnimatedButton(QtWidgets.QPushButton):
     # Public Methods
     # --------------
     def set_animate_text(self, state: bool = True):
+        """Set whether the text should be animated.
+        """
         self.is_animate_text = state
 
     def update_animated_text(self):
-        """Update the button text to show animated ellipsis."""
+        """Update the button text to show animated ellipsis.
+        """
         if not self.is_animating_text:
             return  # Exit if animation was stopped
 
@@ -93,14 +96,20 @@ class AnimatedButton(QtWidgets.QPushButton):
         self.setText(self.default_text)  # Reset to default text
 
     def collapse(self):
+        """Collapse the button width.
+        """
         self.animate_width(self.collapse_width)
         self.setText('')
 
     def expand(self):
+        """Expand the button width.
+        """
         self.animate_width(self.expand_width)
         self.setText(self.default_text)
 
     def set_property_default(self):
+        """Set properties to their default values.
+        """
         if self.is_animate_text:
             self.start_text_animation()
         else:
@@ -109,6 +118,8 @@ class AnimatedButton(QtWidgets.QPushButton):
         self.setIcon(self.default_icon)
 
     def set_property_hover(self):
+        """Set properties to their hover values.
+        """
         if self.is_animating_text:
             self.stop_text_animation()
         self.setText(self.hover_text)
@@ -116,11 +127,15 @@ class AnimatedButton(QtWidgets.QPushButton):
         self.setIcon(self.hover_icon)
 
     def animate_color(self, end_color):
+        """Animate the color of the button.
+        """
         self.color_anim.stop()
         self.color_anim.setEndValue(end_color)
         self.color_anim.start()
 
     def animate_width(self, width):
+        """Animate the width of the button.
+        """
         self.width_anim.stop()  # Stop any ongoing animation
         self.width_anim.setEndValue(width)
         self.width_anim.start()
@@ -129,6 +144,8 @@ class AnimatedButton(QtWidgets.QPushButton):
     # ----------------
     @QtCore.Property(int)
     def anim_width(self):
+        """Get or set the animated width of the button.
+        """
         return self._width
 
     @anim_width.setter
@@ -138,6 +155,8 @@ class AnimatedButton(QtWidgets.QPushButton):
 
     @QtCore.Property(QtGui.QColor)
     def color(self):
+        """Get or set the color of the button.
+        """
         return self._color
 
     @color.setter
@@ -149,10 +168,14 @@ class AnimatedButton(QtWidgets.QPushButton):
     # Overridden Methods
     # ------------------
     def enterEvent(self, event):
+        """Handle the enter event.
+        """
         super().enterEvent(event)
         self.entered.emit()
 
     def leaveEvent(self, event):
+        """Handle the leave event.
+        """
         super().leaveEvent(event)
         self.leaved.emit()
 
@@ -166,12 +189,12 @@ class DataFetchingButtons(QtWidgets.QWidget):
         self.__init_signal_connections()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         self.tabler_icon = TablerQIcon(opacity=0.6)
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
+        """Initialize the UI of the widget.
         """
         self.setFixedWidth(170)
         self.setMaximumWidth(170)
@@ -216,7 +239,7 @@ class DataFetchingButtons(QtWidgets.QWidget):
         layout.addWidget(self.stop_fetch_button)
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
         # Connect the hover signal from fetch_more_button to show fetch_all_button
         self.fetch_all_button.entered.connect(self.show_fetch_all_button)
@@ -235,10 +258,14 @@ class DataFetchingButtons(QtWidgets.QWidget):
         # self.stop_fetch_button.clicked.connect(self.fetch_all_button.show)
 
     def show_fetch_all_button(self):
+        """Show the 'Fetch All' button.
+        """
         self.fetch_all_button.expand()
         self.fetch_more_button.collapse()
 
     def hide_fetch_all_button(self):
+        """Hide the 'Fetch All' button.
+        """
         self.fetch_all_button.collapse()
         self.fetch_more_button.expand()
 

@@ -8,6 +8,7 @@ from typing import Any, Optional, List, Union, Dict
 import re
 import fnmatch
 from functools import partial
+from enum import Enum
 
 # Third Party Imports
 # -------------------
@@ -20,6 +21,8 @@ import blackboard as bb
 from blackboard import widgets
 
 
+# Class Definitions
+# -----------------
 class FilterBarWidget(QtWidgets.QWidget):
 
     def __init__(self, parent: QtWidgets.QWidget = None):
@@ -29,7 +32,7 @@ class FilterBarWidget(QtWidgets.QWidget):
         self.__init_ui()
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
+        """Initialize the UI of the widget.
         
         UI Wireframe:
 
@@ -61,12 +64,14 @@ class FilterBarWidget(QtWidgets.QWidget):
         self.update_style()
 
     def update_style(self):
-        """ Update the button's style based on its state.
+        """Update the button's style based on its state.
         """
         self.style().unpolish(self)
         self.style().polish(self)
 
     def add_filter_widget(self, filter_widget: 'FilterWidget'):
+        """Add a filter widget to the filter area layout.
+        """
         self.filter_area_layout.addWidget(filter_widget.button)
 
 class MoreOptionsButton(QtWidgets.QToolButton):
@@ -81,7 +86,8 @@ class MoreOptionsButton(QtWidgets.QToolButton):
         self.clicked.connect(self.show_menu)
 
     def addAction(self, text: str, icon: QtGui.QIcon = None):
-        """Add an action to the menu."""
+        """Add an action to the menu.
+        """
         action = self.popup_menu.addAction(text)
         if icon is not None:
             action.setIcon(icon)
@@ -89,7 +95,8 @@ class MoreOptionsButton(QtWidgets.QToolButton):
         return action
 
     def show_menu(self):
-        """Display the menu at the button's position."""
+        """Display the menu at the button's position.
+        """
         self.popup_menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
 
 class CustomMenu(QtWidgets.QMenu):
@@ -105,6 +112,8 @@ class CustomMenu(QtWidgets.QMenu):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def keyPressEvent(self, event: QtGui.QKeyEvent):
+        """Handle key press events to prevent closing the popup on Enter or Return keys.
+        """
         if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
             # Do nothing, preventing the popup from closing
             pass  
@@ -112,7 +121,8 @@ class CustomMenu(QtWidgets.QMenu):
             super().keyPressEvent(event)
 
     def showEvent(self, event: QtGui.QShowEvent):
-        """ Override exec_ to modify the position of the menu popup """
+        """Override show event to modify the position of the menu popup.
+        """
         if self.button:
             # Adjust the position
             pos = self.button.mapToGlobal(QtCore.QPoint(0, self.button.height()))
@@ -120,17 +130,21 @@ class CustomMenu(QtWidgets.QMenu):
         super().showEvent(event)
 
     def init_drag(self):
+        """Initialize drag functionality for resizing the menu.
+        """
         self.dragging = False
         self.drag_start_point = QtCore.QPoint()
         self.initial_size = self.size()
 
     def resizeEvent(self, event):
-        # Update the layout of the widget container on resize
+        """Handle the resize event and emit a signal with the new size.
+        """
         self.resized.emit(self.size())
-        # self.widget_container.setMinimumSize(self.size())
         super().resizeEvent(event)
 
     def mousePressEvent(self, event):
+        """Handle the mouse press event for resizing the menu.
+        """
         if event.pos().x() >= (self.width() - 20) and event.pos().y() >= (self.height() - 20):
             self.dragging = True
             self.drag_start_point = event.pos()
@@ -140,6 +154,8 @@ class CustomMenu(QtWidgets.QMenu):
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        """Handle the mouse move event to resize the menu.
+        """
         if self.dragging:
             new_width = max(self.initial_size.width() + (event.pos().x() - self.drag_start_point.x()), self.minimumWidth())
             new_height = max(self.initial_size.height() + (event.pos().y() - self.drag_start_point.y()), self.minimumHeight())
@@ -148,6 +164,8 @@ class CustomMenu(QtWidgets.QMenu):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        """Handle the mouse release event to stop resizing the menu.
+        """
         self.dragging = False
         self.unsetCursor()
         super().mouseReleaseEvent(event)
@@ -165,29 +183,33 @@ class FilterPopupButton(QtWidgets.QPushButton):
         self.__init_accessibility()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         self.is_active = False
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets."""
+        """Initialize the UI of the widget.
+        """
         self.__init_popup_menu()
         self.__init_ui_properties()
 
     def __init_popup_menu(self):
-        """Setup the popup menu of the widget."""
+        """Initialize the popup menu of the widget.
+        """
         self.popup_menu = CustomMenu(button=self)
         self.setMenu(self.popup_menu)
 
     def __init_ui_properties(self):
-        """Setup UI properties like size, cursor, etc."""
+        """Initialize UI properties like size, cursor, etc.
+        """
         self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.setMinimumSize(self.MINIMUM_WIDTH, self.MINIMUM_HEIGHT)
         self.setFixedHeight(self.MINIMUM_HEIGHT)
         self.setProperty('widget-style', 'round')
 
     def __init_accessibility(self):
-        """Setup accessibility features like keyboard navigation and screen reader support."""
+        """Initialize accessibility features like keyboard navigation and screen reader support.
+        """
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
 
     def set_active(self, state: bool = True):
@@ -198,19 +220,20 @@ class FilterPopupButton(QtWidgets.QPushButton):
         self.update_style()
 
     def update_style(self):
-        """ Update the button's style based on its state.
+        """Update the button's style based on its state.
         """
         self.style().unpolish(self)
         self.style().polish(self)
 
 class FilterWidget(QtWidgets.QWidget):
+
     label_changed = QtCore.Signal(str)
     activated = QtCore.Signal(list)
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, filter_name: str = str(), parent=None, *args, **kwargs):
-        super().__init__(parent, QtCore.Qt.WindowType.Popup, *args, **kwargs)
+    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
+        super().__init__(parent, QtCore.Qt.WindowType.Popup)
 
         # Store the filter name
         self.filter_name = filter_name
@@ -222,7 +245,7 @@ class FilterWidget(QtWidgets.QWidget):
         self.__init_signal_connections()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         # Attributes
         # ------------------
@@ -235,7 +258,7 @@ class FilterWidget(QtWidgets.QWidget):
         self._saved_state = dict()
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets and layouts.
+        """Initialize the UI of the widget.
 
         UI Wireframe:
 
@@ -316,7 +339,7 @@ class FilterWidget(QtWidgets.QWidget):
         self.buttons_layout.addWidget(self.apply_button)
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
         # Connect signals to slots
         self.apply_button.clicked.connect(self.apply_filter)
@@ -341,6 +364,8 @@ class FilterWidget(QtWidgets.QWidget):
         bb.utils.KeyBinder.bind_key('Enter', self, self.apply_filter)
 
     def __init_button_popup_menu(self):
+        """Initialize the popup menu for the filter button.
+        """
         # Update the popup menu with the new filter widget
         action = QtWidgets.QWidgetAction(self._button.popup_menu)
         action.setDefaultWidget(self)
@@ -353,6 +378,8 @@ class FilterWidget(QtWidgets.QWidget):
     # Private Methods
     # ---------------
     def _update_filtered_list(self, filtered_list: List[Any]):
+        """Update the filtered list with the provided list.
+        """
         self.filtered_list = filtered_list
 
     def _update_button_active_state(self):
@@ -366,6 +393,8 @@ class FilterWidget(QtWidgets.QWidget):
         return f"{self.filter_name} • {text}"
 
     def _emit_clear_signals(self):
+        """Emit signals to indicate that the filter condition is cleared.
+        """
         # Emit the label_changed signal with an empty string to indicate that the condition is cleared
         self.label_changed.emit(str())
         # Emit the activated signal with an empty list to indicate no active date range
@@ -374,6 +403,8 @@ class FilterWidget(QtWidgets.QWidget):
     # Public Methods
     # --------------
     def update_style(self, widget: Optional[QtWidgets.QWidget] = None):
+        """Update the style of the specified widget or self.
+        """
         if not isinstance(widget, QtWidgets.QWidget):
             widget = None
         widget = widget or self.sender() or self
@@ -382,12 +413,18 @@ class FilterWidget(QtWidgets.QWidget):
         self.style().polish(widget)
 
     def unset_popup(self):
+        """Unset the popup menu for the filter button.
+        """
         self._button.setMenu(None)
 
     def hide_popup(self):
+        """Hide the popup menu.
+        """
         self._button.popup_menu.hide()
 
     def apply_filter(self):
+        """Apply the filter and hide the popup.
+        """
         self.set_filter_applied()
         self.save_change()
         self.hide_popup()
@@ -401,62 +438,74 @@ class FilterWidget(QtWidgets.QWidget):
         self._button.setText(text)
 
     def setIcon(self, icon: QtGui.QIcon):
+        """Set the icon for the filter widget and button.
+        """
         self.setWindowIcon(icon)
         self._button.setIcon(icon)
 
     def set_filter_applied(self):
+        """Set the filter as applied.
+        """
         self._is_filter_applied = True
 
     def save_state(self, key, value: Any = None):
-        """Saves the given state with the specified key.
+        """Save the given state with the specified key.
         """
         self._saved_state[key] = value
 
     def load_state(self, key, default_value: Any = None):
-        """Loads the state associated with the given key.
+        """Load the state associated with the given key.
         """
         return self._saved_state.get(key, default_value)
 
     def clear_state(self):
-        """Clears all saved states.
+        """Clear all saved states.
         """
         self._saved_state.clear()
 
     def set_initial_focus_widget(self, widget):
+        """Set the initial focus widget for the popup.
+        """
         self._initial_focus_widget = widget
 
+    # Class Properties
+    # ----------------
     @property
     def button(self):
+        """Return the filter button.
+        """
         return self._button
 
     @property
     def is_active(self):
+        """Check if the filter is active. Must be implemented in subclasses.
+        """
         raise NotImplementedError('')
 
     # Slot Implementations
     # --------------------
     def discard_change(self):
-        """Method to discard changes. This should be implemented in subclasses.
+        """Discard changes. Must be implemented in subclasses.
         """
         raise NotImplementedError("Subclasses must implement discard_change")
 
     def save_change(self):
-        """Method to save changes. This should be implemented in subclasses.
+        """Save changes. Must be implemented in subclasses.
         """
         raise NotImplementedError("Subclasses must implement save_change")
 
     def remove_filter(self):
-        """Method to remove the filter. This should be implemented in subclasses.
+        """Remove the filter. Must be implemented in subclasses.
         """
         raise NotImplementedError("Subclasses must implement remove_filter")
 
     def clear_filter(self):
-        """Method to clear the condition. This should be implemented in subclasses.
+        """Clear the filter condition. Must be implemented in subclasses.
         """
         raise NotImplementedError("Subclasses must implement clear_filter")
     
     def set_filter(self):
-        """Method to set the filter. This should be implemented in subclasses.
+        """Set the filter. Must be implemented in subclasses.
         """
         raise NotImplementedError("Subclasses must implement set_filter")
 
@@ -471,7 +520,7 @@ class FilterWidget(QtWidgets.QWidget):
             self._initial_focus_widget.setFocus()
 
     def hideEvent(self, event):
-        """Overrides the hide event to discard changes if not applying the filter.
+        """Override the hide event to discard changes if not applying the filter.
         """
         if not self._is_filter_applied:
             self.discard_change()
@@ -482,14 +531,35 @@ class FilterWidget(QtWidgets.QWidget):
         super().hideEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
-        # Ignore mouse release events to prevent the menu from closing
+        """Ignore mouse release events to prevent the menu from closing.
+        """
         pass
 
-class DateRangeFilterWidget(FilterWidget):
-    RELATIVE_DATES = ["Selected Date Range", "Today", "Yesterday", "Last 7 Days", "Last 15 Days"]
+class DateRange(Enum):
+    """Enum representing various date ranges.
+    """
+    
+    SELECTED_DATE_RANGE = "Selected Date Range"
+    TODAY = "Today"
+    YESTERDAY = "Yesterday"
+    LAST_7_DAYS = "Last 7 Days"
+    LAST_15_DAYS = "Last 15 Days"
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __str__(self):
+        return self.value
+
+class DateRangeFilterWidget(FilterWidget):
+
+    TODAY = QtCore.QDate.currentDate()
+    DATE_RANGES = {
+        DateRange.TODAY: (TODAY, TODAY),
+        DateRange.YESTERDAY: (TODAY.addDays(-1), TODAY.addDays(-1)),
+        DateRange.LAST_7_DAYS: (TODAY.addDays(-7), TODAY),
+        DateRange.LAST_15_DAYS: (TODAY.addDays(-15), TODAY),
+    }
+
+    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
 
         # Initialize setup
         self.__init_attributes()
@@ -497,35 +567,19 @@ class DateRangeFilterWidget(FilterWidget):
         self.__init_signal_connections()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
-        # Attributes
-        # ----------
-        today = QtCore.QDate.currentDate()
-        # Mapping of indices to their corresponding date range logic
-        self.date_ranges = {
-            1: (today, today),                           # "Today"
-            2: (today.addDays(-1), today.addDays(-1)),   # "Yesterday"
-            3: (today.addDays(-7), today),               # "Last 7 Days"
-            4: (today.addDays(-15), today),              # "Last 15 Days"
-            # Add more date ranges here if needed
-        }
-
         self.start_date, self.end_date = None, None
 
-        # Private Attributes
-        # ------------------
-        ...
-
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets and layouts.
+        """Initialize the UI of the widget.
         """
         self.setIcon(TablerQIcon.calendar)
 
         # Create widgets and layouts here
         self.calendar = widgets.RangeCalendarWidget(self)
         self.relative_date_combo_box = QtWidgets.QComboBox(self)
-        self.relative_date_combo_box.addItems(self.RELATIVE_DATES)
+        self.relative_date_combo_box.addItems([str(date_range) for date_range in DateRange])
 
         # Set the layout for the widget
         self.widget_layout.addWidget(self.relative_date_combo_box)
@@ -534,20 +588,24 @@ class DateRangeFilterWidget(FilterWidget):
         self.set_initial_focus_widget(self.relative_date_combo_box)
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
         # Connect signals to slots
         self.relative_date_combo_box.currentIndexChanged.connect(self.select_relative_date_range)
         self.calendar.range_selected.connect(self.select_absolute_date_range)
 
+    # Class Properties
+    # ----------------
     @property
     def is_active(self):
         return self.relative_date_combo_box.currentIndex() != 0 or \
-            self.relative_date_combo_box.itemText(0) != self.RELATIVE_DATES[0]
+            self.relative_date_combo_box.itemText(0) != str(DateRange.SELECTED_DATE_RANGE)
 
     # Slot Implementations
     # --------------------
     def discard_change(self):
+        """Discard changes and revert to the saved state.
+        """
         current_index = self.load_state('current_index', 0)
         self.start_date, self.end_date = self.load_state('date_range', (None, None))
         filter_label = self.load_state('filter_label', str())
@@ -559,7 +617,8 @@ class DateRangeFilterWidget(FilterWidget):
         self.calendar.select_date_range(self.start_date, self.end_date)
 
     def save_change(self):
-        
+        """Save the current selection as the new state.
+        """
         current_index = self.relative_date_combo_box.currentIndex()
         filter_label = self.relative_date_combo_box.currentText()
         
@@ -583,25 +642,30 @@ class DateRangeFilterWidget(FilterWidget):
         self.activated.emit(date_list)
 
     def clear_filter(self):
-        """Clears the selected date range and resets the relative date selector.
+        """Clear the selected date range and reset the relative date selector.
         """
         # Reset the relative date selector to its initial state
         self.relative_date_combo_box.setCurrentIndex(0)
-        self.relative_date_combo_box.setItemText(0, self.RELATIVE_DATES[0])
+        self.relative_date_combo_box.setItemText(0, str(DateRange.SELECTED_DATE_RANGE))
 
         # Clear any selections made in the calendar
         self.start_date, self.end_date = None, None
         self.calendar.clear()
 
     def select_relative_date_range(self, index):
+        """Select a relative date range based on the index.
+        """
         # Reset the first item text if a predefined relative date is selected
         if index > 0:
-            self.relative_date_combo_box.setItemText(0, "Selected Date Range")
+            self.relative_date_combo_box.setItemText(0, str(DateRange.SELECTED_DATE_RANGE))
 
-        start_date, end_date = self.date_ranges.get(index, (None, None))
+        date_range_key = list(DateRange)[index]
+        start_date, end_date = self.DATE_RANGES.get(date_range_key, (None, None))
         self.calendar.select_date_range(start_date, end_date)
 
     def select_absolute_date_range(self, start_date, end_date):
+        """Select an absolute date range based on the provided dates.
+        """
         # Check if end_date is None (single date selection)
         if end_date is None or start_date == end_date:
             formatted_range = start_date.toString(QtCore.Qt.DateFormat.ISODate)
@@ -622,7 +686,8 @@ class FilterEntryEdit(QtWidgets.QLineEdit):
         self.__init_signal_connections()
 
     def __init_ui(self):
-
+        """Initialize the UI of the widget.
+        """
         self.tabler_icon = TablerQIcon(opacity=0.6)
 
         self.setProperty('has-placeholder', True)
@@ -637,12 +702,16 @@ class FilterEntryEdit(QtWidgets.QLineEdit):
         self.setCompleter(completer)
 
     def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
         self.textChanged.connect(self.update_style)
 
     @staticmethod
     def split_keywords(input_string):
-        # Regular expression that splits on | or , or spaces not within quotes
-        # It captures quoted strings or sequences of characters outside quotes not including delimiters
+        """Regular expression that splits on | or , or spaces not within quotes.
+        
+        It captures quoted strings or sequences of characters outside quotes not including delimiters.
+        """
         pattern = re.compile(r'''
             (?:             # Start of non-capturing group for the entire pattern
                 [ ]*        # Match any leading spaces (ignored in results)
@@ -665,14 +734,16 @@ class FilterEntryEdit(QtWidgets.QLineEdit):
         return result
 
     def texts(self) -> List[str]:
-        # Get text from QLineEdit, split into keywords, remove any surrounding whitespace or quotes
+        """Get the list of keywords from the line edit."""
         return self.split_keywords(self.text())
 
     def update_style(self):
+        """Update the style of the line edit."""
         self.style().unpolish(self)
         self.style().polish(self)
 
     def setModel(self, model):
+        """Set the model for the completer."""
         self.model = model
         self.proxy_model = bb.utils.FlatProxyModel(self.model)
         # Set the model for the completer
@@ -682,8 +753,8 @@ class MultiSelectFilterWidget(FilterWidget):
     """A widget representing a filter with a checkable tree.
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
 
         # Initialize setup
         self.__init_attributes()
@@ -691,7 +762,7 @@ class MultiSelectFilterWidget(FilterWidget):
         self.__init_signal_connections()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         # Attributes
         # ----------
@@ -702,7 +773,7 @@ class MultiSelectFilterWidget(FilterWidget):
         self._custom_tags_item = None
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
+        """Initialize the UI of the widget.
         """
         # Create Layouts
         # --------------
@@ -716,7 +787,7 @@ class MultiSelectFilterWidget(FilterWidget):
         self.setIcon(TablerQIcon.list_check)
 
         # Tree view
-        self.tree_view = QtWidgets.QTreeView(self)
+        self.tree_view = widgets.MomentumScrollTreeView(self)
         self.tree_view.setHeaderHidden(True)
         self.tree_view.setRootIsDecorated(False)
         self.proxy_model = bb.utils.CheckableProxyModel()
@@ -741,9 +812,8 @@ class MultiSelectFilterWidget(FilterWidget):
         self.widget_layout.addWidget(self.tree_view)
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
-        # Connect signals to slots
         # Input text field
         self.filter_entry_edit.editingFinished.connect(self.update_checked_state)
         # Connect completer's activated signal to add tags
@@ -762,6 +832,8 @@ class MultiSelectFilterWidget(FilterWidget):
         self.copy_button.setText(num_item_str)
 
     def copy_data_to_clipboard(self):
+        """Copy the tags to the clipboard.
+        """
         full_text = ', '.join(self.tag_list_view.get_tags())
 
         clipboard = QtWidgets.qApp.clipboard()
@@ -776,11 +848,14 @@ class MultiSelectFilterWidget(FilterWidget):
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text, self, QtCore.QRect(), msc_show_time)
 
     def update_checked_state(self):
+        """Update the checked state of the items based on the text in the line edit.
+        """
         self.set_check_items(self.filter_entry_edit.texts())
         self.filter_entry_edit.clear()
 
     def add_new_tag_to_tree(self, tag_name: str):
-        """Add a new tag to the tree, potentially in a new group."""
+        """Add a new tag to the tree, potentially in a new group.
+        """
         # Check if the 'Custom Tags' group exists
         if not self._custom_tags_item:
             self._custom_tags_item = self.add_item('Custom Tags')
@@ -805,6 +880,8 @@ class MultiSelectFilterWidget(FilterWidget):
         self.tree_view.expandAll()
 
     def set_check_items(self, keywords: List[str], checked_state: QtCore.Qt.CheckState = QtCore.Qt.CheckState.Checked):
+        """Set the checked state for items matching the keywords.
+        """
         filter_func = partial(self.filter_keywords, keywords)
         model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), filter_func=filter_func)
 
@@ -823,6 +900,8 @@ class MultiSelectFilterWidget(FilterWidget):
     # TODO: Add support when when add parent, children should be filtered
     @staticmethod
     def filter_keywords(keywords: List[str], index: QtCore.QModelIndex):
+        """Filter items based on the provided keywords.
+        """
         if not index.isValid():
             return False
 
@@ -832,10 +911,13 @@ class MultiSelectFilterWidget(FilterWidget):
 
     @property
     def is_active(self):
+        """Check if the filter is active.
+        """
         return bool(self.tag_list_view.get_tags())
 
     def restore_checked_state(self, checked_state_dict: dict, parent_index: QtCore.QModelIndex = QtCore.QModelIndex()):
-
+        """Restore the checked state of items from the provided dictionary.
+        """
         model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), parent_index)
         model_index_to_check_state = dict()
 
@@ -853,6 +935,8 @@ class MultiSelectFilterWidget(FilterWidget):
             self.tree_view.model().set_check_states(model_index_to_check_state)
 
     def get_checked_state_dict(self, checked_state_dict: Dict[str, QtCore.Qt.CheckState] = dict(), parent_index: QtCore.QModelIndex = QtCore.QModelIndex()):
+        """Return a dictionary of the checked state for each item.
+        """
         model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), parent_index)
         for model_index in model_indexes:
             text = model_index.data()
@@ -862,7 +946,7 @@ class MultiSelectFilterWidget(FilterWidget):
         return checked_state_dict
 
     def clear_filter(self):
-        """Clears all selections in the tree widget.
+        """Clear all selections in the tree widget.
         """
         # Uncheck all items in the tree widget
         self.uncheck_all()
@@ -879,16 +963,14 @@ class MultiSelectFilterWidget(FilterWidget):
             self.tree_view.model().setData(model_index, QtCore.Qt.CheckState.Unchecked, QtCore.Qt.CheckStateRole)
 
     def add_items(self, item_names: Union[Dict[str, List[str]], List[str]]):
-        """Adds items to the tree widget.
+        """Add items to the tree widget.
 
         Args:
             item_names (Union[Dict[str, List[str]], List[str]]): If a dictionary is provided, it represents parent-child relationships where keys are parent item names and values are lists of child item names. If a list is provided, it contains item names to be added at the root level.
         """
-
         if isinstance(self.tree_view.model(), bb.utils.CheckableProxyModel):
             self.tree_view_model = QtGui.QStandardItemModel()
             self.tree_view.setModel(self.tree_view_model)
-
             self.filter_entry_edit.setModel(self.tree_view_model)
             self.tag_list_view.setModel(self.tree_view_model)
 
@@ -921,7 +1003,7 @@ class MultiSelectFilterWidget(FilterWidget):
     # Implement add_item for self.tree_view
     # TODO: Implement appendRow for CheckableProxyModel
     def add_item(self, item_label: str, parent_item: QtGui.QStandardItem = None):
-        """Adds a single item to the tree widget.
+        """Add a single item to the tree widget.
         """ 
         # Add items to the model
         parent_item = parent_item or self.tree_view_model
@@ -932,7 +1014,7 @@ class MultiSelectFilterWidget(FilterWidget):
         return item
 
     def _add_items_from_dict(self, item_dict: Dict[str, List[str]]):
-        """Adds items to the tree widget based on a dictionary of parent-child relationships.
+        """Add items to the tree widget based on a dictionary of parent-child relationships.
 
         Args:
             item_dict (Dict[str, List[str]]): A dictionary where keys are parent item names and values are lists of child item names.
@@ -941,27 +1023,34 @@ class MultiSelectFilterWidget(FilterWidget):
             parent_item = self.add_item(parent_name)
             self._add_items_from_list(child_names, parent_item)
 
-    def _add_items_from_list(self, item_list: List[str], parent: Optional[QtWidgets.QTreeWidgetItem] = None):
-        """Adds items to the tree widget at the root level from a list of item names.
+    def _add_items_from_list(self, item_list: List[str], parent_item: Optional[QtGui.QStandardItem] = None):
+        """Add items to the tree widget at the root level from a list of item names.
 
         Args:
             item_list (List[str]): A list of item names to be added at the root level.
+            parent_item (Optional[QtGui.QStandardItem]): The parent item for the items. Defaults to None.
         """
         for item_name in item_list:
-            self.add_item(item_name, parent)
+            self.add_item(item_name, parent_item)
 
     # Slot Implementations
     # --------------------
     def set_filter(self, filters: List[str]):
+        """Set the filter items.
+        """
         self.clear_filter()
         self.set_check_items(filters)
         self.apply_filter()
 
     def discard_change(self):
+        """Discard changes and revert to the saved state.
+        """
         checked_state_dict = self.load_state('checked_state', dict())
         self.restore_checked_state(checked_state_dict)
 
     def save_change(self):
+        """Save the changes and emit the filter data.
+        """
         checked_state_dict = self.get_checked_state_dict()
         self.save_state('checked_state', checked_state_dict)
 
@@ -971,14 +1060,14 @@ class MultiSelectFilterWidget(FilterWidget):
         self.activated.emit(tags)
 
 class FileTypeFilterWidget(FilterWidget):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
 
         self.__init_ui()
         self.__init_signal_connections()
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets and layouts.
+        """Initialize the UI of the widget.
         """
         self.setIcon(TablerQIcon.file)
 
@@ -999,6 +1088,8 @@ class FileTypeFilterWidget(FilterWidget):
             "Audio Files": (["mp3", "wav", "aac"], "Audio formats like MP3, WAV, AAC"),
             "Image Files": (["jpg", "png", "gif"], "Image formats like JPG, PNG, GIF"),
             "Document Files": (["pdf", "docx", "txt"], "Document formats like PDF, DOCX, TXT"),
+            "3D Model Files": (["obj", "fbx", "stl", "blend"], "3D model formats like OBJ, FBX, STL, BLEND"),
+            "Rig Files": (["bvh", "skel"], "Rig formats like BVH, SKEL"),
         }
 
         self.checkboxes = {}
@@ -1010,13 +1101,13 @@ class FileTypeFilterWidget(FilterWidget):
             self.checkboxes[group] = checkbox
 
     def __init_signal_connections(self):
-        """Set up signal connections.
+        """Initialize signal-slot connections.
         """
         ...
 
     @property
     def is_active(self):
-        """Checks if the filter is active (any file type is selected or custom types are specified).
+        """Check if the filter is active (any file type is selected or custom types are specified).
         """
         # Check if any checkbox is checked
         if any(checkbox.isChecked() for checkbox in self.checkboxes.values()):
@@ -1030,6 +1121,8 @@ class FileTypeFilterWidget(FilterWidget):
         return False
 
     def get_selected_extensions(self):
+        """Get the selected file extensions.
+        """
         selected_extensions = list()
         
         for checkbox in self.checkboxes.values():
@@ -1044,21 +1137,25 @@ class FileTypeFilterWidget(FilterWidget):
         return list(set(selected_extensions))
 
     def get_custom_types(self):
+        """Get the custom file types from the input field.
+        """
         custom_types = self.custom_input.text().strip().split(',')
         custom_types = [ext.strip() for ext in custom_types if ext.strip()]
         return custom_types
 
     def get_checked_state_dict(self):
-        """Returns a dictionary of the checked state for each checkbox.
+        """Return a dictionary of the checked state for each checkbox.
         """
         return {checkbox.text(): checkbox.isChecked() for checkbox in self.checkboxes.values()}
 
     def uncheck_all(self):
+        """Uncheck all checkboxes.
+        """
         for checkbox in self.checkboxes.values():
             checkbox.setChecked(False)
 
     def clear_filter(self):
-        """Clears all selections and resets the filter to its initial state.
+        """Clear all selections and resets the filter to its initial state.
         """
         # Uncheck all checkboxes
         self.uncheck_all()
@@ -1102,30 +1199,34 @@ class FileTypeFilterWidget(FilterWidget):
         self.custom_input.setText(custom_input_text)
 
 class BooleanFilterWidget(FilterWidget):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
 
         self._is_active = False
 
         self.__init_ui()
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets and layouts.
+        """Initialize the UI of the widget.
         """
         self.setIcon(TablerQIcon.checkbox)
         self.unset_popup()
         self.button.clicked.connect(self.toggle_active)
 
     def toggle_active(self):
+        """Toggle the active state of the filter.
+        """
         self.set_active(not self._is_active)
 
     def set_active(self, state: bool = True):
+        """Set the active state of the filter.
+        """
         self._is_active = state
         self.activated.emit([self._is_active])
 
     @property
     def is_active(self):
-        """
+        """Check if the filter is active.
         """
         return self._is_active
 

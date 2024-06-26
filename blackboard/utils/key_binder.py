@@ -12,13 +12,13 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 # Class Definitions
 # -----------------
-# TODO: Add supported for any QtCore.Qt.ShortcutContext
+# TODO: Add support for any QtCore.Qt.ShortcutContext
 class Shortcut(QtWidgets.QShortcut):
 
     _shortcuts: DefaultDict[str, List[Tuple[QtWidgets.QWidget, Callable]]] = defaultdict(list)
 
     def __init__(self, key_sequence: QtGui.QKeySequence, parent_widget: QtWidgets.QWidget, callback: Callable):
-        # NOTE: ambiguousMember, to handle when multiple widgets binding on same key (when use with ScalableView)
+        # NOTE: ambiguousMember, to handle when multiple widgets binding on same key (when used with ScalableView)
         context = QtCore.Qt.ShortcutContext.WindowShortcut
         try:
             super().__init__(key_sequence, parent_widget, self.activate, self.activate, context)
@@ -46,7 +46,7 @@ class KeyBinder(QtWidgets.QWidget):
     @classmethod
     def bind_key(cls, key_sequence: Union[str, QtGui.QKeySequence], parent_widget: QtWidgets.QWidget, callback: Callable, 
                  context: QtCore.Qt.ShortcutContext = QtCore.Qt.ShortcutContext.WidgetShortcut) -> Shortcut:
-        """Binds a given key sequence to a function.
+        """Bind a given key sequence to a function.
         
         Args:
             key_sequence (Union[str, QtGui.QKeySequence]): The key sequence as a string or QKeySequence, e.g., "Ctrl+F".
@@ -68,7 +68,7 @@ class KeyBinder(QtWidgets.QWidget):
 
     @classmethod
     def unbind_key(cls, key_sequence: Union[str, QtGui.QKeySequence]):
-        """Removes a binding for a given key sequence."""
+        """Remove a binding for a given key sequence."""
         key = str(key_sequence)
         if key in cls.shortcuts:
             shortcut = cls.shortcuts[key]
@@ -77,26 +77,26 @@ class KeyBinder(QtWidgets.QWidget):
 
     @classmethod
     def disable_key(cls, key_sequence: Union[str, QtGui.QKeySequence]):
-        """Disables a binding without removing it completely."""
+        """Disable a binding without removing it completely."""
         key = str(key_sequence)
         if key in cls.shortcuts:
             cls.shortcuts[key].setEnabled(False)
 
     @classmethod
     def enable_key(cls, key_sequence: Union[str, QtGui.QKeySequence]):
-        """Enables a previously disabled binding."""
+        """Enable a previously disabled binding."""
         key = str(key_sequence)
         if key in cls.shortcuts:
             cls.shortcuts[key].setEnabled(True)
 
     @classmethod
     def get_bound_keys(cls) -> List[str]:
-        """Lists all key sequences that are currently bound."""
+        """List all key sequences that are currently bound."""
         return list(cls.shortcuts.keys())
     
     @classmethod
     def get_bound_keys_detail(cls):
-        """Returns detailed information about all bound keys."""
+        """Return detailed information about all bound keys."""
         details = []
         for key, shortcut in cls.shortcuts.items():
             detail = {

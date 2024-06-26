@@ -33,14 +33,14 @@ class ApplicationUtil:
 
     # Class constants for regex patterns used in MIME type associations
     MIME_TYPE_TO_ASSOCIATION_REGEX = {
-        'default': re.compile(r'Default application for “.+?”: (.+)'),
-        'registered': re.compile(r'Registered applications:\n((?:\s+.+\.desktop\n)+)'),
-        'recommended': re.compile(r'Recommended applications:\n((?:\s+.+\.desktop\n)+)'),
+        ApplicationSection.DEFAULT: re.compile(r'Default application for “.+?”: (.+)'),
+        ApplicationSection.REGISTERED: re.compile(r'Registered applications:\n((?:\s+.+\.desktop\n)+)'),
+        ApplicationSection.RECOMMENDED: re.compile(r'Recommended applications:\n((?:\s+.+\.desktop\n)+)'),
     }
 
     @staticmethod
     def get_mime_type(file_path: str) -> str:
-        """Gets the MIME type of the specified file.
+        """Get the MIME type of the specified file.
 
         Args:
             file_path (str): The path to the file for which to get the MIME type.
@@ -65,19 +65,28 @@ class ApplicationUtil:
         Returns:
             dict: A dictionary with keys 'default', 'registered', 'recommended' and their associated applications.
         """
-        result = subprocess.check_output(['gio', 'mime', mime_type]).decode().strip()
-
+        # Initialize the dictionary to hold the associations
         data = {'default': None, 'registered': [], 'recommended': []}
 
+        # If the MIME type is empty, return the initialized dictionary
+        if not mime_type:
+            return data
+
+        # Run the 'gio mime' command to get the associations for the MIME type
+        result = subprocess.check_output(['gio', 'mime', mime_type]).decode().strip()
+
+        # Iterate through the regex patterns and match them against the command output
         for key, pattern in ApplicationUtil.MIME_TYPE_TO_ASSOCIATION_REGEX.items():
             match = pattern.search(result)
             if not match:
                 continue
 
-            if key == 'default':
-                data[key] = match.group(1).strip()
+            # If the key is 'default', store the single default application
+            if key == ApplicationSection.DEFAULT:
+                data[key.value] = match.group(1).strip()
+            # For 'registered' and 'recommended', store the list of applications
             else:
-                data[key] = [app.strip() for app in match.group(1).strip().split('\n')]
+                data[key.value] = [app.strip() for app in match.group(1).strip().split('\n')]
 
         return data
 
@@ -101,13 +110,11 @@ class ApplicationUtil:
                 section = ApplicationSection(section.lower())
             except ValueError:
                 raise ValueError(f"Invalid section '{section}'. Choose from 'default', 'registered', 'recommended'.")
+        elif section not in ApplicationSection:
+            raise ValueError(f"Invalid section '{section.value}'. Choose from 'default', 'registered', 'recommended'.")
 
         # Fetch the associated applications data for the given MIME type
         parsed_data = ApplicationUtil.get_mime_type_associations(mime_type)
-
-        # Validate and return the requested section
-        if section not in ApplicationSection:
-            raise ValueError(f"Invalid section '{section.value}'. Choose from 'default', 'registered', 'recommended'.")
 
         # Return the appropriate data based on the section
         if section == ApplicationSection.DEFAULT:
@@ -148,7 +155,7 @@ class ApplicationUtil:
             desktop_file = os.path.join(path, app_name)
             if os.path.isfile(desktop_file):
                 return desktop_file
-        return
+        return None
 
     @staticmethod
     def find_desktop_files(app_names: List[str]) -> List[Optional[str]]:
@@ -164,7 +171,7 @@ class ApplicationUtil:
 
     @staticmethod
     def open_file_with_application(file_path: str, desktop_file: str):
-        """Command to open the file with the specified application.
+        """Open the file with the specified application.
 
         Args:
             file_path (str): The path to the file to be opened.
@@ -197,7 +204,7 @@ class ApplicationUtil:
 
     @staticmethod
     def open_containing_folder(file_path: str) -> None:
-        """Opens the folder containing the specified file.
+        """Open the folder containing the specified file.
 
         Args:
             file_path (str): The path to the file whose containing folder is to be opened.
@@ -207,7 +214,7 @@ class ApplicationUtil:
 
     @staticmethod
     def open_file(file_path: str):
-        """Opens the specified file in a new terminal window.
+        """Open the specified file using the default application for its type.
 
         Args:
             file_path (str): The path to the file to be opened.
@@ -221,10 +228,10 @@ class ApplicationUtil:
 
     @staticmethod
     def open_directory_in_terminal(directories: Union[str, List[str]]):
-        """Opens directories in Terminal if one directory will open in new Terminal else open in tabs.
+        """Open directories in Terminal. If one directory, open in new Terminal; otherwise, open in tabs.
 
         Args:
-            directories (Union[str, List[str]]): The path to open in the terminal.
+            directories (Union[str, List[str]]): The path(s) to open in the terminal.
         """
         directories = [directories] if isinstance(directories, str) else directories
         directories = list({os.path.dirname(directory) if os.path.isfile(directory) else directory for directory in directories})

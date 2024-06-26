@@ -37,7 +37,7 @@ class RangeCalendarWidget(QtWidgets.QCalendarWidget):
         self.__init_signal_connections()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         # Attributes
         # ----------
@@ -48,7 +48,7 @@ class RangeCalendarWidget(QtWidgets.QCalendarWidget):
         self._is_shift_pressed = False
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets and layouts.
+        """Initialize the UI of the widget.
         """
         # Create widgets and layouts
         self.tabler_icon = TablerQIcon(opacity=0.6)
@@ -64,7 +64,7 @@ class RangeCalendarWidget(QtWidgets.QCalendarWidget):
         self.qt_calendar_yearbutton = self.findChild(QtWidgets.QToolButton, 'qt_calendar_yearbutton')
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
         # Connect signals to slots
         self.clicked.connect(self.handle_date_clicked)

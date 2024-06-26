@@ -21,13 +21,18 @@ from blackboard import widgets
 # Class Definitions
 # -----------------
 class AssetViewWidget(widgets.DatabaseViewWidget):
+
     LABEL = 'Asset View'
     FILE_PATH_COLUMN_NAME = 'file_path'
 
     def __init__(self, parent: QtWidgets.QWidget = None, identifier: Optional[str] = None):
         super().__init__(parent, identifier)
 
-        self.selected_file_paths = []
+        # Key Binds
+        # ---------
+        # Create a shortcut for the copy action and connect its activated signal
+        bb.utils.KeyBinder.bind_key("Ctrl+Shift+C", self.tree_widget, self.copy_path)
+
         self.__init_context_menu()
 
     def __init_context_menu(self):
@@ -45,8 +50,14 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         open_in_terminal_action = self.menu.addAction("Open in Terminal")
         self.menu.addSeparator()
         self.tree_widget.add_label_action(self.menu, 'Copy')
+        copy_selected_cell_action = self.menu.addAction("Copy Cell")
+        copy_selected_cell_action.setShortcut("Ctrl+C")
+        self.menu.addSeparator()
         copy_path_action = self.menu.addAction("Copy Path")
+        copy_path_action.setShortcut("Ctrl+Shift+C")
         copy_relative_path_action = self.menu.addAction("Copy Relative Path")
+        copy_relative_path_action.setToolTip("This feature is not supported yet.")
+        copy_relative_path_action.setEnabled(False)
 
         open_action.triggered.connect(self.open)
         open_with_action.triggered.connect(self.open_with)
@@ -54,23 +65,27 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         open_in_terminal_action.triggered.connect(self.open_in_terminal)
         copy_path_action.triggered.connect(self.copy_path)
         copy_relative_path_action.triggered.connect(self.copy_relative_path)
+        copy_selected_cell_action.triggered.connect(self.tree_widget.copy_selected_cells)
 
-    def show_context_menu(self, position: QtCore.QPoint):
+    def show_context_menu(self, _position: QtCore.QPoint):
+        self.menu.exec_(QtGui.QCursor.pos())
+
+    def get_selected_file_paths(self) -> List[str]:
         selected_items = self.tree_widget.selectedItems()
         if not selected_items:
-            self.selected_file_paths.clear()
             return
 
         column_index = self.tree_widget.get_column_index(self.FILE_PATH_COLUMN_NAME)
         if not column_index:
             return
 
-        self.selected_file_paths = [
-            item.text(column_index)
-            for item in selected_items
-        ]
+        selected_file_paths = [item.text(column_index) for item in selected_items]
 
-        self.menu.exec_(QtGui.QCursor.pos())
+        return selected_file_paths
+
+    @property
+    def selected_file_paths(self) -> List[str]:
+        return self.get_selected_file_paths()
 
     def open(self, file_paths: List[str] = []):
         file_paths = file_paths or self.selected_file_paths
@@ -114,8 +129,14 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         if not file_paths:
             return
         
+        full_text = "\n".join(file_paths)
+
+        # Copy to clipboard
         clipboard = QtWidgets.QApplication.clipboard()
-        clipboard.setText("\n".join(file_paths))
+        clipboard.setText(full_text)
+
+        # Show tooltip message
+        self.tree_widget.show_tool_tip(f'Copied:\n{full_text}', 5000)
 
     def copy_relative_path(self, file_paths: List[str] = []):
         file_paths = file_paths or self.selected_file_paths

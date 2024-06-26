@@ -97,7 +97,7 @@ class PopupWidget(QtWidgets.QWidget):
         self._set_initial_position()
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
         # Connect the clicked signal of the close button to the close method
         self.close_button.clicked.connect(self.close)

@@ -100,7 +100,7 @@ class GeneratorWorker(QtCore.QObject):
     loaded_all = QtCore.Signal()
 
     def __init__(self, generator: Optional[Generator[Any, None, None]] = None, is_pass_error: bool = False, desired_size: Optional[int] = None):
-        """Initializes the GeneratorWorker with the given generator and desired size.
+        """Initialize the GeneratorWorker with the given generator and desired size.
 
         Args:
             generator (Optional[Generator[Any, None, None]]): A generator object that yields items to be processed.
@@ -112,10 +112,11 @@ class GeneratorWorker(QtCore.QObject):
         self.is_pass_error = is_pass_error
         self.desired_size = desired_size
         self._is_stopped = False
+        self._is_paused = False
         self._mutex = QtCore.QMutex()
 
     def set_generator(self, generator: Generator[Any, None, None], desired_size: Optional[int] = None):
-        """Sets a new generator to be processed and optionally its desired size.
+        """Set a new generator to be processed and optionally its desired size.
 
         Args:
             generator (Generator[Any, None, None]): A generator object that yields items to be processed.
@@ -126,10 +127,11 @@ class GeneratorWorker(QtCore.QObject):
             self.desired_size = desired_size
             # Reset the stop flag when setting a new generator
             self._is_stopped = False
+            self._is_paused = False
 
     @QtCore.Slot()
     def run(self):
-        """Runs the generator, emitting signals for each item, errors, and completion.
+        """Run the generator, emitting signals for each item, errors, and completion.
         """
         self.started.emit()
         count = 0
@@ -137,13 +139,18 @@ class GeneratorWorker(QtCore.QObject):
         # Iterate over the generator and emit each item
         try:
             for item in self.generator:
+                # Lock the mutex to check the stop flag
+                with QtCore.QMutexLocker(self._mutex):
+                    if self._is_stopped:
+                        break
+
                 # Emit each generated item
                 self.result.emit(item)
                 count += 1
 
-                # Lock the mutex to check the stop flag
+                # Lock the mutex to check the pause flag
                 with QtCore.QMutexLocker(self._mutex):
-                    if self._is_stopped:
+                    if self._is_paused:
                         break
 
         except Exception as e:
@@ -161,15 +168,22 @@ class GeneratorWorker(QtCore.QObject):
             if not count:
                 self.loaded_all.emit()
             # Check if the desired size is set, not yet reached, and loading is not stopped
-            elif self.desired_size is not None and count < self.desired_size and not self._is_stopped:
+            elif self.desired_size is not None and count < self.desired_size and not self._is_paused:
                 self.loaded_all.emit()
             # Check if the generator is a true generator (not a finite iterable) and the process was not manually stopped
-            elif isinstance(self.generator, GeneratorType) and not self._is_stopped:
+            elif isinstance(self.generator, GeneratorType) and not self._is_paused:
                 self.loaded_all.emit()
 
     def stop(self):
-        """Stops the generator by setting the _is_stopped flag.
+        """Stop the generator by setting the _is_stopped flag.
         """
         # Lock the mutex to set the stop flag safely
         with QtCore.QMutexLocker(self._mutex):
             self._is_stopped = True
+            self._is_paused = True
+
+    def pause(self):
+        """Pause the generator by setting the _is_paused flag.
+        """
+        with QtCore.QMutexLocker(self._mutex):
+            self._is_paused = True
