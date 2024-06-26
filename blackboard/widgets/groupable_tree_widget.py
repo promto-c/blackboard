@@ -429,14 +429,11 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # ----------
         # Store the current grouped column name
         self.grouped_column_name = str()
-
         self.column_names = list()
-
-        self._drag_data_column = self.DEFAULT_DRAG_DATA_COLUMN
-
-        #
         self.id_to_tree_item = dict()
         self.color_adaptive_columns = list()
+
+        self._drag_data_column = self.DEFAULT_DRAG_DATA_COLUMN
 
         # Initialize the HighlightItemDelegate object to highlight items in the tree widget.
         self.highlight_item_delegate = widgets.HighlightItemDelegate()

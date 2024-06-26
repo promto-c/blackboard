@@ -56,7 +56,8 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
     # Public Methods
     # --------------
     def clear(self):
-        # Reset the previous target model indexes
+        """Clear the target model indexes.
+        """
         self.target_model_indexes.clear()
         self.target_focused_model_indexes.clear()
 
@@ -98,7 +99,7 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
         super().paint(painter, option, model_index)
 
 class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
-    """A delegate class for adaptive color mapping in Qt items.
+    """Delegate class for adaptive color mapping in Qt items.
 
     This delegate maps values to colors based on specified rules and color definitions.
     It provides functionality to map numerical values, keywords, and date strings to colors.
@@ -137,8 +138,8 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
         max_value: Optional['Number'] = None,
         min_color: QtGui.QColor = COLOR_DICT['pastel_green'],
         max_color: QtGui.QColor = COLOR_DICT['pastel_red'],
-        keyword_color_dict: Dict[str, QtGui.QColor] = dict(),
-        date_color_dict: Dict[str, QtGui.QColor] = dict(),
+        keyword_color_dict: Dict[str, QtGui.QColor] = {},
+        date_color_dict: Dict[str, QtGui.QColor] = {},
         date_format: str = '%Y-%m-%d',
     ):
         """Initialize the AdaptiveColorMappingDelegate.
@@ -233,11 +234,11 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
             QtGui.QColor: The color corresponding to the difference.
         """
         color_palette = {
-            0: self.COLOR_DICT['red'],              # Red (today's deadline)
-            1: self.COLOR_DICT['light_red'],        # Slightly lighter tone for tomorrow
-            2: self.COLOR_DICT['light_green'],      # Light green for the day after tomorrow
+            0: self.COLOR_DICT['red'],
+            1: self.COLOR_DICT['light_red'],
+            2: self.COLOR_DICT['light_green'],
             **{diff: self.COLOR_DICT['dark_green'] 
-               for diff in range(3, 8)},            # Dark green for the next 3-7 days
+               for diff in range(3, 8)},
         }
 
         if difference >= 7:
@@ -325,7 +326,7 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
         super().paint(painter, option, model_index)
 
 class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
-    """A delegate that highlights text matches within items.
+    """Delegate that highlights text matches within items.
     """
     # Initialization and Setup
     # ------------------------
@@ -334,7 +335,7 @@ class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
                  outline_color: QtGui.QColor = QtGui.QColor("#777"), 
                  outline_style: QtCore.Qt.PenStyle = QtCore.Qt.PenStyle.DashLine
                 ):
-        """Initializes the HighlightDelegate with optional highlighting text and customizable colors and styles.
+        """Initialize the HighlightDelegate with optional highlighting text and customizable colors and styles.
         
         Args:
             parent: The parent widget.
@@ -363,14 +364,14 @@ class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
     # Public Methods
     # --------------
     def set_highlight_text(self, text: str):
-        """Updates the delegate with the current filter text.
+        """Update the delegate with the current filter text.
         """
-        self.highlight_text = text
+        self.highlight_text = text.lower()
 
     # Overridden Methods
     # ------------------
     def paint(self, painter, option, index):
-        """Paints the delegate's items, highlighting matches of the highlight text.
+        """Paint the delegate's items, highlighting matches of the highlight text.
         
         Args:
             painter: The QPainter instance used for painting the item.
@@ -381,28 +382,33 @@ class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
         if self.highlight_text:
             # Retrieve the text from the model
             text = index.data(QtCore.Qt.ItemDataRole.DisplayRole)
+            text = text.lower()
+
+            # Calculate the bounding rect for the highlight text
             painter.save()
 
             # Apply the highlight color and pen to the painter
             painter.setBrush(self.highlight_color)
             painter.setPen(self.pen)
+            font_metrics = painter.fontMetrics()
 
             # Find all occurrences of the highlight text
             start_pos = 0
             while True:
-                start_pos = text.lower().find(self.highlight_text.lower(), start_pos)
+                start_pos = text.find(self.highlight_text, start_pos)
                 if start_pos == -1:
                     break
                 end_pos = start_pos + len(self.highlight_text)
 
                 # Calculate the bounding rect for the highlight text
-                font_metrics = painter.fontMetrics()
                 before_text_width = font_metrics.width(text[:start_pos])
                 highlight_text_width = font_metrics.width(text[start_pos:end_pos])
 
                 # Adjust highlight_rect to include padding
-                highlight_rect = QtCore.QRect(option.rect.left() + before_text_width + self.spacing, option.rect.top(),
-                                            highlight_text_width + self.spacing, option.rect.height())
+                highlight_rect = QtCore.QRect(
+                    option.rect.left() + before_text_width + self.spacing, option.rect.top(),
+                    highlight_text_width + self.spacing, option.rect.height()
+                )
         
                 # Fill the background of the highlight text
                 painter.drawRoundedRect(highlight_rect, self.highlight_radius, self.highlight_radius)
@@ -430,29 +436,43 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         self.__init_attributes()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         # Private Attributes
         # ------------------
         self._thumbnail_column = None
         self._source_column = None
         self._sequence_range_column = None
-        self._sequence_range_column = None
-        self._loading_threads = dict()
-        self._loaded_thumbnails = dict()
+        self._loading_threads = {}
+        self._loaded_thumbnails = {}
 
     # Public Methods
     # --------------
     def set_source_column(self, column: int):
+        """Set the source column.
+        """
         self._source_column = column
 
     def set_thumbnail_column(self, column: int):
+        """Set the thumbnail column.
+        """
         self._thumbnail_column = column
 
     def set_sequence_range_column(self, column: int):
+        """Set the sequence range column.
+        """
         self._sequence_range_column = column
 
     def load_thumbnail(self, file_path: str, is_background_process: bool = True) -> QtGui.QPixmap:
+        """Load the thumbnail image.
+
+        Args:
+            file_path (str): The path to the file.
+            is_background_process (bool): Whether to load the thumbnail in the background. Defaults to True.
+
+        Returns:
+            QtGui.QPixmap: The loaded thumbnail image.
+        """
         if is_background_process:
             pixmap = self._load_thumbnail_using_worker(file_path)
         else:
@@ -464,6 +484,16 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
     # ---------------
     @staticmethod
     def create_pixmap_round_rect_path(start_point: Union[QtCore.QPoint, QtCore.QPointF], pixmap: QtGui.QPixmap, corner_radius: int = 4):
+        """Create a rounded rectangle path for a pixmap.
+
+        Args:
+            start_point (Union[QtCore.QPoint, QtCore.QPointF]): The starting point of the path.
+            pixmap (QtGui.QPixmap): The pixmap for which to create the path.
+            corner_radius (int): The corner radius for the rounded rectangle. Defaults to 4.
+
+        Returns:
+            QtGui.QPainterPath: The created painter path.
+        """
         painter_path = QtGui.QPainterPath(start_point)
         painter_path.addRoundedRect(
             QtCore.QRectF(start_point, QtCore.QSizeF(pixmap.size())), 
@@ -475,23 +505,36 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
     # Private Methods
     # ---------------
     def _load_thumbnail_using_worker(self, file_path: str):
+        """Load the thumbnail using a worker.
+
+        Args:
+            file_path (str): The path to the file.
+
+        Returns:
+            QtGui.QPixmap: The loaded thumbnail image.
+        """
         if file_path in self._loading_threads:
             return
 
-        elif file_path not in self._loaded_thumbnails:
+        if file_path not in self._loaded_thumbnails:
             worker = ThumbnailLoader(file_path, self.thumbnail_height)
-            # runnable = RunnableTask(worker)
             worker.thumbnail_loaded.connect(self.on_thumbnail_loaded)
             self._loading_threads[file_path] = worker
 
             # Use the shared thread pool to start the worker
             ThreadPoolManager.thread_pool().start(worker.run)
-            # ThreadPoolManager.thread_pool().start(runnable)
             return
 
         return self._loaded_thumbnails[file_path]
 
     def _paint_pixmap(self, painter: QtGui.QPainter, rect: QtCore.QRect, pixmap: QtGui.QPixmap):
+        """Paint the pixmap.
+
+        Args:
+            painter (QtGui.QPainter): The painter to use for drawing.
+            rect (QtCore.QRect): The rectangle to paint the pixmap in.
+            pixmap (QtGui.QPixmap): The pixmap to paint.
+        """
         scaled_pixmap = pixmap.scaled(
             int(rect.width() - 2 * self.top_margin), 
             int(rect.height() - 2 * self.top_margin), 
@@ -520,17 +563,40 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         painter.restore()
 
     def on_thumbnail_loaded(self, file_path, pixmap):
+        """Handle the event when a thumbnail is loaded.
+
+        Args:
+            file_path (str): The path to the file.
+            pixmap (QtGui.QPixmap): The loaded thumbnail image.
+        """
         self._loaded_thumbnails[file_path] = pixmap
         del self._loading_threads[file_path]
-        self.parent().viewport().update()  # Request a repaint
+        self.parent().viewport().update()
 
     def get_sibling_data(self, index: QtCore.QModelIndex, column: int, data_role: QtCore.Qt.ItemDataRole = QtCore.Qt.ItemDataRole.DisplayRole):
+        """Get data from a sibling index.
+
+        Args:
+            index (QtCore.QModelIndex): The current index.
+            column (int): The column of the sibling index.
+            data_role (QtCore.Qt.ItemDataRole): The data role. Defaults to DisplayRole.
+
+        Returns:
+            Any: The data from the sibling index.
+        """
         sibling_index = index.sibling(index.row(), column)
         return sibling_index.data(data_role)
 
     # Overridden Methods
     # ------------------
     def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex):
+        """Paint the delegate.
+
+        Args:
+            painter (QtGui.QPainter): The painter to use for drawing.
+            option (QtWidgets.QStyleOptionViewItem): The style option to use for drawing.
+            index (QtCore.QModelIndex): The model index of the item to be painted.
+        """
         super().paint(painter, option, index)
 
         file_path = self.get_sibling_data(index, self._source_column)
@@ -547,7 +613,6 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         pixmap = self.load_thumbnail(file_path)
 
         if pixmap is None or pixmap.isNull():
-            # TODO: Paint loading pixmap
             return
 
         self._paint_pixmap(painter, option.rect, pixmap)

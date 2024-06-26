@@ -999,6 +999,8 @@ class FileTypeFilterWidget(FilterWidget):
             "Audio Files": (["mp3", "wav", "aac"], "Audio formats like MP3, WAV, AAC"),
             "Image Files": (["jpg", "png", "gif"], "Image formats like JPG, PNG, GIF"),
             "Document Files": (["pdf", "docx", "txt"], "Document formats like PDF, DOCX, TXT"),
+            "3D Model Files": (["obj", "fbx", "stl", "blend"], "3D model formats like OBJ, FBX, STL, BLEND"),
+            "Rig Files": (["bvh", "skel"], "Rig formats like BVH, SKEL"),
         }
 
         self.checkboxes = {}
