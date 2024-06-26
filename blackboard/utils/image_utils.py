@@ -1,13 +1,14 @@
 # Type Checking Imports
 # ---------------------
-from typing import Optional, Union, BinaryIO, Dict, Union, Tuple
+from typing import TYPE_CHECKING, Optional, Union, BinaryIO, Dict, Union, Tuple
+if TYPE_CHECKING:
+    from numbers import Number
 
 # Standard Library Imports
 # ------------------------
 import os, math
 from pathlib import Path
 import numpy as np
-from numbers import Number
 from functools import lru_cache
 
 # Third Party Imports
@@ -352,7 +353,7 @@ class ImageSequence:
     def read_image(self, file_path: str):
         return ImageReader.read_image(file_path)
 
-    def get_image_data(self, frame: Number):
+    def get_image_data(self, frame: 'Number'):
         file_path = self.get_frame_path(frame)
         return self.read_image(file_path)
     
@@ -361,5 +362,5 @@ class ImageSequence:
     def frame_range(self):
         return self.path_sequence.get_frame_range()
 
-    def get_frame_path(self, frame: Number):
+    def get_frame_path(self, frame: 'Number'):
         return self.path_sequence.get_frame_path(frame)

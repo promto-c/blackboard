@@ -53,6 +53,28 @@ class ColorUtils:
 
         return QtGui.QColor(r, g, b, a)
 
+    @staticmethod
+    def create_pastel_color(color: QtGui.QColor, saturation: float = 0.4, value: float = 0.9) -> QtGui.QColor:
+        """Create a pastel version of the given color.
+
+        Args:
+            color (QtGui.QColor): The original color.
+            saturation (float): The desired saturation factor (default: 0.4).
+            value (float): The desired value/brightness factor (default: 0.9).
+
+        Returns:
+            QtGui.QColor: The pastel color.
+        """
+        h, s, v, a = color.getHsvF()
+
+        # Decrease saturation and value to achieve a more pastel look
+        s *= saturation
+        v *= value
+
+        pastel_color = QtGui.QColor.fromHsvF(h, s, v, a)
+        return pastel_color
+
+
 if __name__ == "__main__":
     import doctest
     doctest.testmod()

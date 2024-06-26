@@ -1,13 +1,13 @@
 # Type Checking Imports
 # ---------------------
-from typing import Dict, List
+from typing import TYPE_CHECKING, Dict, List
+if TYPE_CHECKING:
+    from numbers import Number
 
 # Standard Library Imports
 # ------------------------
 import glob, re
 from pathlib import Path
-from numbers import Number
-
 
 # Constant Definitions
 # --------------------
@@ -46,7 +46,7 @@ class PathSequence:
         
         return last_frame - first_frame + 1
     
-    def get_frame_path(self, frame_number: Number):
+    def get_frame_path(self, frame_number: 'Number'):
         return f'{self.name_part}.{int(frame_number):0{self.padding_length}}.{self.extension}'
 
     def __str__(self):

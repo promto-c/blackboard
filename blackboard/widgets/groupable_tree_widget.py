@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Union, Tuple, Optional, Generator, Iterable
 
 # Standard Library Imports
 # ------------------------
-import time, uuid, os
+import time, uuid
 from numbers import Number
 from itertools import islice
 from collections import defaultdict
@@ -798,7 +798,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for i in selected_items:
             i.setExpanded(reference_item.isExpanded())
 
-    def get_column_value_range(self, column: int, child_level: int = 0) -> Tuple[Optional[Number], Optional[Number]]:
+    def get_column_value_range(self, column: int, child_level: int = 0) -> Tuple[Optional['Number'], Optional['Number']]:
         """Get the value range of a specific column at a given child level.
 
         Args:
@@ -1073,8 +1073,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             )
         )
 
-        # Use defaultdict for cleaner initialization
-        cell_dict = defaultdict(lambda: defaultdict(str))
+        # Initialize a dictionary to store cell texts and a set to store columns
+        cell_dict: Dict[int, Dict[int, str]] = defaultdict(lambda: defaultdict(str))
         columns = set()
 
         # Fill the cell_dict with cell texts
@@ -1084,7 +1084,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             column = index.column()
 
             cell_value = tree_item.get_value(column)
-            cell_text = str(cell_value or '')
+            cell_text = '' if cell_value is None else str(cell_value)
             cell_text = f'"{cell_text}"' if ('\t' in cell_text or '\n' in cell_text) else cell_text
 
             cell_dict[global_row][column] = cell_text
@@ -1101,7 +1101,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Show tooltip message
         self.show_tool_tip(f'Copied:\n{full_text}', 5000)
 
-    def show_tool_tip(self, text: str, msc_show_time: Number = 1000):
+    def show_tool_tip(self, text: str, msc_show_time: 'Number' = 1000):
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text, self, QtCore.QRect(), msc_show_time)
 
     def paste_cells_from_clipboard(self):

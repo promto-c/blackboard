@@ -12,7 +12,7 @@ class MomentumScrollHandler(QtCore.QObject):
     # Initialization and Setup
     # ------------------------
     def __init__(self, widget: QtWidgets.QScrollArea, friction: float = 0.95,
-                 min_velocity: float = 0.1, velocity_scale: float = 0.05,
+                 min_velocity: float = 0.05, velocity_scale: float = 0.02,
                  frame_interval: int = 16):
         """Initializes the MomentumScrollHandler.
 
@@ -40,14 +40,14 @@ class MomentumScrollHandler(QtCore.QObject):
         """Initializes the attributes.
         """
         self.velocity = QtCore.QPointF()
-        self.horizontal_scrollbar = self.widget.horizontalScrollBar()
-        self.vertical_scrollbar = self.widget.verticalScrollBar()
+        self.horizontal_scroll_bar = self.widget.horizontalScrollBar()
+        self.vertical_scroll_bar = self.widget.verticalScrollBar()
         self.timer = QtCore.QTimer()
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initializes signal connections between widgets and slots.
         """
-        self.timer.timeout.connect(self._on_timeout)
+        self.timer.timeout.connect(self._update_scroll_position)
 
     # Public Methods
     # --------------
@@ -67,14 +67,14 @@ class MomentumScrollHandler(QtCore.QObject):
 
     # Private Methods
     # ---------------
-    def _on_timeout(self):
+    def _update_scroll_position(self):
         """Handles the timer timeout event to update the scrolling.
         """
         if self.velocity.manhattanLength() < self.min_velocity:
             self.stop()
             return
 
-        self.horizontal_scrollbar.setValue(self.horizontal_scrollbar.value() - self.velocity.x())
-        self.vertical_scrollbar.setValue(self.vertical_scrollbar.value() - self.velocity.y())
+        self.horizontal_scroll_bar.setValue(int(self.horizontal_scroll_bar.value() - self.velocity.x()))
+        self.vertical_scroll_bar.setValue(int(self.vertical_scroll_bar.value() - self.velocity.y()))
 
         self.velocity *= self.friction
