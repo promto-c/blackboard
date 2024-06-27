@@ -716,7 +716,7 @@ class MultiSelectFilterWidget(FilterWidget):
         self.setIcon(TablerQIcon.list_check)
 
         # Tree view
-        self.tree_view = QtWidgets.QTreeView(self)
+        self.tree_view = widgets.MomentumScrollTreeView(self)
         self.tree_view.setHeaderHidden(True)
         self.tree_view.setRootIsDecorated(False)
         self.proxy_model = bb.utils.CheckableProxyModel()

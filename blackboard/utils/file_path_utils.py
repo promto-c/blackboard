@@ -30,7 +30,7 @@ class FileUtil:
 
     @staticmethod
     def extract_file_info(file_path: str, date_time_format: str = DEFAULT_DATE_TIME_FORMAT) -> Dict[str, str]:
-        """Extracts detailed information about a file.
+        """Extract detailed information about a file.
 
         Args:
             file_path (str): Path to the file for extracting information.
@@ -66,7 +66,7 @@ class FileUtil:
 
     @staticmethod
     def get_file_extension(file_path: str) -> str:
-        """Gets the file extension of a file.
+        """Get the file extension of a file.
 
         Args:
             file_path (str): Path to the file.
@@ -78,7 +78,7 @@ class FileUtil:
 
     @staticmethod
     def get_file_owner(file_path: str) -> str:
-        """Gets the owner of a file.
+        """Get the owner of a file.
 
         Args:
             file_path (str): Path to the file.
@@ -97,7 +97,7 @@ class FileUtil:
 
     @staticmethod
     def format_size(size: int, precision: int = 2) -> str:
-        """Converts a file size to a human-readable form with adjustable precision.
+        """Convert a file size to a human-readable form with adjustable precision.
 
         Args:
             size (int): The size of the file in bytes.
@@ -131,11 +131,11 @@ class FormatStyle(Enum):
     BRACKETS_SEPARATE_RANGES = 'brackets_separate_ranges'   # '[0-4,6-7,9]'
 
     def requires_range(self) -> bool:
-        """Determines if the format style requires a range of frame numbers."""
+        """Determine if the format style requires a range of frame numbers."""
         return self in {FormatStyle.BRACKETS, FormatStyle.BRACES, FormatStyle.HASH_WITH_RANGE, FormatStyle.PERCENT_WITH_RANGE}
 
     def requires_separate_ranges(self) -> bool:
-        """Determines if the format style requires separate ranges."""
+        """Determine if the format style requires separate ranges."""
         return self == FormatStyle.BRACKETS_SEPARATE_RANGES
 
 class SequenceFileUtil(FileUtil):
@@ -183,7 +183,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def extract_sequence_details(sequence_path_format: str, format_style: Optional['FormatStyle'] = None) -> Dict[str, str]:
-        """Extracts groups from the sequence path format.
+        """Extract groups from the sequence path format.
 
         Args:
             sequence_path_format (str): The sequence path format.
@@ -204,7 +204,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def get_padding(input_data: Union[Dict[str, str], str], format_style: Optional[FormatStyle] = None) -> int:
-        """Determines the padding for sequence numbers based on the format style and match groups or sequence path format.
+        """Determine the padding for sequence numbers based on the format style and match groups or sequence path format.
 
         Args:
             input_data (Union[dict, str]): The match groups from the regex or the sequence path format.
@@ -233,7 +233,7 @@ class SequenceFileUtil(FileUtil):
     @staticmethod
     def construct_sequence_file_path(format_style: 'FormatStyle', base_name: str, frame_numbers: List[str], extension: str,
                                      padding: int = DEFAULT_PADDING) -> str:
-        """Constructs the formatted sequence file path based on the specified format style using cached patterns.
+        """Construct the formatted sequence file path based on the specified format style using cached patterns.
 
         Args:
             format_style (FormatStyle): The format style to use, determining the pattern applied to the sequence.
@@ -293,7 +293,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def is_sequence_file(file_name: str) -> bool:
-        """Checks if a file name follows the sequence file pattern (e.g., 'image.####.ext').
+        """Check if a file name follows the sequence file pattern (e.g., 'image.####.ext').
 
         Args:
             file_name (str): The file name to check.
@@ -308,7 +308,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def detect_sequence_format(sequence_path_format: str) -> Optional['FormatStyle']:
-        """Detects the format of the sequence path format.
+        """Detect the format of the sequence path format.
 
         Args:
             sequence_path_format (str): The sequence path format.
@@ -342,7 +342,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def construct_file_paths(base_name: str, frames: List[int], extension: str, padding: int = 0) -> List[str]:
-        """Constructs file paths based on the base name, list of frames, and extension.
+        """Construct file paths based on the base name, list of frames, and extension.
 
         Args:
             base_name (str): The base name of the sequence.
@@ -357,7 +357,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def generate_frame_path(sequence_path_format: str, frame: int, format_style: Optional['FormatStyle'] = None) -> str:
-        """Generates the file path for a specific frame number based on the given sequence path format and format style.
+        """Generate the file path for a specific frame number based on the given sequence path format and format style.
 
         Args:
             sequence_path_format (str): The sequence path format.
@@ -383,7 +383,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def extract_paths_from_format(sequence_path_format: str, sequence_range: Optional[Tuple[int, int]] = None, format_style: Optional['FormatStyle'] = None) -> List[str]:
-        """Extracts individual file paths from a sequence path format.
+        """Extract individual file paths from a sequence path format.
 
         Args:
             sequence_path_format (str): The sequence path format.
@@ -443,7 +443,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def parse_sequence_file_name(file_name: str) -> Tuple[str, str, str]:
-        """Parses sequence information from a file name.
+        """Parse sequence information from a file name.
 
         Args:
             file_name (str): The file name to extract information from.
@@ -460,7 +460,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def get_sequence_range(sequence_numbers: List[str]) -> Tuple[int, int]:
-        """Gets the range of sequence numbers from a list of sequence numbers.
+        """Get the range of sequence numbers from a list of sequence numbers.
 
         Args:
             sequence_numbers (List[str]): A list of sequence numbers.
@@ -474,7 +474,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def get_sequence_ranges(sequence_numbers: List[str], padding: int = 0) -> List[str]:
-        """Gets the ranges of sequence numbers from a list of sequence numbers.
+        """Get the ranges of sequence numbers from a list of sequence numbers.
 
         Args:
             sequence_numbers (List[str]): A list of sequence numbers.
@@ -522,7 +522,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def ranges_to_sequence_numbers(ranges: List[str]) -> List[int]:
-        """Converts ranges in the format 'start-end' or individual numbers as strings to a list of integers.
+        """Convert ranges in the format 'start-end' or individual numbers as strings to a list of integers.
 
         Args:
             ranges (List[str]): The ranges to convert.
@@ -548,7 +548,7 @@ class SequenceFileUtil(FileUtil):
     def convert_to_sequence_format(file_paths: List[str], format_style: 'FormatStyle' = FormatStyle.HASH,
                                    use_unique_padding: bool = True, is_skip_hidden: bool = True
                                   ) -> Generator[str, None, None]:
-        """Converts a list of file paths to a list with sequence path formats.
+        """Convert a list of file paths to a list with sequence path formats.
 
         Args:
             file_paths (List[str]): A list of file paths.
@@ -651,7 +651,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def calculate_total_size(sequence_path_format: str) -> int:
-        """Calculates the total size of the files in bytes.
+        """Calculate the total size of the files in bytes.
 
         Args:
             sequence_path_format (str): The path to the sequence file.
@@ -665,7 +665,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def extract_frame_number(file_name: str) -> Optional[str]:
-        """Extracts the frame number from a sequence file name.
+        """Extract the frame number from a sequence file name.
 
         Args:
             file_name (str): The file name to extract the frame number from.
@@ -678,7 +678,7 @@ class SequenceFileUtil(FileUtil):
 
     @staticmethod
     def extract_file_info(file_path: str, date_time_format: str = FileUtil.DEFAULT_DATE_TIME_FORMAT) -> Dict[str, str]:
-        """Extracts detailed information about a file, supporting sequence files.
+        """Extract detailed information about a file, supporting sequence files.
 
         Args:
             file_path (str): Path to the file or sequence path format for extracting information.
@@ -936,13 +936,13 @@ class FilePathWalker:
         )
 
 class FilePatternQuery:
-    """Queries files matching a specified pattern.
+    """Query files matching a specified pattern.
     """
 
     # Initialization and Setup
     # ------------------------
     def __init__(self, pattern: str) -> None:
-        """Initializes a FilePatternQuery instance.
+        """Initialize a FilePatternQuery instance.
 
         Args:
             pattern (str): The pattern to match files with.
@@ -953,7 +953,7 @@ class FilePatternQuery:
     # Public Methods
     # --------------
     def format_for_recursive_glob(self, values: List[str]) -> str:
-        """Formats a string with named placeholders for use with glob.iglob, including adding '**' at the end for recursive searches.
+        """Format a string with named placeholders for use with glob.iglob, including adding '**' at the end for recursive searches.
         
         Args:
             values (List[str]): Arguments to fill the placeholders, provided by index.
@@ -965,7 +965,7 @@ class FilePatternQuery:
         return PathPattern.format_by_index(self.pattern, values) + '/**'
 
     def extract_variables(self, path: str) -> Dict[str, str]:
-        """Extracts variables from a given path based on a specified string pattern.
+        """Extract variables from a given path based on a specified string pattern.
 
         Args:
             path: The path string from which to extract variable values.
@@ -977,7 +977,7 @@ class FilePatternQuery:
         return PathPattern.extract_variables(self._regex_pattern, path, is_regex=True)
 
     def construct_search_paths(self, filters: Dict[str, List[str]], recursive: bool = True) -> Generator[str, None, None]:
-        """Constructs and yields search paths based on provided filters and the pattern.
+        """Construct and yield search paths based on provided filters and the pattern.
 
         Args:
             filters (Dict[str, List[str]]): A dictionary where keys are field names extracted from the pattern, 
@@ -1000,7 +1000,7 @@ class FilePatternQuery:
             yield from glob.iglob(search_path, recursive=recursive)
 
     def query_files(self, filters: Dict[str, List[str]] = dict()) -> Generator[Dict[str, str], None, None]:
-        """Queries files matching the pattern and filters, returning their info.
+        """Query files matching the pattern and filters, returning their info.
 
         Args:
             filters (Dict[str, List[str]]): Filters for querying files.
@@ -1030,19 +1030,19 @@ class FilePatternQuery:
     # ----------------
     @property
     def fields(self) -> List[str]:
-        """Returns the list of fields extracted from the pattern.
+        """Return the list of fields extracted from the pattern.
         """
         return PathPattern.extract_variable_names(self._pattern) + FileUtil.FILE_INFO_FIELDS
 
     @property
     def pattern(self) -> str:
-        """Returns the pattern used to query files.
+        """Return the pattern used to query files.
         """
         return self._pattern
     
     @pattern.setter
     def pattern(self, value: str) -> None:
-        """Sets the pattern used to query files.
+        """Set the pattern used to query files.
         """
         # Normalize the pattern and store the regex pattern for matching files
         self._pattern = os.path.normpath(value) + '/'
@@ -1050,7 +1050,7 @@ class FilePatternQuery:
     
     @property
     def regex_pattern(self) -> str:
-        """Returns the regular expression pattern used to query files.
+        """Return the regular expression pattern used to query files.
         """
         return self._regex_pattern
 

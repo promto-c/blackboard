@@ -159,7 +159,7 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.popup_widget.setWindowFlags(QtCore.Qt.WindowType.Popup)
 
         # Tree view to display filtered items
-        self.tree_view = QtWidgets.QTreeView(self.popup_widget)
+        self.tree_view = widgets.MomentumScrollTreeView(self.popup_widget)
         self._configure_tree_view()
         self.filter_line_edit = FilterLineEdit(self.tree_view, self, self.popup_widget)
         self.popup_layout.addWidget(self.filter_line_edit)

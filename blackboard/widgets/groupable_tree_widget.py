@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Union, Tuple, Optional, Generator, Iterable
 
 # Standard Library Imports
 # ------------------------
-import time, uuid
+import uuid
 from numbers import Number
 from itertools import islice
 from collections import defaultdict
@@ -156,7 +156,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         return self.get_value(key)
 
     def __lt__(self, other_item: 'TreeWidgetItem') -> bool:
-        """Sort the items in the tree widget based on their data.
+        """Compare this item with another item to determine the sort order.
 
         Args:
             other_item (TreeWidgetItem): The item to compare with.
@@ -397,11 +397,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     Attributes:
         column_names (List[str]): The list of column names to be displayed in the tree widget.
         groups (Dict[str, TreeWidgetItem]): A dictionary mapping group names to their tree widget items.
-        _is_middle_button_pressed (bool): Indicates if the middle mouse button is pressed.
-            It's used for scrolling functionality when the middle button is pressed and the mouse is moved.
-        _middle_button_prev_pos (QtCore.QPoint): The previous position of the mouse when the middle button was pressed.
-        _middle_button_start_pos (QtCore.QPoint): The initial position of the mouse when the middle button was pressed.
-        _mouse_move_timestamp (float): The timestamp of the last mouse movement.
     """
     # Set default to index 1, cause of first column willl be "id"
     DEFAULT_DRAG_DATA_COLUMN = 1
@@ -433,28 +428,15 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.id_to_tree_item = dict()
         self.color_adaptive_columns = list()
 
-        self._drag_data_column = self.DEFAULT_DRAG_DATA_COLUMN
-
         # Initialize the HighlightItemDelegate object to highlight items in the tree widget.
         self.highlight_item_delegate = widgets.HighlightItemDelegate()
         self.thumbnail_delegate = widgets.ThumbnailDelegate(self)
 
         # Private Attributes
         # ------------------
-        # Initialize middle button pressed flag
-        self._is_middle_button_pressed = False
-
-        # Previous position of the middle mouse button
-        self._middle_button_prev_pos = QtCore.QPoint()
-        # Initial position of the middle mouse button
-        self._middle_button_start_pos = QtCore.QPoint()
-
-        # Timestamp of the last mouse move event
-        self._mouse_move_timestamp = float()
-
         self._row_height = 24
-
         self._current_column_index = 0
+        self._drag_data_column = self.DEFAULT_DRAG_DATA_COLUMN
 
         self.generator = None
         self._current_task = None
@@ -1185,7 +1167,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         super().hideColumn(column_index)
 
     def startDrag(self, supported_actions: QtCore.Qt.DropActions):
-        """Handles drag event of tree widget
+        """Handle drag event of tree widget
         """
         items = self.selectedItems()
 
@@ -1217,7 +1199,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         super().clear()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent):
-        """Handles mouse press event.
+        """Handle mouse press event.
         
         Overrides the parent class method to handle the event where the middle mouse button is pressed.
         If the middle button is pressed, sets the cursor to SizeAllCursor.
@@ -1227,19 +1209,13 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         # Check if middle mouse button is pressed
         if event.button() == QtCore.Qt.MouseButton.MiddleButton:
-            # Set middle button press flag to True
-            self._is_middle_button_pressed = True
-            self.scroll_handler.stop()
-            # Record the initial position where mouse button is pressed
-            self._middle_button_start_pos = event.pos()
-            # Change the cursor to SizeAllCursor
-            self.setCursor(QtCore.Qt.CursorShape.SizeAllCursor)
+            self.scroll_handler.handle_mouse_press(event)
         else:
             # If not middle button, call the parent class method to handle the event
             super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
-        """Handles mouse release event.
+        """Handle mouse release event.
         
         Overrides the parent class method to handle the event where the middle mouse button is released.
         If the middle button is released, restores the cursor to the default.
@@ -1249,22 +1225,14 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         # Check if middle mouse button is released
         if event.button() == QtCore.Qt.MouseButton.MiddleButton:
-            # Set middle button press flag to False
-            self._is_middle_button_pressed = False
-            # Calculate the velocity based on the change in mouse position and the elapsed time
-            # NOTE: The + 0.01 is added to avoid division by zero
-            velocity = (event.pos() - self._middle_button_prev_pos) / ((time.time() - self._mouse_move_timestamp + 0.01))
-            # Apply momentum based on velocity
-            self.scroll_handler.start(QtCore.QPointF(velocity))
-            # Restore the cursor to default
-            self.unsetCursor()
+            self.scroll_handler.handle_mouse_release(event)
 
         else:
             # If not middle button, call the parent class method to handle the event
             super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent):
-        """Handles mouse move event.
+        """Handle mouse move event.
         
         Overrides the parent class method to handle the event where the mouse is moved.
         If the middle button is pressed, adjusts the scroll bar values according to the mouse movement.
@@ -1272,27 +1240,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         Args:
             event: The mouse event.
         """
-        # Check if middle mouse button is pressed
-        if self._is_middle_button_pressed:
-            # Calculate the change in mouse position
-            delta = event.pos() - self._middle_button_start_pos
+        is_success = self.scroll_handler.handle_mouse_move(event)
 
-            # Get the scroll bars
-            horizontal_scroll_bar = self.horizontalScrollBar()
-            vertical_scroll_bar = self.verticalScrollBar()
-
-            # Adjust the scroll bar values according to mouse movement
-            horizontal_scroll_bar.setValue(horizontal_scroll_bar.value() - int(delta.x()))
-            vertical_scroll_bar.setValue(vertical_scroll_bar.value() - int(delta.y()))
-
-            # Update the previous and start positions of the middle mouse button
-            self._middle_button_prev_pos = self._middle_button_start_pos
-            self._middle_button_start_pos = event.pos()
-
-            # Set the timestamp of the last mouse move event
-            self._mouse_move_timestamp = time.time()
-        else:
-            # If middle button is not pressed, call the parent class method to handle the event
+        if not is_success:
             super().mouseMoveEvent(event)
 
     def save_state(self, settings: QtCore.QSettings, group_name='tree_widget'):
