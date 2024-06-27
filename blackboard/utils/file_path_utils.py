@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Dict, List, Generator, Optional, Tuple, Union
+from typing import Dict, List, Generator, Optional, Tuple, Union, Callable
 
 # Standard Library Imports
 # ------------------------
@@ -22,7 +22,8 @@ from blackboard.utils.path_utils import PathPattern
 # Class Definitions
 # -----------------
 class FileUtil:
-    """Utilities for working with files."""
+    """Utilities for working with files.
+    """
     # Units for formatting file sizes
     DEFAULT_DATE_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
     UNITS = ['bytes', 'kB', 'MB', 'GB', 'TB', 'PB']
@@ -48,7 +49,7 @@ class FileUtil:
         # Retrieve file statistics and details: file info, owner, last modified time, extension, and formatted size
         file_info = os.stat(file_path)
         owner = FileUtil.get_file_owner(file_path)
-        modified_time = datetime.datetime.fromtimestamp(file_info.st_mtime).strftime(date_time_format)
+        modified_time = FileUtil.get_modified_time(file_info, date_time_format=date_time_format)
         extension = FileUtil.get_file_extension(file_path)
         readable_size = FileUtil.format_size(file_info.st_size)
 
@@ -94,6 +95,15 @@ class FileUtil:
         else:
             file_info = os.stat(file_path)
             return pwd.getpwuid(file_info.st_uid).pw_name
+
+    @staticmethod
+    def get_modified_time(file_info: Union[str, os.stat_result], date_time_format: str = DEFAULT_DATE_TIME_FORMAT) -> str:
+        """Get the last modification time of a file.
+        """
+        if isinstance(file_info, str):
+            file_info = os.stat(file_info)
+
+        return datetime.datetime.fromtimestamp(file_info.st_mtime).strftime(date_time_format)
 
     @staticmethod
     def format_size(size: int, precision: int = 2) -> str:
@@ -714,7 +724,7 @@ class SequenceFileUtil(FileUtil):
         # Retrieve file statistics and details: file info, owner, last modified time, extension, and formatted size
         file_info = os.stat(latest_file)
         owner = FileUtil.get_file_owner(latest_file)
-        modified_time = datetime.datetime.fromtimestamp(file_info.st_mtime).strftime(date_time_format)
+        modified_time = FileUtil.get_modified_time(file_info, date_time_format=date_time_format)
         extension = FileUtil.get_file_extension(latest_file)
         readable_size = FileUtil.format_size(total_size)
 
@@ -797,7 +807,9 @@ class FilePathWalker:
     @staticmethod
     def traverse_files(root: str, is_skip_hidden: bool = True, is_return_relative: bool = False,
                        excluded_folders: List[str] = list(), excluded_extensions: List[str] = list(),
-                       use_sequence_format: bool = False, max_depth: Optional[int] = None) -> Generator[str, None, None]:
+                       use_sequence_format: bool = False, max_depth: Optional[int] = None,
+                       sort_key: Optional[Callable[[os.DirEntry], any]] = None, reverse_sort: bool = False,
+                      ) -> Generator[str, None, None]:
         """Traverse file paths from a root directory, optionally returning relative paths and supporting depth limit.
 
         Args:
@@ -808,6 +820,8 @@ class FilePathWalker:
             excluded_extensions (List[str]): A list of file extensions to be excluded from the traversal.
             use_sequence_format (bool): A boolean indicating whether to convert files to sequence formats.
             max_depth (Optional[int]): Maximum depth of directory traversal. None for no limit.
+            sort_key (Optional[Callable[[os.DirEntry], any]]): A callable to extract a sort key from a directory entry.
+            reverse_sort (bool): A boolean indicating whether to sort in reverse order. Default is False.
 
         Yields:
             Generator[str, None, None]: File paths from the root, either absolute or relative.
@@ -832,9 +846,15 @@ class FilePathWalker:
             # Check if the directory can be accessed, skip if not 
             if not os.access(directory, os.R_OK):
                 return
+            
+            # Traverse entries in the directory
+            if sort_key:
+                entries = sorted(os.scandir(directory), key=sort_key, reverse=reverse_sort)
+            else:
+                entries = os.scandir(directory)
 
             # Traverse entries in the directory
-            for entry in os.scandir(directory):
+            for entry in entries:
                 # Skip hidden files/directories and excluded folders
                 if FilePathWalker._is_skip_directory(entry.name, is_skip_hidden, excluded_folders):
                     continue
@@ -976,13 +996,14 @@ class FilePatternQuery:
         """
         return PathPattern.extract_variables(self._regex_pattern, path, is_regex=True)
 
-    def construct_search_paths(self, filters: Dict[str, List[str]], recursive: bool = True) -> Generator[str, None, None]:
+    def construct_search_paths(self, filters: Dict[str, List[str]], recursive: bool = True, use_sequence_format: bool = False) -> Generator[str, None, None]:
         """Construct and yield search paths based on provided filters and the pattern.
 
         Args:
             filters (Dict[str, List[str]]): A dictionary where keys are field names extracted from the pattern, 
                 and values are lists of strings that specify the filter values for each field.
             recursive (Optional[bool]): Whether to search recursively. Defaults to True.
+            use_sequence_format (Optional[bool]): Whether to use sequence format for glob. Defaults to False.
 
         Yields:
             Generator[str, None, None]: Paths to files that match the constructed search patterns.
@@ -997,19 +1018,23 @@ class FilePatternQuery:
 
         # Iterate through search paths and yield matching files
         for search_path in search_paths:
-            yield from glob.iglob(search_path, recursive=recursive)
+            if use_sequence_format:
+                yield from SequenceFileUtil.convert_to_sequence_format(glob.iglob(search_path, recursive=recursive))
+            else:
+                yield from glob.iglob(search_path, recursive=recursive)
 
-    def query_files(self, filters: Dict[str, List[str]] = dict()) -> Generator[Dict[str, str], None, None]:
+    def query_files(self, filters: Dict[str, List[str]] = dict(), use_sequence_format: bool = False) -> Generator[Dict[str, str], None, None]:
         """Query files matching the pattern and filters, returning their info.
 
         Args:
             filters (Dict[str, List[str]]): Filters for querying files.
+            use_sequence_format (bool): Whether to use the sequence format. Defaults to False.
 
         Yields:
             Generator[Dict[str, str], None, None]: File information for each matching file.
         """
         # Construct search paths based on the filters
-        paths = self.construct_search_paths(filters)
+        paths = self.construct_search_paths(filters, use_sequence_format=use_sequence_format)
 
         # Iterate over the paths and extract file information
         for path in paths:
@@ -1018,7 +1043,7 @@ class FilePatternQuery:
                 continue
 
             # Extract file information dict from the path
-            file_info = SequenceFileUtil.extract_file_info(path)
+            file_info = SequenceFileUtil.extract_file_info(path) if use_sequence_format else FileUtil.extract_file_info(path)
 
             # Extract variables from the path based on the pattern and merge it with file information
             data_dict = self.extract_variables(path)
