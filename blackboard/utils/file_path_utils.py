@@ -890,7 +890,9 @@ class FilePathWalker:
     @staticmethod
     def traverse_files_walk(search_root: str, is_skip_hidden: bool = True, use_sequence_format: bool = False,
                             excluded_folders: List[str] = list(), included_extensions: Optional[List[str]] = None,
-                            excluded_extensions: Optional[List[str]] = None) -> Generator[str, None, None]:
+                            excluded_extensions: Optional[List[str]] = None, 
+                            sort_key: Optional[Callable[[str], any]] = None, reverse_sort: bool = False
+                           ) -> Generator[str, None, None]:
         """Traverse file paths from a root directory using os.walk, optionally converting to sequence formats.
 
         Args:
@@ -900,6 +902,8 @@ class FilePathWalker:
             excluded_folders (List[str]): A list of folder names to be excluded from the traversal.
             included_extensions (Optional[List[str]]): A list of file extensions to be included in the traversal.
             excluded_extensions (Optional[List[str]]): A list of file extensions to be excluded from the traversal.
+            sort_key (Optional[Callable[[str], Any]]): A callable to specify a key for sorting file names.
+            reverse_sort (bool): A boolean indicating whether to sort the file names in reverse order.
 
         Yields:
             Generator[str, None, None]: File paths from the root. If `use_sequence_format` is True,
@@ -910,7 +914,7 @@ class FilePathWalker:
         
         # Traverse the root directory
         for root, dir_names, file_names in os.walk(search_root):
-            # Skip hidden directories and excluded folders
+            # Update the dir_names list in place to skip hidden directories and excluded folders
             dir_names[:] = [
                 dir_name for dir_name in dir_names 
                 if not FilePathWalker._is_skip_directory(
@@ -921,6 +925,11 @@ class FilePathWalker:
 
             # Convert file names to sequence format if required
             file_names = SequenceFileUtil.convert_to_sequence_format(file_names) if use_sequence_format else file_names
+
+            # Sort file and directory names if a sort key is provided
+            if sort_key:
+                dir_names.sort(key=sort_key, reverse=reverse_sort)
+                file_names.sort(key=sort_key, reverse=reverse_sort)
 
             # Yield file paths that are not skipped based on the specified criteria
             yield from (
@@ -972,17 +981,17 @@ class FilePatternQuery:
 
     # Public Methods
     # --------------
-    def format_for_recursive_glob(self, values: List[str]) -> str:
-        """Format a string with named placeholders for use with glob.iglob, including adding '**' at the end for recursive searches.
+    def format_for_glob(self, values: List[str]) -> str:
+        """Format a string with named placeholders for use with glob.iglob.
         
         Args:
             values (List[str]): Arguments to fill the placeholders, provided by index.
         
         Returns:
-            str: The formatted string prepared for recursive glob search.
+            str: The formatted string prepared for glob search.
         """
         # Use str.format with the modified pattern
-        return PathPattern.format_by_index(self.pattern, values) + '/**'
+        return PathPattern.format_by_index(self.pattern, values)
 
     def extract_variables(self, path: str) -> Dict[str, str]:
         """Extract variables from a given path based on a specified string pattern.
@@ -996,14 +1005,12 @@ class FilePatternQuery:
         """
         return PathPattern.extract_variables(self._regex_pattern, path, is_regex=True)
 
-    def construct_search_paths(self, filters: Dict[str, List[str]], recursive: bool = True, use_sequence_format: bool = False) -> Generator[str, None, None]:
+    def construct_search_paths(self, filters: Dict[str, List[str]]) -> Generator[str, None, None]:
         """Construct and yield search paths based on provided filters and the pattern.
 
         Args:
             filters (Dict[str, List[str]]): A dictionary where keys are field names extracted from the pattern, 
                 and values are lists of strings that specify the filter values for each field.
-            recursive (Optional[bool]): Whether to search recursively. Defaults to True.
-            use_sequence_format (Optional[bool]): Whether to use sequence format for glob. Defaults to False.
 
         Yields:
             Generator[str, None, None]: Paths to files that match the constructed search patterns.
@@ -1013,43 +1020,47 @@ class FilePatternQuery:
 
         # Generate all possible paths based on combinations of field values
         all_value_combinations = product(*values_combinations)
-        # Using map to apply format for recursive glob for each combination of values
-        search_paths = map(self.format_for_recursive_glob, all_value_combinations)
+        # Using map to apply format for glob for each combination of values
+        search_paths = map(self.format_for_glob, all_value_combinations)
 
         # Iterate through search paths and yield matching files
         for search_path in search_paths:
-            if use_sequence_format:
-                yield from SequenceFileUtil.convert_to_sequence_format(glob.iglob(search_path, recursive=recursive))
-            else:
-                yield from glob.iglob(search_path, recursive=recursive)
+            yield from glob.iglob(search_path)
 
-    def query_files(self, filters: Dict[str, List[str]] = dict(), use_sequence_format: bool = False) -> Generator[Dict[str, str], None, None]:
+    def query_files(self, filters: Dict[str, List[str]] = dict(), use_sequence_format: bool = False, 
+                    excluded_extensions: List[str] = list(), is_skip_hidden: bool = True
+                   ) -> Generator[Dict[str, str], None, None]:
         """Query files matching the pattern and filters, returning their info.
 
         Args:
             filters (Dict[str, List[str]]): Filters for querying files.
             use_sequence_format (bool): Whether to use the sequence format. Defaults to False.
+            excluded_extensions (List[str]): A list of file extensions to be excluded from the results.
+            is_skip_hidden (bool): Whether to skip hidden files. Defaults to True.
 
         Yields:
             Generator[Dict[str, str], None, None]: File information for each matching file.
         """
         # Construct search paths based on the filters
-        paths = self.construct_search_paths(filters, use_sequence_format=use_sequence_format)
+        search_paths = self.construct_search_paths(filters)
 
         # Iterate over the paths and extract file information
-        for path in paths:
-            path = os.path.normpath(path)
-            if not os.path.isfile(path):
-                continue
+        for search_path in search_paths:
+            file_paths = FilePathWalker.traverse_files(
+                search_path, use_sequence_format=use_sequence_format, 
+                excluded_extensions=excluded_extensions, is_skip_hidden=is_skip_hidden
+            )
+            for file_path in file_paths:
+                file_path = os.path.normpath(file_path)
 
-            # Extract file information dict from the path
-            file_info = SequenceFileUtil.extract_file_info(path) if use_sequence_format else FileUtil.extract_file_info(path)
+                # Extract file information dict from the path
+                file_info = SequenceFileUtil.extract_file_info(file_path) if use_sequence_format else FileUtil.extract_file_info(file_path)
 
-            # Extract variables from the path based on the pattern and merge it with file information
-            data_dict = self.extract_variables(path)
-            data_dict.update(file_info)
+                # Extract variables from the path based on the pattern and merge it with file information
+                data_dict = self.extract_variables(file_path)
+                data_dict.update(file_info)
 
-            yield data_dict
+                yield data_dict
 
     # Class Properties
     # ----------------

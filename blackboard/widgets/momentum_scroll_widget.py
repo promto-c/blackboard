@@ -31,8 +31,12 @@ class MomentumScrollListView(QtWidgets.QListView):
         """Handle mouse move event."""
         is_success = self.scroll_handler.handle_mouse_move(event)
 
-        if not is_success:
-            super().mouseMoveEvent(event)
+        if is_success:
+            event.ignore()
+            return
+        
+        super().mouseMoveEvent(event)
+
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
         """Handle mouse release event."""
@@ -74,8 +78,11 @@ class MomentumScrollTreeView(QtWidgets.QTreeView):
         """Handle mouse move event."""
         is_success = self.scroll_handler.handle_mouse_move(event)
 
-        if not is_success:
-            super().mouseMoveEvent(event)
+        if is_success:
+            event.ignore()
+            return
+        
+        super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
         """Handle mouse release event."""

@@ -34,7 +34,7 @@ class SearchableHeaderView(QtWidgets.QHeaderView):
         self.__init_signal_connections()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         # Attributes
         # ------------------
@@ -45,7 +45,7 @@ class SearchableHeaderView(QtWidgets.QHeaderView):
         ...
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets and layouts.
+        """Initialize the UI of the widget.
         """
         # Create widgets and layouts
         self.setFixedHeight(int(self.height()*1.5))
@@ -58,7 +58,7 @@ class SearchableHeaderView(QtWidgets.QHeaderView):
             self.update_positions()
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
         # Connect signals to slots
         self.sectionResized.connect(self.update_positions)

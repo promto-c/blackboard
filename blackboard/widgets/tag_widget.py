@@ -24,7 +24,7 @@ class TagListView(MomentumScrollListView):
         self.__init_ui()
 
     def __init_attributes(self):
-        """Set up the initial values for the widget.
+        """Initialize the attributes.
         """
         self._proxy_model = FlatProxyModel(show_only_checked=True, show_only_leaves=True)
         self._proxy_model.set_show_checkbox(False)
@@ -34,7 +34,7 @@ class TagListView(MomentumScrollListView):
         self._proxy_model.layoutChanged.connect(self.tag_changed.emit)
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
+        """Initialize the UI of the widget.
         """
         self.setEditTriggers(QtWidgets.QListView.EditTrigger.NoEditTriggers)
         self.setViewMode(QtWidgets.QListView.ViewMode.IconMode)

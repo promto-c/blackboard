@@ -343,10 +343,11 @@ class ImageSequence:
     def __init__(self, input_path: str) -> None:
         self.input_path = input_path
 
-        # Set up the initial attributes
-        self._setup_attributes()
+        self.__init_attributes()
 
-    def _setup_attributes(self):
+    def __init_attributes(self):
+        """Initialize the attributes.
+        """
         self.path_sequence = PathSequence(self.input_path)
 
     @lru_cache(maxsize=400)

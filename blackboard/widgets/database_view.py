@@ -40,7 +40,7 @@ class DatabaseViewWidget(QtWidgets.QWidget):
         self.__init_signal_connections()
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts.
+        """Initialize the UI of the widget.
 
         UI Wireframe:
 
@@ -112,7 +112,7 @@ class DatabaseViewWidget(QtWidgets.QWidget):
         self.main_view_layout.addWidget(self.tree_widget)
 
     def __init_signal_connections(self):
-        """Set up signal connections between widgets and slots.
+        """Initialize signal-slot connections.
         """
         # Connect signals to slots
         self.view_tool_bar.refresh_button.clicked.connect(self.activate_filter)
