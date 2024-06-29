@@ -9,7 +9,6 @@ if TYPE_CHECKING:
 import os, math
 from pathlib import Path
 import numpy as np
-from functools import lru_cache
 
 # Third Party Imports
 # -------------------
@@ -27,6 +26,7 @@ import cv2
 from blackboard.utils.path_utils import PathSequence
 from blackboard.utils.file_path_utils import FileUtil
 from blackboard.utils.external.dpx_metadata_reader import DPXMetadata
+from blackboard.utils.lru_cache import LRUCache
 
 
 # Class Definitions
@@ -350,7 +350,7 @@ class ImageSequence:
         """
         self.path_sequence = PathSequence(self.input_path)
 
-    @lru_cache(maxsize=400)
+    @LRUCache()
     def read_image(self, file_path: str):
         return ImageReader.read_image(file_path)
 
@@ -365,3 +365,24 @@ class ImageSequence:
 
     def get_frame_path(self, frame: 'Number'):
         return self.path_sequence.get_frame_path(frame)
+
+
+if __name__ == "__main__":
+    from time import time
+    import matplotlib.pyplot as plt
+
+    def display_image(image_data):
+        plt.imshow(image_data, interpolation='nearest')
+        plt.title('DPX Image Data')
+        plt.axis('off')
+        plt.show()
+
+    file_path = 'test.dpx'
+
+    t0 = time()
+    image_data = ImageReader.read_image(file_path)
+    print(time() - t0)
+    print(image_data.shape)
+
+    # Display the image data
+    display_image(image_data)
