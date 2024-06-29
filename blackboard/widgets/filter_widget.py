@@ -5,7 +5,6 @@ from typing import Any, Optional, List, Union, Dict
 
 # Standard Library Imports
 # ------------------------
-import re
 import fnmatch
 from functools import partial
 from enum import Enum
@@ -712,26 +711,8 @@ class FilterEntryEdit(QtWidgets.QLineEdit):
         
         It captures quoted strings or sequences of characters outside quotes not including delimiters.
         """
-        pattern = re.compile(r'''
-            (?:             # Start of non-capturing group for the entire pattern
-                [ ]*        # Match any leading spaces (ignored in results)
-                "([^"]*)"   # Capture anything within double quotes
-                [ ]*        # Match any trailing spaces (ignored in results)
-            |               # OR
-                '([^']*)'   # Capture anything within single quotes
-                [ ]*        # Match any trailing spaces (ignored in results)
-            |               # OR
-                ([^,|"'\s]+) # Capture any sequence of characters that aren't delimiters or quotes
-            )               # End of non-capturing group
-            ''', re.VERBOSE)
-        
-        # Find all matches based on the pattern, this ignores empty matches by the nature of the regex
-        matches = pattern.findall(input_string)
-        
-        # Flatten the list of tuples returned by findall, and filter out any empty strings
-        result = [non_empty for tup in matches for non_empty in tup if non_empty]
-        
-        return result
+        quoted_terms, unquoted_terms = bb.utils.TextExtraction.extract_terms(input_string)
+        return quoted_terms + unquoted_terms
 
     def texts(self) -> List[str]:
         """Get the list of keywords from the line edit."""
