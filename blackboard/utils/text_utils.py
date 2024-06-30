@@ -83,6 +83,9 @@ class TextExtraction:
         >>> TextExtraction.extract_terms("'apple', 'banana', orange, 'mango, tree'")
         (['apple', 'banana', 'mango, tree'], ['orange'])
         """
+        if not input_text:
+            return [], []
+
         pattern = re.compile(r'''
             \s*             # Match any leading spaces (ignored in results)
             "([^"]*)"       # Capture anything within double quotes in group 1
