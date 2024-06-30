@@ -102,50 +102,11 @@ class TextExtraction:
 
         # Initialize lists for different captured groups
         double_quoted, single_quoted, unquoted_terms = [
-            [stripped_x for x in group if (stripped_x := x.strip())] 
+            [stripped_term for term in group if (stripped_term := term.strip())] 
             for group in zip(*matches)
         ]
 
         return double_quoted + single_quoted, unquoted_terms
-
-    @staticmethod
-    def extract_quoted_terms(keyword: str) -> List[str]:
-        """Extracts terms enclosed in quotes from the given keyword string.
-
-        Terms enclosed in either double or single quotes are considered quoted terms.
-
-        Args:
-            keyword: The keyword string containing the terms.
-
-        Returns:
-            A list of quoted terms.
-
-        Example:
-            >>> TextExtraction.extract_quoted_terms("'apple' \\" banana\\" grape \\"orange and mango\\"")
-            ['apple', 'banana', 'orange and mango']
-        """
-        quoted_terms = re.findall(r'"(.*?)"|\'(.*?)\'', keyword)
-        return [term.strip() for terms in quoted_terms for term in terms if term.strip()]
-
-    @staticmethod
-    def extract_unquoted_terms(keyword: str) -> List[str]:
-        """Extracts terms not enclosed in quotes from the given keyword string.
-
-        Terms not enclosed in quotes are considered unquoted terms, split on tabs,
-        new lines, commas, or pipes.
-
-        Args:
-            keyword: The keyword string containing the terms.
-
-        Returns:
-            A list of unquoted terms.
-
-        Example:
-            >>> TextExtraction.extract_unquoted_terms("'apple' \\" banana\\" grape \\"orange and mango\\"")
-            ['grape']
-        """
-        unquoted_terms = [term.strip() for term in re.split(r'"[^"]*"|\'[^\']*\'', keyword) if term.strip()]
-        return [split_term for term in unquoted_terms for split_term in TextExtraction.split_keywords(term) if split_term.strip()]
 
     @staticmethod
     def split_keywords(text: str) -> List[str]:

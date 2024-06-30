@@ -106,6 +106,10 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         skip_columns (set): A set of column indices to skip during the search.
     """
 
+    FIXED_STRING_MATCH_FLAGS = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchFixedString
+    CONTAINS_MATCH_FLAGS = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchContains
+    WILDCARD_MATCH_FLAGS = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchWildcard
+
     activated = QtCore.Signal()
 
     # Initialization and Setup
@@ -329,13 +333,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
             return
 
         # Match terms enclosed in either double or single quotes for fixed string match
-        self.quoted_terms = bb.utils.TextExtraction.extract_quoted_terms(keyword)
-        # Split the string at parts enclosed in either double or single quotes for contains match
-        self.unquoted_terms = bb.utils.TextExtraction.extract_unquoted_terms(keyword)
-
-        fixed_string_match_flags = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchFixedString
-        contains_match_flags = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchContains
-        wildcard_match_flags = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchWildcard
+        self.quoted_terms, self.unquoted_terms = bb.utils.TextExtraction.extract_terms(keyword)
 
         for column_index in range(self.tree_widget.columnCount()):
             if column_index in self.skip_columns:
@@ -345,11 +343,11 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
             # Handle fixed string match terms with case-insensitive matching
             for term in self.quoted_terms:
-                match_items.update(self.tree_widget.findItems(term, fixed_string_match_flags, column_index))
+                match_items.update(self.tree_widget.findItems(term, self.FIXED_STRING_MATCH_FLAGS, column_index))
 
             # Handle contains match terms
             for term in self.unquoted_terms:
-                flags = wildcard_match_flags if bb.utils.TextExtraction.is_contains_wildcard(term) else contains_match_flags
+                flags = self.WILDCARD_MATCH_FLAGS if bb.utils.TextExtraction.is_contains_wildcard(term) else self.CONTAINS_MATCH_FLAGS
 
                 # Find items that contain the term, regardless of its position in the string
                 match_items.update(self.tree_widget.findItems(term, flags, column_index))
