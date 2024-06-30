@@ -47,9 +47,9 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         self.setDecimals(10)
 
         # Set up signal connections
-        self._setup_signal_connections()
+        self.__init_signal_connections()
 
-    def _setup_signal_connections(self):
+    def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
         """
         self.lineEdit().cursorPositionChanged.connect(self._adjust_step)
@@ -268,10 +268,10 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
         self.single_step = single_step
 
         # Initialize setup
-        self.__setup_ui()
-        self.__setup_signal_connections()
+        self.__init_ui()
+        self.__init_signal_connections()
 
-    def __setup_ui(self):
+    def __init_ui(self):
         """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
         """
         self.setMaximumHeight(22)
@@ -298,7 +298,7 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
         layout.addWidget(self.button)
         layout.addWidget(self.spin_box)
 
-    def __setup_signal_connections(self):
+    def __init_signal_connections(self):
         """Set up signal connections between widgets and slots.
         """
         # Connects valueChanged signal of spin box to this widget
