@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import List
+from typing import List, Tuple
 
 # Standard Library Imports
 # ------------------------
@@ -52,6 +52,61 @@ class TextUtil:
 class TextExtraction:
     """Provides static methods for extracting quoted and unquoted terms from strings.
     """
+
+    @staticmethod
+    def extract_terms(input_text: str) -> Tuple[List[str], List[str]]:
+        """Extracts quoted and unquoted terms from the given input text, supporting multiple delimiters.
+
+        Quoted terms are extracted from both double quotes (") and single quotes (').
+        Unquoted terms are split based on the specified delimiters.
+
+        Args:
+            input_text (str): The input text containing quoted and unquoted terms.
+
+        Returns:
+            Tuple[List[str], List[str]]: A tuple containing:
+                quoted_terms (List[str]): List of terms extracted from quotes.
+                unquoted_terms (List[str]): List of terms extracted outside quotes and split by delimiters.
+
+        Examples:
+        >>> TextExtraction.extract_terms('''
+        ... "apple", 'banana', orange, som'e'word | 'mango, tree', cat' house\\n another word
+        ... ''')
+        (['apple', 'banana', 'mango, tree'], ['orange', "som'e'word", "cat' house", 'another word'])
+
+        >>> TextExtraction.extract_terms('"apple" | "banana" | "orange"')
+        (['apple', 'banana', 'orange'], [])
+
+        >>> TextExtraction.extract_terms("'apple' 'banana' 'orange'")
+        (['apple', 'banana', 'orange'], [])
+
+        >>> TextExtraction.extract_terms("'apple', 'banana', orange, 'mango, tree'")
+        (['apple', 'banana', 'mango, tree'], ['orange'])
+        """
+        pattern = re.compile(r'''
+            \s*             # Match any leading spaces (ignored in results)
+            "([^"]*)"       # Capture anything within double quotes in group 1
+            \s*             # Match any trailing spaces (ignored in results)
+        |                   # OR
+            \s*             # Match any leading spaces (ignored in results)
+            '([^']*)'       # Capture anything within single quotes in group 2
+            \s*             # Match any trailing spaces (ignored in results)
+        |                   # OR
+            \s*             # Match any leading spaces (ignored in results)
+            ([^\t\n,|]+)    # Capture any sequence of characters that aren't delimiters or quotes in group 3
+            \s*             # Match any trailing spaces (ignored in results)
+        ''', re.VERBOSE)
+
+        # Find all matches based on the pattern, this ignores empty matches by the nature of the regex
+        matches: List[Tuple[str, str, str]] = pattern.findall(input_text)
+
+        # Initialize lists for different captured groups
+        double_quoted, single_quoted, unquoted_terms = [
+            [stripped_x for x in group if (stripped_x := x.strip())] 
+            for group in zip(*matches)
+        ]
+
+        return double_quoted + single_quoted, unquoted_terms
 
     @staticmethod
     def extract_quoted_terms(keyword: str) -> List[str]:

@@ -191,13 +191,15 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     # Public Methods
     # --------------
     def set_text_as_selection(self):
-        """Set the text of the search edit to the selected items' text from the tree widget."""
+        """Set the text of the search edit to the selected items' text from the tree widget.
+        """
         keywords = {f'"{index.data()}"' for index in self.tree_widget.selectedIndexes()}
         self.setText('|'.join(keywords))
         self.setFocus()
 
     def set_active(self):
-        """Activate the search functionality."""
+        """Activate the search functionality.
+        """
         self._is_searching = False
         if not self._all_match_items and not self.tree_widget.has_more_items_to_fetch:
             return
@@ -211,7 +213,8 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
             self.tree_widget.fetch_all()
 
     def set_inactive(self):
-        """Deactivate the search functionality."""
+        """Deactivate the search functionality.
+        """
         if not self._is_active:
             return
 
@@ -219,7 +222,8 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self._reset_search()
 
     def update(self):
-        """Update the search and highlights matching items."""
+        """Update the search and highlights matching items.
+        """
         self._highlight_search()
 
         if self._is_active:
@@ -289,19 +293,22 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         return False
 
     def _matches_unquoted_term(self, item_text, term):
-        """Helper method to check if item_text matches the unquoted term."""
+        """Helper method to check if item_text matches the unquoted term.
+        """
         if bb.utils.TextExtraction.is_contains_wildcard(term):
             return fnmatch.fnmatch(item_text, term)
         else:
             return term in item_text
 
     def _update_total_matches(self, total_matches: Optional[int] = None):
-        """Update the text of the match count label with the total number of matches."""
+        """Update the text of the match count label with the total number of matches.
+        """
         total_matches = total_matches or len(self._all_match_items)
         self.match_count_button.set_match_count(total_matches)
 
     def _reset_highlight(self):
-        """Reset the highlight and clears matched items."""
+        """Reset the highlight and clears matched items.
+        """
         # Reset the highlight for all items
         self.tree_widget.clear_highlight()
         # Clear any previously matched items
