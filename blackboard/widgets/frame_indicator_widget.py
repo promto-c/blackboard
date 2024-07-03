@@ -1,3 +1,7 @@
+# Standard Library Imports
+# ------------------------
+from enum import Enum
+
 # Third Party Imports
 # -------------------
 from qtpy import QtCore, QtGui, QtWidgets
@@ -5,6 +9,11 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 # Class Definitions
 # -----------------
+class FrameStatus(Enum):
+    DEFAULT = 'default'
+    CACHING = 'caching'
+    CACHED = 'cached'
+
 class FrameIndicatorBar(QtWidgets.QWidget):
     """Widget to display a bar indicating the status of video frames.
     """
@@ -14,25 +23,63 @@ class FrameIndicatorBar(QtWidgets.QWidget):
     GREEN_COLOR = QtGui.QColor(65, 144, 65)
 
     STATUS_TO_COLOR = {
-        'default': GRAY_COLOR,
-        'caching': BLUE_COLOR,
-        'cached': GREEN_COLOR,
+        FrameStatus.DEFAULT: GRAY_COLOR,
+        FrameStatus.CACHING: BLUE_COLOR,
+        FrameStatus.CACHED: GREEN_COLOR,
     }
 
-    def __init__(self, total_frames: int, parent=None):
-        """Initializes the frame indicator bar with a specified number of frames.
+    # Initialization and Setup
+    # ------------------------
+    def __init__(self, first_frame: int = 0, last_frame: int = 1, parent=None):
+        """Initialize the frame indicator bar with a specified range of frames.
 
         Args:
-            total_frames: An integer specifying the total number of frames.
+            first_frame: An integer specifying the first frame number.
+            last_frame: An integer specifying the last frame number.
             parent: The parent widget. Defaults to None.
         """
-        super(FrameIndicatorBar, self).__init__(parent)
-        self.total_frames = total_frames
-        self.frame_status = [0] * total_frames  # Initialize all frames to default (0)
-        self.setMinimumHeight(2)  # Adjust based on your needs
+        super().__init__(parent)
+        self.first_frame = first_frame
+        self.last_frame = last_frame
+        self.total_frames = last_frame - first_frame + 1
+        # Initialize all frames to default
+        self.frame_status = [FrameStatus.DEFAULT] * self.total_frames
+        self.setMinimumHeight(2)
 
+    # Public Methods
+    # --------------
+    def set_frame_range(self, first_frame: int, last_frame: int):
+        """Set the range of frames in the bar.
+
+        Args:
+            first_frame: An integer specifying the first frame number.
+            last_frame: An integer specifying the last frame number.
+        """
+        self.first_frame = first_frame
+        self.last_frame = last_frame
+        self.total_frames = last_frame - first_frame + 1
+        # Reset frame status to default
+        self.frame_status = [FrameStatus.DEFAULT] * self.total_frames
+        # Redraw the widget
+        self.update()
+
+    def update_frame_status(self, frame_index: int, status: FrameStatus = FrameStatus.DEFAULT):
+        """Update the status of a specific frame.
+
+        Args:
+            frame_index: The index of the frame to update.
+            status: A FrameStatus enum indicating the new status of the frame.
+        """
+        if self.first_frame <= frame_index <= self.last_frame:
+            relative_index = frame_index - self.first_frame
+            self.frame_status[relative_index] = status
+            # Redraw the widget
+            self.update()
+
+    # Overridden Methods
+    # ------------------
     def paintEvent(self, event: QtGui.QPaintEvent):
-        """Handles the paint event to draw the frame indicators.
+        """Handle the paint event to draw the frame indicators.
 
         Args:
             event: The QPaintEvent.
@@ -49,18 +96,6 @@ class FrameIndicatorBar(QtWidgets.QWidget):
             color = self.STATUS_TO_COLOR.get(status, self.GRAY_COLOR)
             painter.fillRect(QtCore.QRectF(frame_index * frame_width, 0, frame_width, rect.height()), color)
 
-    def update_frame_status(self, frame_index: int, status: str):
-        """Updates the status of a specific frame.
-
-        Args:
-            frame_index: The index of the frame to update.
-            status: A string indicating the new status of the frame.
-        """
-        if 0 <= frame_index < self.total_frames:
-            self.frame_status[frame_index] = status
-            # Redraw the widget.
-            self.update()
-
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
@@ -68,8 +103,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(self.frame_indicator)
 
         # Example updating frame status
-        self.frame_indicator.update_frame_status(5, 'caching')  # Frame 5 is caching
-        self.frame_indicator.update_frame_status(6, 'cached')  # Frame 6 is cached
+        self.frame_indicator.update_frame_status(5, FrameStatus.CACHING)  # Frame 5 is caching
+        self.frame_indicator.update_frame_status(6, FrameStatus.CACHED)  # Frame 6 is cached
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication([])
