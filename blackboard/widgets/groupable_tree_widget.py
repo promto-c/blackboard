@@ -235,7 +235,8 @@ class ColumnMangementWidget(QtWidgets.QTreeWidget):
         self.itemChanged.connect(self.set_column_visibility)
 
     def toggle_check_state(self, tree_item: QtWidgets.QTreeWidgetItem, column: int):
-        # Toggles the checkbox state when an item's text (second column) is clicked
+        """Toggle the checkbox state when an item's text (second column) is clicked.
+        """
         if column != 1:
             return
 
@@ -244,12 +245,16 @@ class ColumnMangementWidget(QtWidgets.QTreeWidget):
         tree_item.setCheckState(0, new_state)  # Toggle the check state
 
     def sync_column_order(self):
+        """Synchronize the column order.
+        """
         for i in range(self.topLevelItemCount()):
             column_name = self.topLevelItem(i).text(1)
             visual_index = self.tree_widget.get_column_visual_index(column_name)
             self.tree_widget.header().moveSection(visual_index, i)
 
     def set_column_visibility(self, item: QtWidgets.QTreeWidgetItem, column: int):
+        """Set the visibility of a column based on the item's check state.
+        """
         column_name = item.text(1)
         is_hidden = item.checkState(0) == QtCore.Qt.Unchecked
         column_index = self.tree_widget.get_column_index(column_name)
@@ -257,6 +262,8 @@ class ColumnMangementWidget(QtWidgets.QTreeWidget):
         self.tree_widget.setColumnHidden(column_index, is_hidden)
 
     def update_columns(self):
+        """Update the columns.
+        """
         self.clear()
 
         if not self.tree_widget.column_names:
@@ -268,17 +275,23 @@ class ColumnMangementWidget(QtWidgets.QTreeWidget):
         self.addItems(header_names)
 
     def addItem(self, label: str, is_checked: bool = False):
+        """Add an item to the tree.
+        """
         tree_item = QtWidgets.QTreeWidgetItem(self, ['', label])
         check_state = QtCore.Qt.CheckState.Checked if is_checked else QtCore.Qt.CheckState.Unchecked
         tree_item.setCheckState(0, check_state)
 
     def addItems(self, labels: Iterable[str]):
+        """Add multiple items to the tree.
+        """
         for column_visual_index, label in enumerate(labels):
             column_logical_index = self.tree_widget.get_column_logical_index(column_visual_index)
             is_checked = not self.tree_widget.isColumnHidden(column_logical_index)
             self.addItem(label, is_checked)
 
     def dropEvent(self, event: QtGui.QDropEvent):
+        """Handle the drop event.
+        """
         # Attempt to find the item at the drop position.
         target_item = self.itemAt(event.pos())
 
@@ -1272,6 +1285,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self._restore_color_adaptive_column(color_adaptive_columns)
         self.group_by_column(grouped_column_name)
         self.set_row_height(uniform_row_height)
+        self.column_list_widget.update_columns()
 
     # TODO: Separate class
     # Generator
