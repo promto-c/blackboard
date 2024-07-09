@@ -46,12 +46,20 @@ class FileUtil:
                 - last_modified: The last modification timestamp in the specified format.
                 - file_owner: The owner of the file.
         """
-        # Retrieve file statistics and details: file info, owner, last modified time, extension, and formatted size
-        file_info = os.stat(file_path)
-        owner = FileUtil.get_file_owner(file_path)
-        modified_time = FileUtil.get_modified_time(file_info, date_time_format=date_time_format)
-        extension = FileUtil.get_file_extension(file_path)
-        readable_size = FileUtil.format_size(file_info.st_size)
+        try:
+            # Retrieve file statistics and details: file info, owner, last modified time, extension, and formatted size
+            file_info = os.stat(file_path)
+            owner = FileUtil.get_file_owner(file_path)
+            modified_time = FileUtil.get_modified_time(file_info, date_time_format=date_time_format)
+            extension = FileUtil.get_file_extension(file_path)
+            readable_size = FileUtil.format_size(file_info.st_size)
+
+        except FileNotFoundError:
+            # NOTE: Handle the case of an invalid symlink file path
+            owner = 'N/A'
+            modified_time = 'N/A'
+            extension = FileUtil.get_file_extension(file_path)
+            readable_size = '0 bytes'
 
         # Compile the file details into a dictionary
         details = {
@@ -717,16 +725,24 @@ class SequenceFileUtil(FileUtil):
         if len(sequence_files) == 1:
             return FileUtil.extract_file_info(file_path, date_time_format)
 
-        # Calculate the total size of the sequence files
-        total_size = sum(map(os.path.getsize, sequence_files))
-        latest_file = max(sequence_files, key=lambda f: os.stat(f).st_mtime)
+        try:
+            # Calculate the total size of the sequence files
+            total_size = sum(map(os.path.getsize, sequence_files))
+            latest_file = max(sequence_files, key=lambda f: os.stat(f).st_mtime)
 
-        # Retrieve file statistics and details: file info, owner, last modified time, extension, and formatted size
-        file_info = os.stat(latest_file)
-        owner = FileUtil.get_file_owner(latest_file)
-        modified_time = FileUtil.get_modified_time(file_info, date_time_format=date_time_format)
-        extension = FileUtil.get_file_extension(latest_file)
-        readable_size = FileUtil.format_size(total_size)
+            # Retrieve file statistics and details: file info, owner, last modified time, extension, and formatted size
+            file_info = os.stat(latest_file)
+            owner = FileUtil.get_file_owner(latest_file)
+            modified_time = FileUtil.get_modified_time(file_info, date_time_format=date_time_format)
+            extension = FileUtil.get_file_extension(latest_file)
+            readable_size = FileUtil.format_size(total_size)
+
+        except FileNotFoundError:
+            # NOTE: Handle the case of an invalid symlink file path
+            owner = 'N/A'
+            modified_time = 'N/A'
+            extension = FileUtil.get_file_extension(sequence_files[0])
+            readable_size = '0 bytes'
 
         # Get the sequence range from the sorted sequence files
         start_frame = SequenceFileUtil.extract_frame_number(sequence_files[0])
@@ -890,8 +906,8 @@ class FilePathWalker:
     @staticmethod
     def traverse_files_walk(search_root: str, is_skip_hidden: bool = True, use_sequence_format: bool = False,
                             excluded_folders: List[str] = list(), included_extensions: Optional[List[str]] = None,
-                            excluded_extensions: Optional[List[str]] = None, 
-                            sort_key: Optional[Callable[[str], any]] = None, reverse_sort: bool = False
+                            excluded_extensions: Optional[List[str]] = None, max_depth: Optional[int] = None,
+                            sort_key: Optional[Callable[[str], any]] = None, reverse_sort: bool = False,
                            ) -> Generator[str, None, None]:
         """Traverse file paths from a root directory using os.walk, optionally converting to sequence formats.
 
@@ -902,6 +918,7 @@ class FilePathWalker:
             excluded_folders (List[str]): A list of folder names to be excluded from the traversal.
             included_extensions (Optional[List[str]]): A list of file extensions to be included in the traversal.
             excluded_extensions (Optional[List[str]]): A list of file extensions to be excluded from the traversal.
+            max_depth (Optional[int]): Maximum depth of directory traversal. None for no limit.
             sort_key (Optional[Callable[[str], Any]]): A callable to specify a key for sorting file names.
             reverse_sort (bool): A boolean indicating whether to sort the file names in reverse order.
 
@@ -911,17 +928,24 @@ class FilePathWalker:
         """
         # Normalize the root directory path to ensure a consistent format
         search_root = os.path.normpath(search_root)
-        
+        root_depth = search_root.count(os.sep)
+
         # Traverse the root directory
         for root, dir_names, file_names in os.walk(search_root):
-            # Update the dir_names list in place to skip hidden directories and excluded folders
-            dir_names[:] = [
-                dir_name for dir_name in dir_names 
-                if not FilePathWalker._is_skip_directory(
-                    dir_name, is_skip_hidden=is_skip_hidden, 
-                    excluded_folders=excluded_folders
-                )
-            ]
+            current_depth = root.count(os.sep) - root_depth
+
+            if max_depth is not None and current_depth >= max_depth:
+                # If max depth is reached, do not traverse into subdirectories
+                dir_names[:] = []
+            else:
+                # Update the dir_names list in place to skip hidden directories and excluded folders
+                dir_names[:] = [
+                    dir_name for dir_name in dir_names 
+                    if not FilePathWalker._is_skip_directory(
+                        dir_name, is_skip_hidden=is_skip_hidden, 
+                        excluded_folders=excluded_folders
+                    )
+                ]
 
             # Convert file names to sequence format if required
             file_names = SequenceFileUtil.convert_to_sequence_format(file_names) if use_sequence_format else file_names
@@ -1005,16 +1029,22 @@ class FilePatternQuery:
         """
         return PathPattern.extract_variables(self._regex_pattern, path, is_regex=True)
 
-    def construct_search_paths(self, filters: Dict[str, List[str]]) -> Generator[str, None, None]:
+    def construct_search_paths(self, filters: Dict[str, List[str]] = None) -> Generator[str, None, None]:
         """Construct and yield search paths based on provided filters and the pattern.
 
         Args:
-            filters (Dict[str, List[str]]): A dictionary where keys are field names extracted from the pattern, 
-                and values are lists of strings that specify the filter values for each field.
+            filters (Dict[str, List[str]], optional): A dictionary where keys are field names extracted from the pattern, 
+                and values are lists of strings that specify the filter values for each field. Defaults to None.
 
         Yields:
             Generator[str, None, None]: Paths to files that match the constructed search patterns.
         """
+        if not filters:
+            # No filters provided, short-circuit to wildcard search
+            wildcard_values = ['*'] * len(re.findall(PathPattern.VARIABLE_PLACEHOLDER_PATTERN, self.pattern))
+            yield from glob.iglob(self.format_for_glob(wildcard_values))
+            return
+
         # Construct combinations using specific filter values or wildcard '*' for each field
         values_combinations = [filters[field] if field in filters and filters[field] else ['*'] for field in self.fields]
 
