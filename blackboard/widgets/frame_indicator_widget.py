@@ -72,7 +72,7 @@ class FrameIndicatorBar(QtWidgets.QWidget):
         """
         if self.first_frame <= frame_index <= self.last_frame:
             relative_index = frame_index - self.first_frame
-            self.frame_status[relative_index] = status
+            self.frame_status[int(relative_index)] = status
             # Redraw the widget
             self.update()
 
