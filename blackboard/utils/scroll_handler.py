@@ -125,7 +125,7 @@ class MomentumScrollHandler(QtCore.QObject):
         # NOTE: The + 0.01 is added to avoid division by zero
         velocity = (event.pos() - self._prev_pos) / ((time.time() - self._mouse_move_timestamp + 0.01))
         # Apply momentum movement based on velocity
-        self.start(QtCore.QPointF(0, velocity.y()))
+        self.start(QtCore.QPointF(velocity.x(), velocity.y()))
 
         # Restore the cursor to default
         self.widget.unsetCursor()
