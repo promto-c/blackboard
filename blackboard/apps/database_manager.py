@@ -6,9 +6,6 @@ from qtpy import QtCore, QtGui, QtWidgets
 from blackboard.widgets.main_window import MainWindow
 from blackboard.widgets import GroupableTreeWidget
 
-# NOTE: WIP
-
-
 
 class DatabaseManager:
     def __init__(self, db_name):
@@ -17,19 +14,31 @@ class DatabaseManager:
         self.cursor = self.connection.cursor()
 
     def create_table(self, table_name, fields):
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
+
         fields_str = ', '.join([f"{name} {type_}" for name, type_ in fields.items()])
         self.cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({fields_str})")
         self.connection.commit()
 
     def get_table_info(self, table_name):
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
+
         self.cursor.execute(f"PRAGMA table_info({table_name})")
         return self.cursor.fetchall()
 
     def get_foreign_keys(self, table_name):
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
+
         self.cursor.execute(f"PRAGMA foreign_key_list({table_name})")
         return self.cursor.fetchall()
 
     def add_column(self, table_name, field_name, field_type, foreign_key=None):
+        if not table_name.isidentifier() or not field_name.isidentifier():
+            raise ValueError("Invalid table name or field name")
+
         if foreign_key:
             # Handle the case with a foreign key constraint by recreating the table
             # Get the current schema of the table
@@ -60,6 +69,9 @@ class DatabaseManager:
         self.connection.commit()
 
     def delete_column(self, table_name, field_name):
+        if not table_name.isidentifier() or not field_name.isidentifier():
+            raise ValueError("Invalid table name or field name")
+
         # SQLite does not support direct deletion of columns, so the table must be recreated
         self.cursor.execute(f"PRAGMA table_info({table_name})")
         columns = self.cursor.fetchall()
@@ -77,10 +89,16 @@ class DatabaseManager:
         self.connection.commit()
 
     def delete_table(self, table_name):
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
+
         self.cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
         self.connection.commit()
 
     def delete_record(self, table_name, rowid):
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
+
         self.cursor.execute(f"DELETE FROM {table_name} WHERE rowid = ?", (rowid,))
         self.connection.commit()
 
@@ -89,6 +107,9 @@ class DatabaseManager:
         return [row[0] for row in self.cursor.fetchall()]
 
     def get_table_data(self, table_name):
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
+
         self.cursor.execute(f"SELECT * FROM {table_name}")
         return self.cursor.fetchall(), [description[0] for description in self.cursor.description]
 
@@ -96,6 +117,9 @@ class DatabaseManager:
         return os.path.getsize(self.db_name)
 
     def insert_record(self, table_name, fields, values):
+        if not table_name.isidentifier() or not all(f.isidentifier() for f in fields):
+            raise ValueError("Invalid table name or field names")
+
         placeholders = ', '.join(['?'] * len(values))
         field_names = ', '.join(fields)
         sql = f"INSERT INTO {table_name} ({field_names}) VALUES ({placeholders})"
@@ -103,6 +127,9 @@ class DatabaseManager:
         self.connection.commit()
 
     def update_record(self, table_name, fields, values, rowid):
+        if not table_name.isidentifier() or not all(f.isidentifier() for f in fields):
+            raise ValueError("Invalid table name or field names")
+
         set_clause = ', '.join([f"{field} = ?" for field in fields])
         sql = f"UPDATE {table_name} SET {set_clause} WHERE rowid = ?"
         self.cursor.execute(sql, values + [rowid])
@@ -110,13 +137,39 @@ class DatabaseManager:
 
 
 class AddFieldDialog(QtWidgets.QDialog):
+
+    # Initialization and Setup
+    # ------------------------
     def __init__(self, tables, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Add Field")
-        self.layout = QtWidgets.QVBoxLayout(self)
 
+        # Store the arguments
         self.tables = tables
 
+        # Initialize setup
+        self.__init_attributes()
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_attributes(self):
+        """Initialize the attributes.
+        """
+        # Attributes
+        # ----------
+        self.relation_table = None
+        self.relation_field = None
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        self.setWindowTitle("Add Field")
+
+        # Create Layouts
+        # --------------
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Create Widgets
+        # --------------
         self.field_name_label = QtWidgets.QLabel("Field Name:")
         self.field_name_input = QtWidgets.QLineEdit()
 
@@ -129,26 +182,30 @@ class AddFieldDialog(QtWidgets.QDialog):
         self.auto_increment_checkbox = QtWidgets.QCheckBox("AUTOINCREMENT")
 
         self.foreign_key_checkbox = QtWidgets.QCheckBox("Foreign Key")
-        self.foreign_key_checkbox.stateChanged.connect(self.show_relation_dialog)
 
         self.add_button = QtWidgets.QPushButton("Add")
+
+        # Add Widgets to Layouts
+        # ----------------------
+        layout.addWidget(self.field_name_label)
+        layout.addWidget(self.field_name_input)
+        layout.addWidget(self.field_type_label)
+        layout.addWidget(self.field_type_dropdown)
+        layout.addWidget(self.not_null_checkbox)
+        layout.addWidget(self.primary_key_checkbox)
+        layout.addWidget(self.auto_increment_checkbox)
+        layout.addWidget(self.foreign_key_checkbox)
+        layout.addWidget(self.add_button)
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
+        # Connect signals to slots
+        self.foreign_key_checkbox.stateChanged.connect(self.show_relation_dialog)
         self.add_button.clicked.connect(self.accept)
 
-        self.layout.addWidget(self.field_name_label)
-        self.layout.addWidget(self.field_name_input)
-        self.layout.addWidget(self.field_type_label)
-        self.layout.addWidget(self.field_type_dropdown)
-        self.layout.addWidget(self.not_null_checkbox)
-        self.layout.addWidget(self.primary_key_checkbox)
-        self.layout.addWidget(self.auto_increment_checkbox)
-        self.layout.addWidget(self.foreign_key_checkbox)
-        self.layout.addWidget(self.add_button)
-
-        self.setLayout(self.layout)
-
-        self.relation_table = None
-        self.relation_field = None
-
+    # Public Methods
+    # --------------
     def show_relation_dialog(self, state):
         if state == QtCore.Qt.Checked:
             dialog = AddRelationDialog(self.tables, self.parent())
@@ -156,13 +213,6 @@ class AddFieldDialog(QtWidgets.QDialog):
                 self.relation_table, self.relation_field = dialog.get_relation_data()
             else:
                 self.foreign_key_checkbox.setChecked(False)
-
-    def update_autoincrement_state(self, state):
-        if state == QtCore.Qt.Checked:
-            self.auto_increment_checkbox.setEnabled(True)
-        else:
-            self.auto_increment_checkbox.setChecked(False)
-            self.auto_increment_checkbox.setEnabled(False)
 
     def get_field_data(self):
         field_name = self.field_name_input.text()
@@ -211,7 +261,7 @@ class AddTableDialog(QtWidgets.QDialog):
     def add_field(self):
         dialog = AddFieldDialog(self)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            field_name, field_definition = dialog.get_field_data()
+            field_name, field_definition, _ = dialog.get_field_data()
             if field_name and field_definition:
                 self.fields.append((field_name, field_definition))
                 field_label = QtWidgets.QLabel(f"{field_name} {field_definition}")
@@ -259,7 +309,6 @@ class AddRelationDialog(QtWidgets.QDialog):
 
     def get_relation_data(self):
         return self.table_dropdown.currentText(), self.field_dropdown.currentText()
-
 
 class AddEditRecordDialog(QtWidgets.QDialog):
     def __init__(self, fields, types, record=None, parent=None):
@@ -385,9 +434,12 @@ class DBWidget(QtWidgets.QMainWindow):
         self.add_table_button.clicked.connect(self.show_add_table_dialog)
         self.delete_table_button = QtWidgets.QPushButton("Delete Table")
         self.delete_table_button.clicked.connect(self.delete_table)
+        self.delete_record_button = QtWidgets.QPushButton("Delete Record")
+        self.delete_record_button.clicked.connect(self.delete_record)
         self.actions_layout.addWidget(self.add_record_button)
         self.actions_layout.addWidget(self.add_table_button)
         self.actions_layout.addWidget(self.delete_table_button)
+        self.actions_layout.addWidget(self.delete_record_button)
         self.actions_layout.addWidget(QtWidgets.QLabel("Filter:"))
         self.filter_input = QtWidgets.QLineEdit()
         self.actions_layout.addWidget(self.filter_input)
@@ -493,6 +545,7 @@ class DBWidget(QtWidgets.QMainWindow):
                 parent_item = QtWidgets.QTreeWidgetItem(self.tree_data_widget)
                 for col_idx, cell_data in enumerate(row_data):
                     parent_item.setText(col_idx, str(cell_data))
+                    parent_item.setData(col_idx, QtCore.Qt.ItemDataRole.UserRole, cell_data)
 
     def show_add_field_dialog(self):
         if self.current_table:
@@ -579,6 +632,22 @@ class DBWidget(QtWidgets.QMainWindow):
                     QtWidgets.QMessageBox.information(self, "Success", "Field deleted successfully.")
             else:
                 QtWidgets.QMessageBox.warning(self, "Error", "Please select a field first.")
+        else:
+            QtWidgets.QMessageBox.warning(self, "Error", "Please select a table first.")
+
+    def delete_record(self):
+        if self.current_table:
+            current_item = self.tree_data_widget.currentItem()
+            if current_item:
+                rowid = int(current_item.text(0))  # Assuming the first column is the rowid
+                confirm = QtWidgets.QMessageBox.question(self, "Confirm Delete", f"Are you sure you want to delete the record with rowid '{rowid}'?",
+                                                         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+                if confirm == QtWidgets.QMessageBox.Yes:
+                    self.db_manager.delete_record(self.current_table, rowid)
+                    self.load_table_data()
+                    QtWidgets.QMessageBox.information(self, "Success", "Record deleted successfully.")
+            else:
+                QtWidgets.QMessageBox.warning(self, "Error", "Please select a record first.")
         else:
             QtWidgets.QMessageBox.warning(self, "Error", "Please select a table first.")
 

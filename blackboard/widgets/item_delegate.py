@@ -19,6 +19,7 @@ from blackboard.utils.file_path_utils import SequenceFileUtil
 from blackboard.utils.qimage_utils import ThumbnailUtils, ThumbnailLoader
 from blackboard.utils.thread_pool import ThreadPoolManager, RunnableTask
 from blackboard.utils.date_utils import DateUtil
+from blackboard.utils.tree_utils import TreeItemUtil
 
 
 # Class Definitions
@@ -49,17 +50,35 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
         self.selection_color = selection_color
 
         # Initialize lists of target model indexes for different types of highlighting
-        self.target_model_indexes: List[QtCore.QModelIndex] = list()
-        self.target_focused_model_indexes: List[QtCore.QModelIndex] = list()
-        self.target_selected_model_indexes: List[QtCore.QModelIndex] = list()
+        self._target_model_indexes: List[QtCore.QModelIndex] = []
+        self._target_focused_model_indexes: List[QtCore.QModelIndex] = []
+        self._target_selected_model_indexes: List[QtCore.QModelIndex] = []
 
     # Public Methods
     # --------------
-    def clear(self):
-        """Clear the target model indexes.
+    def clear_highlight_items(self):
+        """Clear the highlight model indexes.
         """
-        self.target_model_indexes.clear()
-        self.target_focused_model_indexes.clear()
+        self._target_model_indexes.clear()
+        self._target_focused_model_indexes.clear()
+
+    def set_selected_items(self, tree_items: List[QtWidgets.QTreeWidgetItem]):
+        """Updates the list of selected model indexes based on the provided tree items.
+
+        Args:
+            tree_items (List[QtWidgets.QTreeWidgetItem]): A list of QTreeWidgetItem objects
+                whose model indexes will be extracted and set as the target selected model indexes.
+        """
+        self._target_selected_model_indexes = TreeItemUtil.get_model_indexes(tree_items)
+
+    def add_highlight_items(self, tree_items: List['QtWidgets.QTreeWidgetItem'], focused_column_index: int = None):
+        """Highlight the specified `tree_items` in the tree widget.
+        """
+        # Add the model indexes of the current tree item to the target properties
+        self._target_model_indexes.extend(TreeItemUtil.get_model_indexes(tree_items))
+
+        if focused_column_index is not None:
+            self._target_focused_model_indexes.extend(TreeItemUtil.get_model_indexes(tree_items, column_index=focused_column_index))
 
     # Overridden Methods
     # ------------------
@@ -72,7 +91,7 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
             model_index (QtCore.QModelIndex): The model index of the item to be painted.
         """
         # Check if the current model index is not in the target list
-        if model_index not in self.target_selected_model_indexes and model_index not in self.target_model_indexes:
+        if model_index not in self._target_selected_model_indexes and model_index not in self._target_model_indexes:
             # If not, paint the item normally using the parent implementation
             super().paint(painter, option, model_index)
             return
@@ -81,11 +100,11 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
         color = painter.background().color()
 
         # Check if the model_index is in various target lists and blend colors accordingly
-        if model_index in self.target_model_indexes:
+        if model_index in self._target_model_indexes:
             color = ColorUtils.blend_colors(color, self.highlight_color)
-        if model_index in self.target_focused_model_indexes:
+        if model_index in self._target_focused_model_indexes:
             color = ColorUtils.blend_colors(color, self.highlight_color)
-        if model_index in self.target_selected_model_indexes:
+        if model_index in self._target_selected_model_indexes:
             color = ColorUtils.blend_colors(color, self.selection_color)
 
         # If the current model index is in the target list, set the background color and style
@@ -179,6 +198,10 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
         Returns:
             QtGui.QColor: The interpolated color.
         """
+        if not (self.max_value - self.min_value):
+            # Avoid division by zero; use min_color if min and max values are the same
+            return self.min_color
+
         if not value:
             return QtGui.QColor()
 
