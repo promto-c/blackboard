@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple, Dict, Iterable
 
 # Third Party Imports
 # -------------------
@@ -148,19 +148,15 @@ class TreeUtil:
 
     @staticmethod
     def get_shown_column_indexes(tree_widget: 'QtWidgets.QTreeWidget') -> List[int]:
-        """Returns a list of indices for the columns that are shown (i.e., not hidden) in the tree widget.
+        """Get the indexes of the shown columns in the tree widget.
+
+        Args:
+            tree_widget (QtWidgets.QTreeWidget): The tree widget to get shown column indexes from.
 
         Returns:
-            List[int]: A list of integers, where each integer is the index of a shown column in the tree widget.
+            List[int]: A list of indexes for the shown columns.
         """
-        # Get the header of the tree widget
-        header = tree_widget.header()
-
-        # Generate a list of the indices of the columns that are not hidden
-        column_indexes = [column_index for column_index in range(header.count()) if not header.isSectionHidden(column_index)]
-
-        # Return the list of the index of a shown column in the tree widget.
-        return column_indexes
+        return [column_index for column_index in range(tree_widget.columnCount()) if not tree_widget.isColumnHidden(column_index)]
 
     @staticmethod
     def get_child_level(item: 'QtWidgets.QTreeWidgetItem') -> int:
@@ -236,3 +232,91 @@ class TreeUtil:
         for column_index in range(tree_widget.columnCount()):  
             # Resize the column to fit its contents
             tree_widget.resizeColumnToContents(column_index) 
+
+    @staticmethod
+    def get_item_data_dict(tree_widget: 'QtWidgets.QTreeWidget', item: 'QtWidgets.QTreeWidgetItem') -> Dict[str, Optional[str]]:
+        """Retrieve data from a QTreeWidgetItem and return it as a dictionary.
+
+        Args:
+            tree_widget (QtWidgets.QTreeWidget): The tree widget containing the item.
+            item (QtWidgets.QTreeWidgetItem): The item to extract data from.
+
+        Returns:
+            Dict[str, Optional[str]]: A dictionary where keys are column headers and values are the data in the corresponding columns.
+        """
+        data_dict = {}
+        
+        # Get the column headers from the tree widget
+        headers = [tree_widget.headerItem().text(column) for column in range(tree_widget.columnCount())]
+        
+        # Assuming you want to get data from all columns
+        for column in range(item.columnCount()):
+            # Retrieve the text from each column of the item using the header as the key
+            data_dict[headers[column]] = item.text(column)
+        
+        return data_dict
+
+    @classmethod
+    def get_all_item_data_dicts(cls, tree_widget: 'QtWidgets.QTreeWidget', parent_item: Optional['QtWidgets.QTreeWidgetItem'] = None) -> Dict[str, Dict[str, Optional[str]]]:
+        """Retrieve data from all items in the QTreeWidget as a dictionary of dictionaries.
+
+        Args:
+            tree_widget (QtWidgets.QTreeWidget): The tree widget to traverse.
+            parent_item (Optional[QtWidgets.QTreeWidgetItem]): The parent item to start traversal from. If None, starts from the root.
+
+        Returns:
+            Dict[str, Dict[str, Optional[str]]]: A dictionary where keys are item texts and values are dictionaries containing data for each column.
+        """
+        parent_item = parent_item or tree_widget.invisibleRootItem()
+        all_data = {}
+
+        def traverse_item(item: 'QtWidgets.QTreeWidgetItem'):
+            item_data = cls.get_item_data_dict(tree_widget, item)
+            all_data[item.text(0)] = item_data  # Using the text from the first column as the key
+
+            for row in range(item.childCount()):
+                child_item = item.child(row)
+                traverse_item(child_item)
+
+        traverse_item(parent_item)
+        return all_data
+
+class TreeItemUtil:
+
+    @staticmethod
+    def get_model_indexes(tree_items: Iterable[QtWidgets.QTreeWidgetItem], only_shown: bool = True, column_index: Optional[int] = None) -> List[QtCore.QModelIndex]:
+        """Get the model index for each column in the tree widget.
+
+        Args:
+            tree_items (List[QtWidgets.QTreeWidgetItem]): The tree widget items to get model indexes for.
+            only_shown (bool): If True, only get indexes for shown columns. If False, get indexes for all columns.
+            column_index (Optional[int]): If provided, get indexes for this specific column only.
+
+        Returns:
+            List[QtCore.QModelIndex]: A list of model indexes for each column in the tree widget.
+        """
+        if not tree_items:
+            return []
+
+        _reference_item = tree_items[0] if isinstance(tree_items, list) else next(iter(tree_items))
+        tree_widget = _reference_item.treeWidget()
+        
+        # Determine the list of column indices to process
+        if column_index is not None:
+            column_indexes = [column_index]
+        else:
+            column_indexes = (
+                only_shown and TreeUtil.get_shown_column_indexes(tree_widget) or 
+                range(tree_widget.columnCount())
+            )
+
+        model_indexes = []
+        for column_index in column_indexes:
+            # Get the model index for each column
+            model_indexes.extend([
+                tree_widget.indexFromItem(tree_item, column_index)
+                for tree_item in tree_items
+            ])
+
+        # Return the list of model indexes
+        return model_indexes

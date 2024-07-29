@@ -86,29 +86,6 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
 
     # Extended Methods
     # ----------------
-    def get_model_indexes(self) -> List[QtCore.QModelIndex]:
-        """Get the model index for each column in the tree widget.
-
-        Returns:
-            List[QtCore.QModelIndex]: A list of model index for each column in the tree widget.
-        """
-        # Get a list of the shown column indices
-        shown_column_indexes = bb.utils.TreeUtil.get_shown_column_indexes(self.treeWidget())
-
-        # Create a list to store the model index
-        model_indexes = list()
-
-        # Loop through each shown column index
-        for column_index in shown_column_indexes:
-            # Get the model index for the current column
-            model_index = self.treeWidget().indexFromItem(self, column_index)
-
-            # Add the model index to the list
-            model_indexes.append(model_index)
-
-        # Return the list of model index properties
-        return model_indexes
-
     def get_value(self, column: Union[int, str]) -> Any:
         """Get the value of the item's UserRole data for the given column.
 
@@ -121,10 +98,8 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         # Get the column index from the column name if necessary
         column_index = self.treeWidget().get_column_index(column) if isinstance(column, str) else column
 
-        # Get the UserRole data for the column
-        value = self.data(column_index, QtCore.Qt.ItemDataRole.UserRole)
-        # Fallback to the DisplayRole data if UserRole data is None
-        value = self.data(column_index, QtCore.Qt.ItemDataRole.DisplayRole) if value is None else value
+        # Get the UserRole or DisplayRole data for the column
+        value = self.data(column_index, QtCore.Qt.ItemDataRole.UserRole) or self.data(column_index, QtCore.Qt.ItemDataRole.DisplayRole)
 
         return value
 
@@ -640,14 +615,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     def _highlight_selected_items(self):
         """Highlight the specified `tree_items` in the tree widget.
         """
-        self.highlight_item_delegate.target_selected_model_indexes.clear()
-        tree_items = self.selectedItems()
-        # Loop through the specified tree items
-        for tree_item in tree_items:
-
-            # Add the model indexes of the current tree item to the target properties
-            self.highlight_item_delegate.target_selected_model_indexes.extend(tree_item.get_model_indexes())
-
+        self.highlight_item_delegate.set_selected_items(self.selectedItems())
         self.update()
 
     # Public Methods
@@ -722,22 +690,15 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     def highlight_items(self, tree_items: Iterable['TreeWidgetItem'], focused_column_index = None):
         """Highlight the specified `tree_items` in the tree widget.
         """
-        # Loop through the specified tree items
-        for tree_item in tree_items:
-            # Add the model indexes of the current tree item to the target properties
-            self.highlight_item_delegate.target_model_indexes.extend(tree_item.get_model_indexes())
-
-            if focused_column_index is None:
-                continue
-
-            focused_model_index = self.indexFromItem(tree_item, focused_column_index)
-            self.highlight_item_delegate.target_focused_model_indexes.append(focused_model_index)
-
+        if not tree_items:
+            return
+        # Add the model indexes of the current tree item to the target properties
+        self.highlight_item_delegate.add_highlight_items(tree_items, focused_column_index)
         self.update()
 
     def clear_highlight(self):
         # Reset the highlight for all items
-        self.highlight_item_delegate.clear()
+        self.highlight_item_delegate.clear_highlight_items()
         self.update()
 
     def set_row_height(self, height: Optional[int] = None):
@@ -806,11 +767,18 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         items = bb.utils.TreeUtil.get_items_at_child_level(self, child_level)
 
         # Collect the values from the specified column in the items
-        values = [
-            item.get_value(column)
-            for item in items
-            if isinstance(item.get_value(column), Number)
-        ]
+        try:
+            values = [
+                item.get_value(column)
+                for item in items
+                if isinstance(item.get_value(column), Number)
+            ]
+        except AttributeError:
+            values = [
+                item.data(column, QtCore.Qt.ItemDataRole.UserRole) or item.data(column, QtCore.Qt.ItemDataRole.DisplayRole)
+                for item in items
+                if isinstance(item.data(column, QtCore.Qt.ItemDataRole.UserRole) or item.data(column, QtCore.Qt.ItemDataRole.DisplayRole), Number)
+            ]
 
         # If there are no valid values, return None
         if not values:
@@ -1094,7 +1062,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Show tooltip message
         self.show_tool_tip(f'Copied:\n{full_text}', 5000)
 
-    def show_tool_tip(self, text: str, msc_show_time: 'Number' = 1000):
+    def show_tool_tip(self, text: str, msc_show_time: int = 1000):
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text, self, QtCore.QRect(), msc_show_time)
 
     def paste_cells_from_clipboard(self):
