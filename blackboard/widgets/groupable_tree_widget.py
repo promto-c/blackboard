@@ -82,7 +82,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         # Iterate through each column in the item
         for column_index, value in enumerate(item_data_list):
             # Set the value for the column in the UserRole data
-            self.set_value(column_index, value)
+            self.set_value(column_index, value, QtCore.Qt.ItemDataRole.UserRole)
 
     # Extended Methods
     # ----------------
@@ -103,7 +103,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
 
         return value
 
-    def set_value(self, column: Union[int, str], value: Any):
+    def set_value(self, column: Union[int, str], value: Any, data_role: QtCore.Qt.ItemDataRole = None):
         """Set the value of the item's UserRole data for the given column.
 
         Args:
@@ -114,7 +114,11 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         column_index = self.treeWidget().get_column_index(column) if isinstance(column, str) else column
 
         # Set the value for the column in the UserRole data
-        self.setData(column_index, QtCore.Qt.ItemDataRole.UserRole, value)
+        if data_role is None:
+            self.setData(column_index, QtCore.Qt.ItemDataRole.UserRole, value)
+            self.setData(column_index, QtCore.Qt.ItemDataRole.DisplayRole, str(value))
+        else:
+            self.setData(column_index, data_role, value)
 
     # Special Methods
     # ---------------
