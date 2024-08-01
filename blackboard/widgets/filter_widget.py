@@ -98,7 +98,7 @@ class MoreOptionsButton(QtWidgets.QToolButton):
         """
         self.popup_menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
 
-class CustomMenu(QtWidgets.QMenu):
+class ResizablePopupMenu(QtWidgets.QMenu):
 
     resized = QtCore.Signal(QtCore.QSize)
 
@@ -167,7 +167,6 @@ class CustomMenu(QtWidgets.QMenu):
         """
         self.dragging = False
         self.unsetCursor()
-        super().mouseReleaseEvent(event)
 
 class FilterPopupButton(QtWidgets.QPushButton):
 
@@ -195,7 +194,7 @@ class FilterPopupButton(QtWidgets.QPushButton):
     def __init_popup_menu(self):
         """Initialize the popup menu of the widget.
         """
-        self.popup_menu = CustomMenu(button=self)
+        self.popup_menu = ResizablePopupMenu(button=self)
         self.setMenu(self.popup_menu)
 
     def __init_ui_properties(self):
@@ -528,11 +527,6 @@ class FilterWidget(QtWidgets.QWidget):
             self._is_filter_applied = False
         
         super().hideEvent(event)
-
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
-        """Ignore mouse release events to prevent the menu from closing.
-        """
-        pass
 
 class DateRange(Enum):
     """Enum representing various date ranges.

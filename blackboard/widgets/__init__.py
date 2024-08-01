@@ -14,6 +14,7 @@ from .momentum_scroll_widget import MomentumScrollListView, MomentumScrollTreeVi
 from .tag_widget import TagListView
 from .database_view import DatabaseViewWidget
 from .app_selection_dialog import AppSelectionDialog
+from .menu import ContextMenu
 
 
 __all__ = [
@@ -31,4 +32,5 @@ __all__ = [
     'DatabaseViewWidget',
     'AppSelectionDialog',
     'MomentumScrollListView', 'MomentumScrollTreeView',
+    'ContextMenu',
 ]

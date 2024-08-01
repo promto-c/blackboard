@@ -1,16 +1,17 @@
+from typing import List, Dict, Any, Union, Optional
 from PyQt5 import QtCore, QtGui, QtWidgets
 from collections import defaultdict
 
 
 # NOTE: WIP
 class GroupedTreeModel(QtGui.QStandardItemModel):
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QtCore.QObject] = None):
         super().__init__(parent)
-        self.grouped_columns = []
-        self.original_data = []
-        self.header_labels = []
+        self.grouped_columns: List[int] = []
+        self.original_data: List[List[Any]] = []
+        self.header_labels: List[str] = []
 
-    def group_by_column(self, column):
+    def group_by_column(self, column: int):
         if column in self.grouped_columns:
             return
 
@@ -21,11 +22,11 @@ class GroupedTreeModel(QtGui.QStandardItemModel):
         self.grouped_columns.clear()
         self.rebuild_model()
 
-    def set_data(self, data):
+    def set_data(self, data: List[List[Any]]):
         self.original_data = data
         self.rebuild_model()
 
-    def set_header_labels(self, labels):
+    def set_header_labels(self, labels: List[str]):
         self.header_labels = labels
 
     def rebuild_model(self):
@@ -38,11 +39,11 @@ class GroupedTreeModel(QtGui.QStandardItemModel):
         else:
             self.add_items(self.original_data, self.invisibleRootItem())
 
-    def group_data(self, data, columns):
+    def group_data(self, data: List[List[Any]], columns: List[int]) -> Union[List[List[Any]], Dict[Any, Any]]:
         if not columns:
             return data
 
-        grouped_data = defaultdict(list)
+        grouped_data: Dict[Any, List[List[Any]]] = defaultdict(list)
         current_column = columns[0]
 
         for row in data:
@@ -54,7 +55,7 @@ class GroupedTreeModel(QtGui.QStandardItemModel):
 
         return grouped_data
 
-    def add_grouped_items(self, grouped_data, parent_item):
+    def add_grouped_items(self, grouped_data: Union[Dict[Any, Any], List[List[Any]]], parent_item: QtGui.QStandardItem):
         for key, value in grouped_data.items():
             group_item = QtGui.QStandardItem(str(key))
             parent_item.appendRow([group_item])
@@ -63,21 +64,21 @@ class GroupedTreeModel(QtGui.QStandardItemModel):
             else:
                 self.add_items(value, group_item)
 
-    def add_items(self, data, parent_item):
+    def add_items(self, data: List[List[Any]], parent_item: QtGui.QStandardItem):
         for row in data:
             items = [QtGui.QStandardItem(str(v)) for v in row]
             parent_item.appendRow(items)
 
 
 class TreeView(QtWidgets.QTreeView):
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QtCore.QObject] = None):
         super().__init__(parent)
         self.header().setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.header().customContextMenuRequested.connect(self.show_header_context_menu)
         self.model = GroupedTreeModel(self)
         self.setModel(self.model)
         self.create_context_menu()
-        self._current_column_index = None
+        self._current_column_index: Optional[int] = None
 
     def create_context_menu(self):
         self.menu = QtWidgets.QMenu()
@@ -87,7 +88,7 @@ class TreeView(QtWidgets.QTreeView):
         self.group_action.triggered.connect(self.group_by_column)
         self.ungroup_action.triggered.connect(self.model.ungroup_columns)
 
-    def show_header_context_menu(self, position):
+    def show_header_context_menu(self, position: QtCore.QPoint):
         header = self.header()
         self._current_column_index = header.logicalIndexAt(position)
 
@@ -104,10 +105,9 @@ class TreeView(QtWidgets.QTreeView):
         self.model.group_by_column(self._current_column_index)
         self.expandAll()
 
+
 import random
 import string
-
-from typing import List
 
 def generate_test_data(num_rows: int = 1000, num_cols: int = 5) -> List[List[str]]:
     """Generate test data with repeating patterns for grouping.
@@ -119,9 +119,9 @@ def generate_test_data(num_rows: int = 1000, num_cols: int = 5) -> List[List[str
     Returns:
         List[List[str]]: A list of lists containing the generated test data.
     """
-    data = []
+    data: List[List[str]] = []
     # Generate dynamic repeating patterns for each column
-    patterns = [
+    patterns: List[List[str]] = [
         [f'{chr(65 + j % 26)}{i % (5 * (j + 1))}' for i in range(num_rows)] for j in range(num_cols - 1)
     ]
     patterns.append([''.join(random.choices(string.ascii_uppercase + string.digits, k=5)) for _ in range(num_rows)])  # Random for the last column

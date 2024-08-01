@@ -110,8 +110,10 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
 
-        self.cursor.execute(f"SELECT * FROM {table_name}")
-        return self.cursor.fetchall(), [description[0] for description in self.cursor.description]
+        self.cursor.execute(f"SELECT rowid, * FROM {table_name}")
+        rows = self.cursor.fetchall()
+        headers = ['rowid'] + [description[0] for description in self.cursor.description[1:]]
+        return rows, headers
 
     def get_database_size(self):
         return os.path.getsize(self.db_name)
@@ -432,13 +434,13 @@ class DBWidget(QtWidgets.QMainWindow):
         self.add_record_button.clicked.connect(self.show_add_record_dialog)
         self.add_table_button = QtWidgets.QPushButton("Add Table")
         self.add_table_button.clicked.connect(self.show_add_table_dialog)
+        
         self.delete_table_button = QtWidgets.QPushButton("Delete Table")
         self.delete_table_button.clicked.connect(self.delete_table)
         self.delete_record_button = QtWidgets.QPushButton("Delete Record")
         self.delete_record_button.clicked.connect(self.delete_record)
         self.actions_layout.addWidget(self.add_record_button)
-        self.actions_layout.addWidget(self.add_table_button)
-        self.actions_layout.addWidget(self.delete_table_button)
+
         self.actions_layout.addWidget(self.delete_record_button)
         self.actions_layout.addWidget(QtWidgets.QLabel("Filter:"))
         self.filter_input = QtWidgets.QLineEdit()
@@ -480,19 +482,29 @@ class DBWidget(QtWidgets.QMainWindow):
         self.delete_field_button.clicked.connect(self.delete_field)
 
         # Add widgets to left layout
+        self.left_layout.addWidget(self.open_db_button)
         self.left_layout.addWidget(self.db_name_label)
         self.left_layout.addWidget(self.db_name_display)
         self.left_layout.addWidget(self.db_path_label)
         self.left_layout.addWidget(self.db_path_display)
         self.left_layout.addWidget(self.db_size_label)
         self.left_layout.addWidget(self.db_size_display)
-        self.left_layout.addWidget(self.open_db_button)
-        self.left_layout.addWidget(QtWidgets.QLabel("Tables"))
+        
+        sub_layout = QtWidgets.QHBoxLayout()
+        self.left_layout.addLayout(sub_layout)
+        sub_layout.addWidget(QtWidgets.QLabel("Tables"))
+        sub_layout.addWidget(self.add_table_button)
+        sub_layout.addWidget(self.delete_table_button)
+
         self.left_layout.addWidget(self.tables_list)
-        self.left_layout.addWidget(QtWidgets.QLabel("Columns"))
+        sub_layout = QtWidgets.QHBoxLayout()
+        self.left_layout.addLayout(sub_layout)
+        sub_layout.addWidget(QtWidgets.QLabel("Columns"))
+        
+        sub_layout.addWidget(self.add_field_button)
+        sub_layout.addWidget(self.delete_field_button)
+
         self.left_layout.addWidget(self.columns_list)
-        self.left_layout.addWidget(self.add_field_button)
-        self.left_layout.addWidget(self.delete_field_button)
 
         # Set the left widget as the dock widget's content
         self.dock_widget.setWidget(self.left_widget)

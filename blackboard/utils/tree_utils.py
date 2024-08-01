@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Any, Callable, List, Optional, Tuple, Dict, Iterable
+from typing import Any, Callable, List, Optional, Tuple, Dict, Iterable, Union
 
 # Third Party Imports
 # -------------------
@@ -39,7 +39,7 @@ class TreeUtil:
             child_item = parent_item.child(child_index)
 
             # Optionally filter by check state if only_checked is True.
-            if is_only_checked and child_item.checkState() == QtCore.Qt.CheckState.Unchecked:
+            if is_only_checked and child_item.checkState(0) == QtCore.Qt.CheckState.Unchecked:
                 continue
 
             # Check if the child item has children.
@@ -57,6 +57,74 @@ class TreeUtil:
             items.append(child_item)
 
         return items
+
+    @classmethod
+    def show_all_items(cls, tree_widget: 'QtWidgets.QTreeWidget') -> None:
+        """Show all items in the QTreeWidget.
+
+        Args:
+            tree_widget (QtWidgets.QTreeWidget): The tree widget to expand.
+        """
+        cls.set_items_visibility([tree_widget.invisibleRootItem()], True)
+
+    @classmethod
+    def hide_all_items(cls, tree_widget: 'QtWidgets.QTreeWidget') -> None:
+        """Hide all items in the QTreeWidget.
+
+        Args:
+            tree_widget (QtWidgets.QTreeWidget'): The tree widget to collapse.
+        """
+        cls.set_items_visibility([tree_widget.invisibleRootItem()], False)
+
+    @classmethod
+    def set_items_visibility(cls, items: List[QtWidgets.QTreeWidgetItem],
+                             is_visible: bool,
+                             is_affect_parents: bool = True,
+                             is_affect_children: bool = True) -> None:
+        """Set visibility of the specified items, along with their parents and children if desired.
+
+        Args:
+            items (List[QtWidgets.QTreeWidgetItem]): The list of items whose visibility will be set.
+            is_visible (bool): The visibility state to apply (True for show, False for hide).
+            is_affect_parents (bool): Whether to affect the visibility of parent items. Defaults to True.
+            is_affect_children (bool): Whether to affect the visibility of child items. Defaults to True.
+        """
+        for item in items:
+            item.setHidden(not is_visible)
+
+            if is_affect_parents:
+                cls.__set_parents_visibility(item, is_visible)
+
+            if is_affect_children:
+                cls.__set_children_visibility(item, is_visible)
+
+    @staticmethod
+    def __set_parents_visibility(item: QtWidgets.QTreeWidgetItem, is_visible: bool) -> None:
+        """Set visibility of all parent items of the given item.
+
+        Args:
+            item (QtWidgets.QTreeWidgetItem): The item whose parents' visibility will be set.
+            is_visible (bool): Whether items should be visible (True for show, False for hide).
+        """
+        parent = item.parent()
+        while parent:
+            parent.setHidden(not is_visible)
+            if is_visible:
+                parent.setExpanded(True)
+            parent = parent.parent()
+
+    @staticmethod
+    def __set_children_visibility(item: QtWidgets.QTreeWidgetItem, is_visible: bool) -> None:
+        """Set visibility of all child items of the given item.
+
+        Args:
+            item (QtWidgets.QTreeWidgetItem): The item whose children's visibility will be set.
+            is_visible (bool): Whether items should be visible (True for show, False for hide).
+        """
+        for i in range(item.childCount()):
+            child = item.child(i)
+            child.setHidden(not is_visible)
+            TreeUtil.__set_children_visibility(child, is_visible)
 
     @classmethod
     def get_model_indexes(cls, model: 'QtCore.QAbstractItemModel', parent: 'QtCore.QModelIndex' = QtCore.QModelIndex(), 
@@ -281,6 +349,28 @@ class TreeUtil:
         traverse_item(parent_item)
         return all_data
 
+    @staticmethod
+    def get_column_names(tree_item: Union[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]) -> List[str]:
+        """
+        Retrieve column names from a QTreeWidget or QTreeWidgetItem.
+
+        Args:
+            tree_item: The QTreeWidget or QTreeWidgetItem to extract column names from.
+
+        Returns:
+            List of column names.
+        """
+        # Determine if the tree_item is a QTreeWidget or a QTreeWidgetItem
+        if isinstance(tree_item, QtWidgets.QTreeWidget):
+            header_item = tree_item.headerItem()
+        elif isinstance(tree_item, QtWidgets.QTreeWidgetItem):
+            header_item = tree_item.treeWidget().headerItem()
+        else:
+            raise TypeError("tree_item must be a QTreeWidget or QTreeWidgetItem.")
+
+        # Extract and return column names
+        return [header_item.text(i) for i in range(header_item.columnCount())]
+
 class TreeItemUtil:
 
     @staticmethod
@@ -320,3 +410,31 @@ class TreeItemUtil:
 
         # Return the list of model indexes
         return model_indexes
+
+    @staticmethod
+    def remove_items(items: List['QtWidgets.QTreeWidgetItem']) -> None:
+        """Remove the specified QTreeWidgetItem instances from their current parents.
+
+        Args:
+            items (List[QtWidgets.QTreeWidgetItem]): The list of items to be removed.
+        """
+        for item in items:
+            # Remove the item from its parent
+            parent = item.parent() or item.treeWidget().invisibleRootItem()
+            parent.removeChild(item)
+
+    @staticmethod
+    def reparent_items(items: List['QtWidgets.QTreeWidgetItem'],
+                       target_parent: Optional['QtWidgets.QTreeWidgetItem'] = None):
+        """Reparent the specified QTreeWidgetItem instances to the target parent.
+
+        Args:
+            items (List[QtWidgets.QTreeWidgetItem]): The list of items to be reparented.
+            target_parent (Optional[QtWidgets.QTreeWidgetItem]): The new parent item or None for top-level.
+        """
+        # If the target parent is None, use the invisible root item to move items to the top-level.
+        target_parent = target_parent or items[0].treeWidget().invisibleRootItem()
+
+        # Remove items from their current parents and add them to the new parent
+        TreeItemUtil.remove_items(items)
+        target_parent.addChildren(items)
