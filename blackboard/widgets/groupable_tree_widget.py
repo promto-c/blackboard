@@ -21,6 +21,7 @@ from blackboard import widgets
 # NOTE: test
 from blackboard.widgets.header_view import SearchableHeaderView
 from blackboard.utils.thread_pool import ThreadPoolManager, GeneratorWorker
+from blackboard.utils.tree_utils import TreeUtil
 from blackboard.widgets.animate_button import DataFetchingButtons
 
 
@@ -53,17 +54,15 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
 
         # If the data for the item is in dictionary form
         if isinstance(item_data, dict):
-
-            # Get the header item from the parent tree widget
-            header_item = parent.headerItem() if isinstance(parent, QtWidgets.QTreeWidget) else parent.treeWidget().headerItem()
-
             # Get the column names from the header item
-            column_names = [header_item.text(i) for i in range(header_item.columnCount())]
+            column_names = TreeUtil.get_column_names(parent)
+            item_data['id'] = item_id
 
             # Create a list of data for the tree item
-            item_data_list = [item_id] + [item_data[column] if column in item_data.keys()
-                                                                 else str() 
-                                                                 for column in column_names[1:]]
+            item_data_list = [
+                item_data[column] if column in item_data.keys() else str()
+                for column in column_names
+            ]
 
         # Call the superclass's constructor to set the item's data
         super().__init__(parent, map(str, item_data_list))
@@ -443,7 +442,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setColumnWidth(0, 10)
         self.sortByColumn(1, QtCore.Qt.SortOrder.AscendingOrder)
 
         # Initializes scroll modes for the widget
@@ -625,7 +623,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     # Public Methods
     # --------------
     def create_thumbnail_column(self, source_column_name: str = 'file_path', sequence_range_column_name: str = 'sequence_range'):
-        self.column_names.append('thumbnail')
+        if 'thumbnail' not in self.column_names:
+            self.column_names.append('thumbnail')
         self.setHeaderLabels(self.column_names)
 
         source_column = self.column_names.index(source_column_name)
@@ -768,7 +767,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             or (None, None) if no valid values are found.
         """
         # Get the items at the specified child level
-        items = bb.utils.TreeUtil.get_items_at_child_level(self, child_level)
+        items = TreeUtil.get_items_at_child_level(self, child_level)
 
         # Collect the values from the specified column in the items
         try:
@@ -870,13 +869,37 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             raise ValueError("Invalid type for item_names. Expected a list or a dictionary.")
 
     def add_item(self, data_dict, item_id=None, parent=None) -> TreeWidgetItem:
+        """Add an item to the tree widget, considering groupings if applicable.
+
+        Args:
+            data_dict (dict): The data for the item.
+            item_id (Optional[int]): The ID for the item. Defaults to a generated UUID.
+            parent (Optional[QtWidgets.QTreeWidgetItem]): The parent item. Defaults to None.
+
+        Returns:
+            TreeWidgetItem: The created tree item.
+        """
         # Capture the current first top-level item, if any
         previous_first_item = self.topLevelItem(0) if self.topLevelItemCount() > 0 else None
-        
         parent = parent or self.invisibleRootItem()
+
+        # Generate a unique ID if not provided
         item_id = item_id or uuid.uuid1()
-        
-        # Create a new TreeWidgetItem and add to the tree widget
+
+        # Determine the parent for the new item
+        if parent is self.invisibleRootItem() and self.grouped_column_name:
+            # If the tree is grouped, find the appropriate parent group item
+            group_value = data_dict.get(self.grouped_column_name, "_others")
+            group_items = self.findItems(group_value, QtCore.Qt.MatchFlag.MatchExactly, 0)
+
+            # If no matching group item is found, create a new group
+            if not group_items:
+                parent = TreeWidgetItem(self, [group_value])
+                parent.setExpanded(True)
+            else:
+                parent = group_items[0]
+
+        # Create a new TreeWidgetItem and add it to the parent
         tree_item = TreeWidgetItem(parent, item_data=data_dict, item_id=item_id)
         self.id_to_tree_item[item_id] = tree_item
 
@@ -887,6 +910,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         if current_first_item != previous_first_item:
             self.set_row_height()
 
+        # Emit a signal that an item has been added
         self.item_added.emit(tree_item)
 
         return tree_item
@@ -976,7 +1000,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         This method resizes columns so that their sum is equal to the width of the view minus the width of the vertical scroll bar. 
         It starts by reducing the width of the column with the largest width by 10% until all columns fit within the expected width.
         """
-        bb.utils.TreeUtil.fit_column_in_view(self)
+        TreeUtil.fit_column_in_view(self)
 
     def ungroup_all(self):
         """Ungroup all the items in the tree widget.
@@ -1020,7 +1044,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         Returns:
             List[TreeWidgetItem]: A list containing all the items in the tree widget.
         """
-        return bb.utils.TreeUtil.get_child_items(self)
+        return TreeUtil.get_child_items(self)
 
     def copy_selected_cells(self):
         """Copy selected cells to clipboard.
@@ -1181,6 +1205,11 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         drag.exec_(supported_actions)
 
     def clear(self):
+        # Clear old task
+        if self._current_task is not None:
+            self._current_task.stop()
+            self._current_task = None
+
         self.id_to_tree_item.clear()
         super().clear()
 
@@ -1265,14 +1294,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     def set_generator(self, generator: Generator):
         """Set a new generator, clearing the existing task before setting the new generator.
         """
-        # Clear old task
-        if self._current_task is not None:
-            self._current_task.stop()
-            self._current_task = None
+        self.clear()
 
         self.generator = generator
-
-        self.clear()
 
         if not self.generator:
             return

@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Any, Callable, List, Optional, Tuple, Dict, Iterable
+from typing import Any, Callable, List, Optional, Tuple, Dict, Iterable, Union
 
 # Third Party Imports
 # -------------------
@@ -280,6 +280,28 @@ class TreeUtil:
 
         traverse_item(parent_item)
         return all_data
+
+    @staticmethod
+    def get_column_names(tree_item: Union[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]) -> List[str]:
+        """
+        Retrieve column names from a QTreeWidget or QTreeWidgetItem.
+
+        Args:
+            tree_item: The QTreeWidget or QTreeWidgetItem to extract column names from.
+
+        Returns:
+            List of column names.
+        """
+        # Determine if the tree_item is a QTreeWidget or a QTreeWidgetItem
+        if isinstance(tree_item, QtWidgets.QTreeWidget):
+            header_item = tree_item.headerItem()
+        elif isinstance(tree_item, QtWidgets.QTreeWidgetItem):
+            header_item = tree_item.treeWidget().headerItem()
+        else:
+            raise TypeError("tree_item must be a QTreeWidget or QTreeWidgetItem.")
+
+        # Extract and return column names
+        return [header_item.text(i) for i in range(header_item.columnCount())]
 
 class TreeItemUtil:
 
