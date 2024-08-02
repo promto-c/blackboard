@@ -164,6 +164,7 @@ class SequenceFileUtil(FileUtil):
     FILE_INFO_FIELDS = {
         *FileUtil.FILE_INFO_FIELDS,
         'sequence_range',
+        'sequence_count',
     }
 
     FORMAT_TO_REGEX = {
@@ -744,9 +745,9 @@ class SequenceFileUtil(FileUtil):
             extension = FileUtil.get_file_extension(sequence_files[0])
             readable_size = '0 bytes'
 
-        # Get the sequence range from the sorted sequence files
-        start_frame = SequenceFileUtil.extract_frame_number(sequence_files[0])
-        end_frame = SequenceFileUtil.extract_frame_number(sequence_files[-1])
+        # Get the sequence ranges from the sequence files
+        sequence_numbers = [SequenceFileUtil.extract_frame_number(file_path) for file_path in sequence_files]
+        sequence_ranges = SequenceFileUtil.get_sequence_ranges(sequence_numbers)
 
         # Compile the details into a dictionary
         details = {
@@ -756,7 +757,8 @@ class SequenceFileUtil(FileUtil):
             "file_extension": extension,
             "last_modified": modified_time,
             "file_owner": owner,
-            "sequence_range": f"{start_frame}-{end_frame}",
+            "sequence_range": ', '.join(sequence_ranges),
+            "sequence_count": len(sequence_numbers),
         }
         return details
 
