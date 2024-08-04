@@ -67,8 +67,9 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         copy_relative_path_action.triggered.connect(self.copy_relative_path)
         copy_selected_cell_action.triggered.connect(self.tree_widget.copy_selected_cells)
 
-    def show_context_menu(self, _position: QtCore.QPoint):
-        self.menu.exec_(QtGui.QCursor.pos())
+    def show_context_menu(self, position: QtCore.QPoint = None):
+        position = position or QtGui.QCursor.pos()
+        self.menu.exec_(position)
 
     def get_selected_file_paths(self) -> List[str]:
         selected_items = self.tree_widget.selectedItems()
@@ -147,6 +148,18 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         relative_paths = [os.path.relpath(file_path, base_path) for file_path in file_paths]
         clipboard = QtWidgets.QApplication.clipboard()
         clipboard.setText("\n".join(relative_paths))
+
+    def insert_after_action(self, menu: QtWidgets.QMenu, target_action: QtWidgets.QAction, action_to_insert: QtWidgets.QAction):
+        """Insert an action after a specific target action in the menu.
+        """
+        actions = menu.actions()
+        for index, action in enumerate(actions):
+            if action == target_action:
+                if index + 1 < len(actions):
+                    menu.insertAction(actions[index + 1], action_to_insert)
+                else:
+                    menu.addAction(action_to_insert)
+                break
 
 # Main Function
 # -------------

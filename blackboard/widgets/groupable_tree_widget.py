@@ -23,6 +23,7 @@ from blackboard.widgets.header_view import SearchableHeaderView
 from blackboard.utils.thread_pool import ThreadPoolManager, GeneratorWorker
 from blackboard.utils.tree_utils import TreeUtil
 from blackboard.widgets.animate_button import DataFetchingButtons
+from blackboard.widgets.menu import ContextMenu
 
 
 # Class Definitions
@@ -527,44 +528,35 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             +-------------------------------+
         """
         # Create the context menu
-        self.header_menu = QtWidgets.QMenu()
+        self.header_menu = ContextMenu()
         self.header_menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        self.add_label_action(self.header_menu, 'Grouping')
+        grouping_section_action = self.header_menu.addSection('Grouping')
 
         # Create the 'Group by this column' action and connect it to the 'group_by_column' method. Pass in the selected column as an argument.
-        self.group_by_action = self.header_menu.addAction('Group by this column')
+        self.group_by_action = grouping_section_action.addAction('Group by this column')
         self.group_by_action.triggered.connect(lambda: self.group_by_column(self._current_column_index))
 
         # Create the 'Ungroup all' action and connect it to the 'ungroup_all' method
-        ungroup_all_action = self.header_menu.addAction('Ungroup all')
+        ungroup_all_action = grouping_section_action.addAction('Ungroup all')
         ungroup_all_action.triggered.connect(self.ungroup_all)
 
-        # Add a separator
-        self.header_menu.addSeparator()
-
-        self.add_label_action(self.header_menu, 'Visualization')
+        visualization_section_action = self.header_menu.addSection('Visualization')
 
         # Create the 'Set Color Adaptive' action and connect it to the 'apply_column_color_adaptive' method
-        apply_color_adaptive_action = self.header_menu.addAction('Set Color Adaptive')
+        apply_color_adaptive_action = visualization_section_action.addAction('Set Color Adaptive')
         apply_color_adaptive_action.triggered.connect(lambda: self.apply_column_color_adaptive(self._current_column_index))
 
         # Create the 'Reset All Color Adaptive' action and connect it to the 'reset_all_color_adaptive_column' method
-        reset_all_color_adaptive_action = self.header_menu.addAction('Reset All Color Adaptive')
+        reset_all_color_adaptive_action = visualization_section_action.addAction('Reset All Color Adaptive')
         reset_all_color_adaptive_action.triggered.connect(self.reset_all_color_adaptive_column)
-
-        # Add a separator
-        self.header_menu.addSeparator()
 
         # Add the 'Fit in View' action and connect it to the 'fit_column_in_view' method
         fit_column_in_view_action = self.header_menu.addAction('Fit in View')
         fit_column_in_view_action.triggered.connect(self.fit_column_in_view)
 
-        # Add a separator
-        self.header_menu.addSeparator()
-
-        self.add_label_action(self.header_menu, 'Manage Columns')
-        show_hide_column = self.header_menu.addMenu('Show/Hide Columns')
+        manage_columns_section_action = self.header_menu.addSection('Manage Columns')
+        show_hide_column = manage_columns_section_action.addMenu('Show/Hide Columns')
         show_hide_column.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.column_list_widget = ColumnMangementWidget(self)
@@ -572,7 +564,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         action.setDefaultWidget(self.column_list_widget)
         show_hide_column.addAction(action)
 
-        hide_this_column = self.header_menu.addAction('Hide This Column')
+        hide_this_column = manage_columns_section_action.addAction('Hide This Column')
         hide_this_column.triggered.connect(lambda: self.hideColumn(self._current_column_index))
 
     def _show_header_context_menu(self, pos: QtCore.QPoint):
