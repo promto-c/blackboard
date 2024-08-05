@@ -12,11 +12,15 @@ class SectionAction(QtWidgets.QWidgetAction):
 
         # Create a label widget with the specified text
         self.label = QtWidgets.QLabel(text, self.parent_menu)
-        # self.label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        if icon:
+            # NOTE: Not Implement
+            ...
+
         # Disable the label to make it non-interactive
         self.label.setDisabled(True)
         self.label.setStyleSheet('''
-            color: rgb(144, 144, 144);
+            color: #999;
             padding: 6px;
         ''')
 
@@ -39,6 +43,9 @@ class SectionAction(QtWidgets.QWidgetAction):
         self.parent_menu.insertMenu(self.separator, menu)
 
         return menu
+    
+    def addSeparator(self) -> QtWidgets.QAction:
+        return self.parent_menu.addSeparator()
 
 class ContextMenu(QtWidgets.QMenu):
 
@@ -48,5 +55,5 @@ class ContextMenu(QtWidgets.QMenu):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def addSection(self, text: str, icon: QtGui.QIcon = None) -> 'SectionAction':
-        section = SectionAction(self, text, icon)
-        return section
+        return SectionAction(self, text, icon)
+

@@ -373,16 +373,16 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.tree_widget.clear_highlight()
 
         # Hide all items
-        self.tree_widget.hide_all_items()
+        bb.utils.TreeUtil.hide_all_items(self.tree_widget)
         # Show match items
-        self.tree_widget.show_items(self._all_match_items)
+        bb.utils.TreeUtil.set_items_visibility(self._all_match_items, is_visible=True)
 
     def _reset_search(self):
         """Reset the search and show all items.
         """
         self._is_searching = False
         # Show all items
-        self.tree_widget.show_all_items()
+        bb.utils.TreeUtil.show_all_items(self.tree_widget)
 
         self._highlight_search()
 

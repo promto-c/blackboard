@@ -38,7 +38,7 @@ class GroupedTreeModel(QtGui.QStandardItemModel):
         else:
             self.add_items(self.original_data, self.invisibleRootItem())
 
-    def group_data(self, data, columns):
+    def group_data(self, data: List[List[str]], columns: List[int]):
         if not columns:
             return data
 
@@ -54,7 +54,7 @@ class GroupedTreeModel(QtGui.QStandardItemModel):
 
         return grouped_data
 
-    def add_grouped_items(self, grouped_data, parent_item):
+    def add_grouped_items(self, grouped_data, parent_item: QtGui.QStandardItem):
         for key, value in grouped_data.items():
             group_item = QtGui.QStandardItem(str(key))
             parent_item.appendRow([group_item])
@@ -63,7 +63,7 @@ class GroupedTreeModel(QtGui.QStandardItemModel):
             else:
                 self.add_items(value, group_item)
 
-    def add_items(self, data, parent_item):
+    def add_items(self, data: List[List[str]], parent_item: QtGui.QStandardItem):
         for row in data:
             items = [QtGui.QStandardItem(str(v)) for v in row]
             parent_item.appendRow(items)

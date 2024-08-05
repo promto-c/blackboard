@@ -39,7 +39,7 @@ class TreeUtil:
             child_item = parent_item.child(child_index)
 
             # Optionally filter by check state if only_checked is True.
-            if is_only_checked and child_item.checkState() == QtCore.Qt.CheckState.Unchecked:
+            if is_only_checked and child_item.checkState(0) == QtCore.Qt.CheckState.Unchecked:
                 continue
 
             # Check if the child item has children.
@@ -57,6 +57,74 @@ class TreeUtil:
             items.append(child_item)
 
         return items
+
+    @classmethod
+    def show_all_items(cls, tree_widget: 'QtWidgets.QTreeWidget') -> None:
+        """Show all items in the QTreeWidget.
+
+        Args:
+            tree_widget (QtWidgets.QTreeWidget): The tree widget to expand.
+        """
+        cls.set_items_visibility([tree_widget.invisibleRootItem()], True)
+
+    @classmethod
+    def hide_all_items(cls, tree_widget: 'QtWidgets.QTreeWidget') -> None:
+        """Hide all items in the QTreeWidget.
+
+        Args:
+            tree_widget (QtWidgets.QTreeWidget'): The tree widget to collapse.
+        """
+        cls.set_items_visibility([tree_widget.invisibleRootItem()], False)
+
+    @classmethod
+    def set_items_visibility(cls, items: List[QtWidgets.QTreeWidgetItem],
+                             is_visible: bool,
+                             is_affect_parents: bool = True,
+                             is_affect_children: bool = True) -> None:
+        """Set visibility of the specified items, along with their parents and children if desired.
+
+        Args:
+            items (List[QtWidgets.QTreeWidgetItem]): The list of items whose visibility will be set.
+            is_visible (bool): The visibility state to apply (True for show, False for hide).
+            is_affect_parents (bool): Whether to affect the visibility of parent items. Defaults to True.
+            is_affect_children (bool): Whether to affect the visibility of child items. Defaults to True.
+        """
+        for item in items:
+            item.setHidden(not is_visible)
+
+            if is_affect_parents:
+                cls.__set_parents_visibility(item, is_visible)
+
+            if is_affect_children:
+                cls.__set_children_visibility(item, is_visible)
+
+    @staticmethod
+    def __set_parents_visibility(item: QtWidgets.QTreeWidgetItem, is_visible: bool) -> None:
+        """Set visibility of all parent items of the given item.
+
+        Args:
+            item (QtWidgets.QTreeWidgetItem): The item whose parents' visibility will be set.
+            is_visible (bool): Whether items should be visible (True for show, False for hide).
+        """
+        parent = item.parent()
+        while parent:
+            parent.setHidden(not is_visible)
+            if is_visible:
+                parent.setExpanded(True)
+            parent = parent.parent()
+
+    @staticmethod
+    def __set_children_visibility(item: QtWidgets.QTreeWidgetItem, is_visible: bool) -> None:
+        """Set visibility of all child items of the given item.
+
+        Args:
+            item (QtWidgets.QTreeWidgetItem): The item whose children's visibility will be set.
+            is_visible (bool): Whether items should be visible (True for show, False for hide).
+        """
+        for i in range(item.childCount()):
+            child = item.child(i)
+            child.setHidden(not is_visible)
+            TreeUtil.__set_children_visibility(child, is_visible)
 
     @classmethod
     def get_model_indexes(cls, model: 'QtCore.QAbstractItemModel', parent: 'QtCore.QModelIndex' = QtCore.QModelIndex(), 

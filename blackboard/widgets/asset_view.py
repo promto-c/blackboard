@@ -40,22 +40,21 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         self._create_context_menu()
 
     def _create_context_menu(self):
-        self.menu = QtWidgets.QMenu()
+        self.menu = widgets.ContextMenu()
         self.menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        self.tree_widget.add_label_action(self.menu, 'Open')
-        open_action = self.menu.addAction("Open")
-        open_with_action = self.menu.addAction("Open with...")
-        open_containing_folder_action = self.menu.addAction("Open Containing Folder")
-        open_in_terminal_action = self.menu.addAction("Open in Terminal")
-        self.menu.addSeparator()
-        self.tree_widget.add_label_action(self.menu, 'Copy')
-        copy_selected_cell_action = self.menu.addAction("Copy Cell")
+        open_section = self.menu.addSection('Open')
+        open_action = open_section.addAction("Open")
+        open_with_action = open_section.addAction("Open with...")
+        open_containing_folder_action = open_section.addAction("Open Containing Folder")
+        open_in_terminal_action = open_section.addAction("Open in Terminal")
+        copy_section = self.menu.addSection('Copy')
+        copy_selected_cell_action = copy_section.addAction("Copy Cell")
         copy_selected_cell_action.setShortcut("Ctrl+C")
-        self.menu.addSeparator()
-        copy_path_action = self.menu.addAction("Copy Path")
+        copy_section.addSeparator()
+        copy_path_action = copy_section.addAction("Copy Path")
         copy_path_action.setShortcut("Ctrl+Shift+C")
-        copy_relative_path_action = self.menu.addAction("Copy Relative Path")
+        copy_relative_path_action = copy_section.addAction("Copy Relative Path")
         copy_relative_path_action.setToolTip("This feature is not supported yet.")
         copy_relative_path_action.setEnabled(False)
 
@@ -67,9 +66,8 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         copy_relative_path_action.triggered.connect(self.copy_relative_path)
         copy_selected_cell_action.triggered.connect(self.tree_widget.copy_selected_cells)
 
-    def show_context_menu(self, position: QtCore.QPoint = None):
-        position = position or QtGui.QCursor.pos()
-        self.menu.exec_(position)
+    def show_context_menu(self, _position: QtCore.QPoint = None):
+        self.menu.exec_(QtGui.QCursor.pos())
 
     def get_selected_file_paths(self) -> List[str]:
         selected_items = self.tree_widget.selectedItems()
