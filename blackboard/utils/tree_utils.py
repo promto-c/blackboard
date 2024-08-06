@@ -369,7 +369,7 @@ class TreeUtil:
             raise TypeError("tree_item must be a QTreeWidget or QTreeWidgetItem.")
 
         # Extract and return column names
-        return [header_item.text(i) for i in range(header_item.columnCount())]
+        return [header_item.data(i, QtCore.Qt.ItemDataRole.UserRole) or header_item.text(i) for i in range(header_item.columnCount())]
 
 class TreeItemUtil:
 

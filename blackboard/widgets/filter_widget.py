@@ -99,23 +99,54 @@ class MoreOptionsButton(QtWidgets.QToolButton):
         self.popup_menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
 
 class ResizablePopupMenu(QtWidgets.QMenu):
+    """A resizable popup menu with drag-and-resize functionality.
 
+    Attributes:
+        button (Optional[QtWidgets.QPushButton]): Optional button to position the menu relative to.
+        resized (QtCore.Signal): Signal emitted when the menu is resized.
+    """
+    # Constants
+    # ---------
+    RESIZE_HANDLE_SIZE = 20
+
+    # Signals
+    # -------
     resized = QtCore.Signal(QtCore.QSize)
 
+    # Initialization and Setup
+    # ------------------------
     def __init__(self, button: Optional[QtWidgets.QPushButton] = None):
+        """Initialize the popup menu and set up drag-resize functionality.
+
+        Args:
+            button (Optional[QtWidgets.QPushButton]): Optional button to position the menu relative to.
+        """
         super().__init__()
+
+        # Store the arguments
         self.button = button
 
-        self.init_drag()
+        # Initialize setup
+        self.__init_attributes()
 
+    def __init_attributes(self):
+        """Initialize drag functionality for resizing the menu.
+        """
+        self._is_dragging = False
+        self._drag_start_point = QtCore.QPoint()
+        self._initial_size = self.size()
+
+        # Set UI attributes
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
+    # Overridden Methods
+    # ------------------
     def keyPressEvent(self, event: QtGui.QKeyEvent):
         """Handle key press events to prevent closing the popup on Enter or Return keys.
         """
         if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
             # Do nothing, preventing the popup from closing
-            pass  
+            pass
         else:
             super().keyPressEvent(event)
 
@@ -128,44 +159,42 @@ class ResizablePopupMenu(QtWidgets.QMenu):
             self.move(pos)
         super().showEvent(event)
 
-    def init_drag(self):
-        """Initialize drag functionality for resizing the menu.
-        """
-        self.dragging = False
-        self.drag_start_point = QtCore.QPoint()
-        self.initial_size = self.size()
-
-    def resizeEvent(self, event):
+    def resizeEvent(self, event: QtGui.QResizeEvent):
         """Handle the resize event and emit a signal with the new size.
         """
         self.resized.emit(self.size())
         super().resizeEvent(event)
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event: QtGui.QMouseEvent):
         """Handle the mouse press event for resizing the menu.
         """
-        if event.pos().x() >= (self.width() - 20) and event.pos().y() >= (self.height() - 20):
-            self.dragging = True
-            self.drag_start_point = event.pos()
-            self.initial_size = self.size()
-            self.setCursor(QtGui.QCursor(QtCore.Qt.SizeFDiagCursor))
+        if (event.pos().x() >= (self.width() - self.RESIZE_HANDLE_SIZE) and
+            event.pos().y() >= (self.height() - self.RESIZE_HANDLE_SIZE)
+           ):
+            self._is_dragging = True
+            self._drag_start_point = event.pos()
+            self._initial_size = self.size()
+            self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.SizeFDiagCursor))
         else:
             super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event):
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
         """Handle the mouse move event to resize the menu.
         """
-        if self.dragging:
-            new_width = max(self.initial_size.width() + (event.pos().x() - self.drag_start_point.x()), self.minimumWidth())
-            new_height = max(self.initial_size.height() + (event.pos().y() - self.drag_start_point.y()), self.minimumHeight())
-            self.resize(new_width, new_height)
+        if self._is_dragging:
+            delta = event.pos() - self._drag_start_point
+            new_size = QtCore.QSize(
+                max(self._initial_size.width() + delta.x(), self.minimumWidth()),
+                max(self._initial_size.height() + delta.y(), self.minimumHeight())
+            )
+            self.resize(new_size)
         else:
             super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
         """Handle the mouse release event to stop resizing the menu.
         """
-        self.dragging = False
+        self._is_dragging = False
         self.unsetCursor()
 
 class FilterPopupButton(QtWidgets.QPushButton):
