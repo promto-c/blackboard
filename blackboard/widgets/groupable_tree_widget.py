@@ -21,7 +21,7 @@ from blackboard import widgets
 # NOTE: test
 from blackboard.widgets.header_view import SearchableHeaderView
 from blackboard.utils.thread_pool import ThreadPoolManager, GeneratorWorker
-from blackboard.utils.tree_utils import TreeUtil
+from blackboard.utils.tree_utils import TreeUtil, TreeItemUtil
 from blackboard.widgets.animate_button import DataFetchingButtons
 from blackboard.widgets.menu import ContextMenu
 
@@ -423,6 +423,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.grouped_column_name = ""
         self.column_names = []
         self.color_adaptive_columns = []
+        self.grouped_column_names: List[int] = []
 
         # Initialize the HighlightItemDelegate object to highlight items in the tree widget
         self.highlight_item_delegate = widgets.HighlightItemDelegate()
@@ -574,28 +575,24 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Show the context menu
         self.header_menu.popup(QtGui.QCursor.pos())
 
-    def _create_item_groups(self, data: List[str]) -> Dict[str, List[TreeWidgetItem]]:
+    def _create_item_groups(self, items: List[QtWidgets.QTreeWidgetItem], column: int) -> Dict[str, List[QtWidgets.QTreeWidgetItem]]:
         """Group the data into a dictionary mapping group names to lists of tree items.
 
         Args:
-            data (List[str]): The data to be grouped.
+            items (List[QtWidgets.QTreeWidgetItem]): The data to be grouped.
+            column (int):
 
         Returns:
-            Dict[str, List[TreeWidgetItem]]: A dictionary mapping group names to lists of tree items.
+            Dict[str, List[QtWidgets.QTreeWidgetItem]]: A dictionary mapping group names to lists of tree items.
         """
         # Create a defaultdict to store the groups
-        groups = defaultdict(list)
+        group_name_to_tree_items = defaultdict(list)
 
-        # Group the data
-        for i, item_data in enumerate(data):
-            # If the data is empty, add it to the '_others' group
-            item_data = item_data or '_others'
+        for item in items:
+            key_data = item.data(column, QtCore.Qt.ItemDataRole.UserRole) or '_others'
+            group_name_to_tree_items[key_data].append(item)
 
-            # Add the tree item to the appropriate group
-            item = self.topLevelItem(i)
-            groups[item_data].append(item)
-
-        return dict(groups)
+        return group_name_to_tree_items
 
     def _highlight_selected_items(self):
         """Highlight the specified `tree_items` in the tree widget.
@@ -817,6 +814,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         else:
             raise ValueError("Invalid type for item_names. Expected a list or a dictionary.")
 
+    # TODO: Add support multi grouping
     def add_item(self, data_dict: Dict[str, Any], item_id: Optional[str] = None, parent: Optional[QtWidgets.QTreeWidgetItem] = None) -> TreeWidgetItem:
         """Add an item to the tree widget, considering groupings if applicable.
 
@@ -839,14 +837,14 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         if parent is self.invisibleRootItem() and self.grouped_column_name:
             # If the tree is grouped, find the appropriate parent group item
             group_value = data_dict.get(self.grouped_column_name, "_others")
-            group_items = self.findItems(group_value, QtCore.Qt.MatchFlag.MatchExactly, 0)
+            grouped_items = self.findItems(group_value, QtCore.Qt.MatchFlag.MatchExactly, 0)
 
             # If no matching group item is found, create a new group
-            if not group_items:
+            if not grouped_items:
                 parent = TreeWidgetItem(self, [group_value])
                 parent.setExpanded(True)
             else:
-                parent = group_items[0]
+                parent = grouped_items[0]
 
         # Create a new TreeWidgetItem and add it to the parent
         tree_item = TreeWidgetItem(parent, item_data=data_dict, item_id=item_id)
@@ -886,6 +884,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for data_dict in data_dicts:
             self.add_item(data_dict, parent=parent)
 
+    # TODO: Add support multi grouping
     def group_by_column(self, column: Union[int, str]):
         """Group the items in the tree widget by the values in the specified column.
 
@@ -903,37 +902,23 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Get the label for the column that we want to group by and the label for the first column 
         self.grouped_column_name = self.headerItem().text(column)
+        self.grouped_column_names.append(self.grouped_column_name)
         first_column_label = self.headerItem().text(0)
         
         # Rename the first column
         self.setHeaderLabel(f'{self.grouped_column_name} / {first_column_label}')
         
-        # Get the data for each tree item in the column
-        data = [self.topLevelItem(row).data(column, QtCore.Qt.ItemDataRole.UserRole) for row in range(self.topLevelItemCount())]
-        
         # Group the data and add the tree items to the appropriate group
-        group_to_tree_items = self._create_item_groups(data)
+        target_items = TreeUtil.get_items_at_child_level(self, len(self.grouped_column_names) - 1)
+        group_name_to_tree_items = self._create_item_groups(target_items, column)
 
         # Iterate through each group and its items
-        for group_name, items in group_to_tree_items.items():
+        for group_name, items in group_name_to_tree_items.items():
             # Create a new QTreeWidgetItem for the group
             group_item = TreeWidgetItem(self, [group_name])
-            
-            # Add the items to the group item as children
-            for item in items:
-                # Save the original parent and position of the tree item
-                original_parent = item.parent()
-                original_row = original_parent.indexOfChild(item) if original_parent else self.indexOfTopLevelItem(item)
 
-                # Remove the tree item from its original parent
-                if original_parent:
-                    original_parent.takeChild(original_row)
-                else:
-                    self.takeTopLevelItem(original_row)
+            TreeItemUtil.reparent_items(items, group_item)
 
-                # Add the tree item to the group item as a child and restore its original position
-                group_item.addChild(item)
-            
         # Expand all items
         self.expandAll()
 
@@ -951,11 +936,12 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         TreeUtil.fit_column_in_view(self)
 
+    # TODO: Add support multi grouping
     def ungroup_all(self):
         """Ungroup all the items in the tree widget.
         """
         # Return if there are no groups to ungroup
-        if not self.grouped_column_name:
+        if not self.grouped_column_names:
             return
 
         # Reset the header label
@@ -965,19 +951,22 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         column_index = self.get_column_index(self.grouped_column_name)
         self.setColumnHidden(column_index, False)
 
-        # Get a list of all the top-level items in the tree widget
-        group_item_list = [self.topLevelItem(i) for i in range(self.topLevelItemCount())]
+        # Flatten the list of grouped items
+        grouped_items = [
+            item
+            for child_level in range(len(self.grouped_column_names))
+            for item in TreeUtil.get_items_at_child_level(self, child_level)
+        ]
 
-        # Iterate through all the top-level items in the tree widget
-        for group_item in group_item_list:
-            # Remove all of its children and add them as top-level items
-            child_items = group_item.takeChildren()
-            self.addTopLevelItems(child_items)
+        # Get target items at a specific child level
+        target_items = TreeUtil.get_items_at_child_level(self, len(self.grouped_column_names))
 
-            # Remove the group item from the top-level items
-            self.takeTopLevelItem(self.indexOfTopLevelItem(group_item))
+        # Reparent to root and remove the empty grouped items
+        TreeItemUtil.reparent_items(target_items)
+        TreeItemUtil.remove_items(grouped_items)
 
         # Clear the grouped column label
+        self.grouped_column_names.clear()
         self.grouped_column_name = ''
 
         # Resize first columns to fit their contents
