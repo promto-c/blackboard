@@ -813,7 +813,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         else:
             raise ValueError("Invalid type for item_names. Expected a list or a dictionary.")
 
-    # TODO: Add support multi grouping
     def add_item(self, data_dict: Dict[str, Any], item_id: Optional[str] = None, parent: Optional[QtWidgets.QTreeWidgetItem] = None) -> TreeWidgetItem:
         """Add an item to the tree widget, considering groupings if applicable.
 
@@ -832,7 +831,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Generate a unique ID if not provided
         item_id = item_id or uuid.uuid1()
 
-        # TODO: Add to appropriate groups
         # Determine the parent for the new item
         if parent is self.invisibleRootItem() and self.grouped_column_names:
             for grouped_column_name in self.grouped_column_names:
@@ -1254,7 +1252,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         settings.beginGroup(group_name)
         header_state = settings.value('header_state', QtCore.QByteArray)
         color_adaptive_columns = settings.value('color_adaptive_columns', list())
-        grouped_column_name = settings.value('grouped_column_name', str())
+        grouped_column_names = settings.value('grouped_column_names', str())
         uniform_row_height = int(settings.value('uniform_row_height', -1))
         settings.endGroup()
 
@@ -1263,7 +1261,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         self.header().restoreState(header_state)
         self._restore_color_adaptive_column(color_adaptive_columns)
-        self.group_by_column(grouped_column_name)
+        for grouped_column_name in grouped_column_names:
+            self.group_by_column(grouped_column_name)
         self.set_row_height(uniform_row_height)
         self.column_management_widget.update_columns()
 

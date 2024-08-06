@@ -4,7 +4,7 @@ import sys
 from qtpy import QtCore, QtGui, QtWidgets
 
 from blackboard.widgets.main_window import MainWindow
-from blackboard.widgets import GroupableTreeWidget
+from blackboard.widgets import GroupableTreeWidget, TreeWidgetItem
 
 
 class DatabaseManager:
@@ -553,11 +553,12 @@ class DBWidget(QtWidgets.QMainWindow):
             data, headers = self.db_manager.get_table_data(self.current_table)
             self.tree_data_widget.clear()
             self.tree_data_widget.setHeaderLabels(headers)
+
             for row_data in data:
-                parent_item = QtWidgets.QTreeWidgetItem(self.tree_data_widget)
-                for col_idx, cell_data in enumerate(row_data):
-                    parent_item.setText(col_idx, str(cell_data))
-                    parent_item.setData(col_idx, QtCore.Qt.ItemDataRole.UserRole, cell_data)
+                parent_item = TreeWidgetItem(self.tree_data_widget, list(row_data))
+                # for col_idx, cell_data in enumerate(row_data):
+                #     parent_item.setText(col_idx, str(cell_data))
+                #     parent_item.setData(col_idx, QtCore.Qt.ItemDataRole.UserRole, cell_data)
 
     def show_add_field_dialog(self):
         if self.current_table:
