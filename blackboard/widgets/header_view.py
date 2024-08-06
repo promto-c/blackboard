@@ -24,8 +24,8 @@ class SearchableHeaderView(QtWidgets.QHeaderView):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent: QtWidgets.QTreeWidget, orientation: QtCore.Qt.Orientation = QtCore.Qt.Orientation.Horizontal, *args, **kwargs):
-        super().__init__(orientation, parent, *args, **kwargs)
+    def __init__(self, parent: QtWidgets.QTreeWidget, orientation: QtCore.Qt.Orientation = QtCore.Qt.Orientation.Horizontal):
+        super().__init__(orientation, parent)
 
         # Initialize setup
         self.__init_attributes()
@@ -95,4 +95,3 @@ class SearchableHeaderView(QtWidgets.QHeaderView):
                 return
 
         super().mousePressEvent(event)
-

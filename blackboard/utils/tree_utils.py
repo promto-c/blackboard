@@ -11,27 +11,49 @@ from qtpy import QtCore, QtGui, QtWidgets
 class TreeUtil:
 
     @classmethod
-    def get_child_items(cls, tree_widget: 'QtWidgets.QTreeWidget',
-                        parent_item: Optional['QtWidgets.QTreeWidgetItem'] = None,
-                        is_only_leaf: bool = False, is_only_checked: bool = False,
-                        filter_func: Optional[Callable[['QtWidgets.QTreeWidgetItem'], bool]] = None
-                        ) -> List['QtWidgets.QTreeWidgetItem']:
+    def get_child_items(cls, parent_item: Union['QtWidgets.QTreeWidgetItem', 'QtWidgets.QTreeWidget'],
+                        is_only_leaf: bool = False,
+                        is_only_checked: bool = False,
+                        filter_func: Optional[Callable[['QtWidgets.QTreeWidgetItem'], bool]] = None,
+                        max_depth: Optional[int] = None,
+                        target_depth: Optional[int] = None,  # Alternative name suggestion
+                        current_depth: int = 0) -> List['QtWidgets.QTreeWidgetItem']:
         """Recursively gathers all child items from a QTreeWidget, performing a depth-first search traversal.
 
         Args:
-            tree_widget (QtWidgets.QTreeWidget): The tree widget to traverse.
-            parent_item (Optional[QtWidgets.QTreeWidgetItem]): The parent item to start traversal from. 
-                If None, starts from the root.
+            parent_item (Union[QtWidgets.QTreeWidgetItem, QtWidgets.QTreeWidget]): The parent item or the tree widget 
+                to start traversal from. If a QTreeWidget is provided, it starts from the root.
+            is_only_leaf (bool): Whether to include only leaf nodes.
+            is_only_checked (bool): Whether to include only checked nodes.
             filter_func (Callable[['QtWidgets.QTreeWidgetItem'], bool]): Optional function to filter items.
+            max_depth (Optional[int]): The maximum depth to traverse. If None or negative, traverses all depths.
+            target_depth (Optional[int]): The specific depth from which to collect items. If None, collects from all depths.
+            current_depth (int): The current depth of the traversal. Defaults to 0.
 
         Returns:
             List['QtWidgets.QTreeWidgetItem']: A list of QtWidgets.QTreeWidgetItem, including all child items in the tree.
         """
         # Get the root item of the tree widget if not provided.
-        parent_item = parent_item or tree_widget.invisibleRootItem()
+        if isinstance(parent_item, QtWidgets.QTreeWidget):
+            parent_item = parent_item.invisibleRootItem()
 
         # Initialize an empty list to hold the traversed items.
         items = []
+
+        # If max_depth is defined and current_depth exceeds it, stop traversal.
+        if max_depth is not None and max_depth >= 0 and current_depth > max_depth:
+            return items
+
+        # If target_depth is defined and current_depth does not match it, continue traversal without collecting.
+        if target_depth is not None and current_depth < target_depth:
+            for child_index in range(parent_item.childCount()):
+                # Retrieve the child item at the current index.
+                child_item = parent_item.child(child_index)
+
+                # Recursively add child items, incrementing the current depth.
+                items.extend(cls.get_child_items(child_item, is_only_leaf,
+                                                 is_only_checked, filter_func, max_depth, target_depth, current_depth + 1))
+            return items
 
         # Recursively traverse the children of the current item.
         for child_index in range(parent_item.childCount()):
@@ -44,8 +66,9 @@ class TreeUtil:
 
             # Check if the child item has children.
             if child_item.childCount() > 0:
-                # Recursively add the child items to the list.
-                items.extend(cls.get_child_items(tree_widget, child_item, is_only_leaf, is_only_checked, filter_func))
+                # Recursively add the child items to the list, incrementing the current depth.
+                items.extend(cls.get_child_items(child_item, is_only_leaf,
+                                                 is_only_checked, filter_func, max_depth, target_depth, current_depth + 1))
                 if is_only_leaf:
                     continue
 
@@ -53,8 +76,9 @@ class TreeUtil:
             if filter_func and not filter_func(child_item):
                 continue
 
-            # Add the child item to the list.
-            items.append(child_item)
+            # Add the child item to the list if target_depth is None or current_depth matches target_depth.
+            if target_depth is None or current_depth == target_depth:
+                items.append(child_item)
 
         return items
 
