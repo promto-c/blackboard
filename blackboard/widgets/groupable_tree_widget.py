@@ -968,19 +968,13 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             column_index = self.get_column_index(grouped_column_name)
             self.setColumnHidden(column_index, False)
 
-        # Flatten the list of grouped items
-        grouped_items = [
-            item
-            for child_level in range(len(self.grouped_column_names))
-            for item in TreeUtil.get_items_at_child_level(self, child_level)
-        ]
-
         # Get target items at a specific child level
-        target_items = TreeUtil.get_items_at_child_level(self, len(self.grouped_column_names))
+        target_items = TreeUtil.get_child_items(self, target_depth=len(self.grouped_column_names))
 
         # Reparent to root and remove the empty grouped items
-        TreeItemUtil.reparent_items(target_items)
-        TreeItemUtil.remove_items(grouped_items)
+        TreeItemUtil.remove_items(target_items)
+        self.clear()
+        self.addTopLevelItems(target_items)
 
         # Clear the grouped column label
         self.grouped_column_names.clear()
