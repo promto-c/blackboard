@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Union
 
 # Standard Library Imports
 # ------------------------
+import re
 import zlib
 from numbers import Number
 import datetime
@@ -138,8 +139,8 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
     # Class constants
     # ---------------
     COLOR_DICT = {
-        'pastel_green': ColorUtils.create_pastel_color(QtGui.QColor(65, 144, 0)),
-        'pastel_red': ColorUtils.create_pastel_color(QtGui.QColor(144, 0, 0)),
+        'pastel_green': ColorUtils.create_pastel_color(QtGui.QColor(65, 255, 0)),
+        'pastel_red': ColorUtils.create_pastel_color(QtGui.QColor(255, 0, 0)),
         'red': QtGui.QColor(183, 26, 28),
         'light_red': QtGui.QColor(183, 102, 77),
         'light_green': QtGui.QColor(170, 140, 88),
@@ -236,7 +237,7 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
 
         # Generate a new color for the keyword
         hue = (zlib.crc32(keyword.encode()) % 360) / 360
-        saturation, value = 0.6, 0.6
+        saturation, value = 0.6, 1.0
         keyword_color = QtGui.QColor.fromHsvF(hue, saturation, value)
 
         # Optionally create a pastel version of the color
@@ -338,12 +339,12 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
             super().paint(painter, option, model_index)
             return
 
-        # If the current model index is in the target list, set the background color and style
-        option.backgroundBrush.setColor(color)
-        option.backgroundBrush.setStyle(QtCore.Qt.BrushStyle.SolidPattern)
+        # Create a new brush
+        color = ColorUtils.blend_colors(option.backgroundBrush.color(), color)
+        brush = QtGui.QBrush(color, QtCore.Qt.BrushStyle.SolidPattern)
 
         # Fill the rect with the background brush
-        painter.fillRect(option.rect, option.backgroundBrush)
+        painter.fillRect(option.rect, brush)
 
         # Paint the item using the base class implementation
         super().paint(painter, option, model_index)
@@ -630,7 +631,8 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         if self._sequence_range_column is not None:
             sequence_range = self.get_sibling_data(index, self._sequence_range_column)
             if sequence_range:
-                first_frame_number = int(sequence_range.split('-')[0])
+                numbers = re.findall(r'\d+', sequence_range)
+                first_frame_number = int(numbers[0])
                 file_path = SequenceFileUtil.generate_frame_path(file_path, first_frame_number)
 
         pixmap = self.load_thumbnail(file_path)

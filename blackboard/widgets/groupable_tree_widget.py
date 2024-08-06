@@ -400,7 +400,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
     # Signals emitted by the GroupableTreeWidget
     ungrouped_all = QtCore.Signal()
-    grouped_by_column = QtCore.Signal(str)
     item_added = QtCore.Signal(TreeWidgetItem)
 
     # Initialization and Setup
@@ -420,7 +419,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Attributes
         # ----------
         # Store the current grouped column name
-        self.grouped_column_name = ""
         self.column_names = []
         self.color_adaptive_columns = []
         self.grouped_column_names: List[int] = []
@@ -492,7 +490,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Connect signal of header
         self.header().customContextMenuRequested.connect(self._show_header_context_menu)
         self.header().sortIndicatorChanged.connect(lambda _: self.set_row_height())
-        
+
         self.itemExpanded.connect(self.toggle_expansion_for_selected)
         self.itemCollapsed.connect(self.toggle_expansion_for_selected)
         self.itemSelectionChanged.connect(self._highlight_selected_items)
@@ -575,6 +573,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Show the context menu
         self.header_menu.popup(QtGui.QCursor.pos())
 
+    # TODO: Move to util
     def _create_item_groups(self, items: List[QtWidgets.QTreeWidgetItem], column: int) -> Dict[str, List[QtWidgets.QTreeWidgetItem]]:
         """Group the data into a dictionary mapping group names to lists of tree items.
 
@@ -747,7 +746,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.color_adaptive_columns.append(column)
 
         # Determine the child level based on the presence of a grouped column
-        child_level = 1 if self.grouped_column_name else 0
+        child_level = len(self.grouped_column_names)
 
         # Calculate the minimum and maximum values of the column at the determined child level
         min_value, max_value = self.get_column_value_range(column, child_level)
@@ -833,18 +832,21 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Generate a unique ID if not provided
         item_id = item_id or uuid.uuid1()
 
+        # TODO: Add to appropriate groups
         # Determine the parent for the new item
-        if parent is self.invisibleRootItem() and self.grouped_column_name:
-            # If the tree is grouped, find the appropriate parent group item
-            group_value = data_dict.get(self.grouped_column_name, "_others")
-            grouped_items = self.findItems(group_value, QtCore.Qt.MatchFlag.MatchExactly, 0)
-
-            # If no matching group item is found, create a new group
-            if not grouped_items:
-                parent = TreeWidgetItem(self, [group_value])
-                parent.setExpanded(True)
-            else:
-                parent = grouped_items[0]
+        if parent is self.invisibleRootItem() and self.grouped_column_names:
+            for grouped_column_name in self.grouped_column_names:
+                # If the tree is grouped, find the appropriate parent group item
+                group_value = data_dict.get(grouped_column_name, "_others")
+                    
+                if group_value not in parent.child_grouped_dict:
+                    new_grouped_item = TreeWidgetItem(parent, [group_value])
+                    new_grouped_item.setExpanded(True)
+                    new_grouped_item.child_grouped_dict = {}
+                    parent.child_grouped_dict[group_value] = new_grouped_item
+                    parent = new_grouped_item
+                else:
+                    parent = parent.child_grouped_dict[group_value]
 
         # Create a new TreeWidgetItem and add it to the parent
         tree_item = TreeWidgetItem(parent, item_data=data_dict, item_id=item_id)
@@ -884,7 +886,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for data_dict in data_dicts:
             self.add_item(data_dict, parent=parent)
 
-    # TODO: Add support multi grouping
     def group_by_column(self, column: Union[int, str]):
         """Group the items in the tree widget by the values in the specified column.
 
@@ -894,30 +895,29 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         if not isinstance(column, int):
             column = self.get_column_index(column)
 
-        # Ungroup all items in the tree widget
-        self.ungroup_all()
-
         # Hide the grouped column
         self.setColumnHidden(column, True)
 
-        # Get the label for the column that we want to group by and the label for the first column 
-        self.grouped_column_name = self.headerItem().text(column)
-        self.grouped_column_names.append(self.grouped_column_name)
-        first_column_label = self.headerItem().text(0)
-        
-        # Rename the first column
-        self.setHeaderLabel(f'{self.grouped_column_name} / {first_column_label}')
-        
         # Group the data and add the tree items to the appropriate group
-        target_items = TreeUtil.get_items_at_child_level(self, len(self.grouped_column_names) - 1)
-        group_name_to_tree_items = self._create_item_groups(target_items, column)
+        if not self.grouped_column_names:
+            parent_item = self.invisibleRootItem()
+            parent_item.child_grouped_dict = {}
+            self.group_items(parent_item, column)
+        else:
+            lowest_grouped_items = TreeUtil.get_items_at_child_level(self, len(self.grouped_column_names) - 1)
+            for lowest_grouped_item in lowest_grouped_items:
+                self.group_items(lowest_grouped_item, column)
 
-        # Iterate through each group and its items
-        for group_name, items in group_name_to_tree_items.items():
-            # Create a new QTreeWidgetItem for the group
-            group_item = TreeWidgetItem(self, [group_name])
+        # Get the label for the column that we want to group by and the label for the first column 
+        grouped_column_name = self.headerItem().text(column)
+        self.grouped_column_names.append(grouped_column_name)
 
-            TreeItemUtil.reparent_items(items, group_item)
+        # Rename the first column
+        grouped_column_names_str = ' / '.join(self.grouped_column_names)
+        first_column_name = self.column_names[0]
+        # Store original first column name
+        self.headerItem().setData(0, QtCore.Qt.ItemDataRole.UserRole, first_column_name)
+        self.setHeaderLabel(f'{grouped_column_names_str} / {first_column_name}')
 
         # Expand all items
         self.expandAll()
@@ -925,9 +925,27 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Resize first columns to fit their contents
         self.resizeColumnToContents(0)
 
-        # Emit signal for grouped by column with column name
-        self.grouped_by_column.emit(self.grouped_column_name)
-        
+    # TODO: Move to util
+    def group_items(self, parent_item: QtWidgets.QTreeWidgetItem, column: int):
+        """Group items under the parent item based on the values in the specified column.
+
+        Args:
+            parent_item (QtWidgets.QTreeWidgetItem): The parent item for grouping.
+            column (int): The column index to group by.
+        """
+        # Take all children from the parent item
+        target_items = parent_item.takeChildren()
+        # Create groups based on the target items
+        grouped_name_to_tree_items = self._create_item_groups(target_items, column)
+
+        # Iterate through each group and its items
+        for grouped_name, items in grouped_name_to_tree_items.items():
+            # Create a new QTreeWidgetItem for the group
+            grouped_item = TreeWidgetItem(parent_item, [grouped_name])
+            grouped_item.child_grouped_dict = {}
+            parent_item.child_grouped_dict[grouped_name] = grouped_item
+            grouped_item.addChildren(items)
+
     def fit_column_in_view(self):
         """Adjust the width of all columns to fit the entire view.
     
@@ -948,8 +966,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.setHeaderLabel(self.column_names[0])
         
         # Show hidden column
-        column_index = self.get_column_index(self.grouped_column_name)
-        self.setColumnHidden(column_index, False)
+        for grouped_column_name in self.grouped_column_names:
+            column_index = self.get_column_index(grouped_column_name)
+            self.setColumnHidden(column_index, False)
 
         # Flatten the list of grouped items
         grouped_items = [
@@ -967,7 +986,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Clear the grouped column label
         self.grouped_column_names.clear()
-        self.grouped_column_name = ''
 
         # Resize first columns to fit their contents
         self.resizeColumnToContents(0)
@@ -1222,7 +1240,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         settings.beginGroup(group_name)
         settings.setValue('header_state', self.header().saveState())
         settings.setValue('color_adaptive_columns', self.color_adaptive_columns)
-        settings.setValue('group_column_name', self.grouped_column_name)
+        settings.setValue('group_column_names', self.grouped_column_names)
         settings.setValue('uniform_row_height', self._row_height)
         settings.endGroup()
 
@@ -1419,13 +1437,14 @@ def main():
 
     # Create an instance of the widget
     generator = generate_file_paths('blackboard', delay_duration_sec=0.05)
-    tree_widget = GroupableTreeWidget()
-    tree_widget.setHeaderLabels(['id', 'file_path'])
-    tree_widget.create_thumbnail_column('file_path')
-    tree_widget.set_generator(generator)
+    # tree_widget = GroupableTreeWidget()
+    # tree_widget.setHeaderLabels(['id', 'file_path'])
+    # tree_widget.create_thumbnail_column('file_path')
+    # tree_widget.set_generator(generator)
 
-    # tree_widget = GroupableTreeWidget(column_names=COLUMN_NAME_LIST)
-    # tree_widget.add_items(ID_TO_DATA_DICT)
+    tree_widget = GroupableTreeWidget()
+    tree_widget.setHeaderLabels(COLUMN_NAME_LIST)
+    tree_widget.add_items(ID_TO_DATA_DICT)
 
     # Show the window and run the application
     tree_widget.show()
