@@ -8,6 +8,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from blackboard.widgets.main_window import MainWindow
 from blackboard.widgets import GroupableTreeWidget, TreeWidgetItem
+from blackboard.widgets.header_view import SearchableHeaderView
 
 @dataclass
 class ForeignKey:
@@ -581,105 +582,134 @@ class DBWidget(QtWidgets.QMainWindow):
         self.central_widget = QtWidgets.QWidget()
         self.setCentralWidget(self.central_widget)
 
-        # Create tree data widget
-        self.tree_data_widget = GroupableTreeWidget()
-        self.tree_data_widget.setHeaderLabels([])  # Header labels will be set dynamically
-        self.tree_data_widget.itemDoubleClicked.connect(self.edit_record)
-
-        # Connect the custom signal to a slot in DBWidget
-        self.tree_data_widget.about_to_show_header_menu.connect(self.handle_header_context_menu)
-
-        # Append a submenu for adding join tables
-        self.add_relation_column_menu = self.tree_data_widget.header_menu.addMenu('Add Relation Column')
-
-        # Create layout for main area
-        self.main_layout = QtWidgets.QVBoxLayout()
-        self.actions_layout = QtWidgets.QHBoxLayout()
-        self.actions_layout.addWidget(QtWidgets.QLabel("Actions:"))
-        self.refresh_button = QtWidgets.QPushButton("Refresh")
-        self.refresh_button.clicked.connect(self.refresh_data)
-        self.actions_layout.addWidget(self.refresh_button)
-        self.add_record_button = QtWidgets.QPushButton("Add Record")
-        self.add_record_button.clicked.connect(self.show_add_record_dialog)
-        self.add_table_button = QtWidgets.QPushButton("Add Table")
-        self.add_table_button.clicked.connect(self.show_add_table_dialog)
-        
-        self.delete_table_button = QtWidgets.QPushButton("Delete Table")
-        self.delete_table_button.clicked.connect(self.delete_table)
-        self.delete_record_button = QtWidgets.QPushButton("Delete Record")
-        self.delete_record_button.clicked.connect(self.delete_record)
-        self.actions_layout.addWidget(self.add_record_button)
-
-        self.actions_layout.addWidget(self.delete_record_button)
-        self.actions_layout.addWidget(QtWidgets.QLabel("Filter:"))
-        self.filter_input = QtWidgets.QLineEdit()
-        self.actions_layout.addWidget(self.filter_input)
-        self.main_layout.addLayout(self.actions_layout)
-        self.main_layout.addWidget(QtWidgets.QLabel("Table Data"))
-        self.main_layout.addWidget(self.tree_data_widget)
+        self.tree_data_widget = self.create_tree_data_widget()
+        self.main_layout = self.create_main_layout()
 
         self.central_widget.setLayout(self.main_layout)
-
-        # Create dock widget for left layout
-        self.dock_widget = QtWidgets.QDockWidget("SQLite Database Info", self)
-        self.dock_widget.setAllowedAreas(QtCore.Qt.LeftDockWidgetArea | QtCore.Qt.RightDockWidgetArea)
-        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.dock_widget)
-
-        # Create left layout
-        self.left_widget = QtWidgets.QWidget()
-        self.left_layout = QtWidgets.QVBoxLayout()
-        self.left_widget.setLayout(self.left_layout)
-
-        self.db_name_label = QtWidgets.QLabel("Database Name:")
-        self.db_name_display = QtWidgets.QLabel("")
-        self.db_path_label = QtWidgets.QLabel("Database Path:")
-        self.db_path_display = QtWidgets.QLabel("")
-        self.db_size_label = QtWidgets.QLabel("Size:")
-        self.db_size_display = QtWidgets.QLabel("")
-
-        self.open_db_button = QtWidgets.QPushButton("Open Database")
-        self.open_db_button.clicked.connect(self.open_database)
-
-        self.tables_list = QtWidgets.QListWidget()
-        self.tables_list.currentItemChanged.connect(self.load_table_info)
-
-        self.columns_list = QtWidgets.QListWidget()
-
-        self.add_field_button = QtWidgets.QPushButton("Add Field")
-        self.add_field_button.clicked.connect(self.show_add_field_dialog)
-        self.delete_field_button = QtWidgets.QPushButton("Delete Field")
-        self.delete_field_button.clicked.connect(self.delete_field)
-
-        # Add widgets to left layout
-        self.left_layout.addWidget(self.open_db_button)
-        self.left_layout.addWidget(self.db_name_label)
-        self.left_layout.addWidget(self.db_name_display)
-        self.left_layout.addWidget(self.db_path_label)
-        self.left_layout.addWidget(self.db_path_display)
-        self.left_layout.addWidget(self.db_size_label)
-        self.left_layout.addWidget(self.db_size_display)
-        
-        sub_layout = QtWidgets.QHBoxLayout()
-        self.left_layout.addLayout(sub_layout)
-        sub_layout.addWidget(QtWidgets.QLabel("Tables"))
-        sub_layout.addWidget(self.add_table_button)
-        sub_layout.addWidget(self.delete_table_button)
-
-        self.left_layout.addWidget(self.tables_list)
-        sub_layout = QtWidgets.QHBoxLayout()
-        self.left_layout.addLayout(sub_layout)
-        sub_layout.addWidget(QtWidgets.QLabel("Columns"))
-        
-        sub_layout.addWidget(self.add_field_button)
-        sub_layout.addWidget(self.delete_field_button)
-
-        self.left_layout.addWidget(self.columns_list)
-
-        # Set the left widget as the dock widget's content
-        self.dock_widget.setWidget(self.left_widget)
+        self.dock_widget = self.create_dock_widget()
 
         self.db_manager = None
         self.current_table = None
+
+    def create_tree_data_widget(self):
+        """Create and configure the tree data widget."""
+        tree_data_widget = GroupableTreeWidget()
+        # SearchableHeaderView(tree_data_widget)
+
+        tree_data_widget.setHeaderLabels([])  # Header labels will be set dynamically
+        tree_data_widget.itemDoubleClicked.connect(self.edit_record)
+        tree_data_widget.about_to_show_header_menu.connect(self.handle_header_context_menu)
+        
+        self.add_relation_column_menu = tree_data_widget.header_menu.addMenu('Add Relation Column')
+        
+        return tree_data_widget
+
+    def create_main_layout(self):
+        """Create and configure the main layout."""
+        layout = QtWidgets.QVBoxLayout()
+        layout.addLayout(self.create_actions_layout())
+        layout.addWidget(QtWidgets.QLabel("Table Data"))
+        layout.addWidget(self.tree_data_widget)
+
+        return layout
+
+    def create_actions_layout(self):
+        """Create and configure the actions layout."""
+        layout = QtWidgets.QHBoxLayout()
+        layout.addWidget(QtWidgets.QLabel("Actions:"))
+
+        self.refresh_button = self.create_action_button("Refresh", self.refresh_data)
+        self.add_record_button = self.create_action_button("Add Record", self.show_add_record_dialog)
+        self.add_table_button = self.create_action_button("Add Table", self.show_add_table_dialog)
+        self.delete_table_button = self.create_action_button("Delete Table", self.delete_table)
+        self.delete_record_button = self.create_action_button("Delete Record", self.delete_record)
+
+        self.filter_input = QtWidgets.QLineEdit()  # Initialize the QLineEdit
+
+        for widget in [
+            self.refresh_button,
+            self.add_record_button,
+            self.delete_record_button,
+            QtWidgets.QLabel("Filter:"),
+            self.filter_input,  # Add the initialized QLineEdit to the layout
+        ]:
+            layout.addWidget(widget)
+
+        return layout
+
+    def create_action_button(self, text, callback):
+        """Helper method to create a QPushButton with a callback."""
+        button = QtWidgets.QPushButton(text)
+        button.clicked.connect(callback)
+        return button
+
+    def create_dock_widget(self):
+        """Create and configure the dock widget."""
+        dock_widget = QtWidgets.QDockWidget("SQLite Database Info", self)
+        dock_widget.setAllowedAreas(QtCore.Qt.LeftDockWidgetArea | QtCore.Qt.RightDockWidgetArea)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock_widget)
+
+        self.left_widget = self.create_left_widget()
+        dock_widget.setWidget(self.left_widget)
+
+        return dock_widget
+
+    def create_left_widget(self):
+        """Create and configure the left widget."""
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout()
+        widget.setLayout(layout)
+
+        self.db_name_label, self.db_name_display = self.create_label_pair("Database Name:")
+        self.db_path_label, self.db_path_display = self.create_label_pair("Database Path:")
+        self.db_size_label, self.db_size_display = self.create_label_pair("Size:")
+
+        self.open_db_button = self.create_action_button("Open Database", self.open_database)
+        self.tables_list = QtWidgets.QListWidget()
+        self.tables_list.currentItemChanged.connect(self.load_table_info)
+        self.columns_list = QtWidgets.QListWidget()
+
+        self.add_field_button = self.create_action_button("Add Field", self.show_add_field_dialog)
+        self.delete_field_button = self.create_action_button("Delete Field", self.delete_field)
+
+        self.add_table_button = self.create_action_button("Add Table", self.show_add_table_dialog)
+        self.delete_table_button = self.create_action_button("Delete Table", self.delete_table)
+
+        self.setup_left_layout(layout)
+
+        return widget
+
+    def create_label_pair(self, text):
+        """Create a label with a corresponding display label."""
+        label = QtWidgets.QLabel(text)
+        display = QtWidgets.QLabel("")
+        return label, display
+
+    def setup_left_layout(self, layout):
+        """Add widgets to the left layout."""
+        layout.addWidget(self.open_db_button)
+
+        layout.addWidget(self.db_name_label)
+        layout.addWidget(self.db_name_display)
+        layout.addWidget(self.db_path_label)
+        layout.addWidget(self.db_path_display)
+        layout.addWidget(self.db_size_label)
+        layout.addWidget(self.db_size_display)
+
+        layout.addLayout(self.create_sub_layout("Tables", self.add_table_button, self.delete_table_button))
+        layout.addWidget(self.tables_list)
+        layout.addLayout(self.create_sub_layout("Columns", self.add_field_button, self.delete_field_button))
+        layout.addWidget(self.columns_list)
+
+    def create_sub_layout(self, label_text, *buttons):
+        """Create a horizontal layout with a label and buttons."""
+        layout = QtWidgets.QHBoxLayout()
+        layout.addWidget(QtWidgets.QLabel(label_text))
+
+        for button in buttons:
+            layout.addWidget(button)
+
+        return layout
 
     def handle_header_context_menu(self, column_index: int) -> None:
         """Handle the header context menu signal.
@@ -691,92 +721,142 @@ class DBWidget(QtWidgets.QMainWindow):
             None
         """
         self.add_relation_column_menu.clear()
-        if not self.current_table or not self.db_manager:
-            QtWidgets.QMessageBox.warning(self, "Error", "No table selected or database not loaded.")
+        self.add_relation_column_menu.setDisabled(True)
+
+        if not self._validate_table_selection():
             return
 
-        # Get foreign key information for the current table
-        foreign_keys = self.db_manager.get_foreign_keys(self.current_table)
+        # Determine the current table based on the selected column's header
+        tree_column_name = self.tree_data_widget.column_names[column_index]
+
+        # Check if the column header includes a related table
+        if '.' in tree_column_name:
+            # The column represents a relation, split to get the table name
+            current_table, column_name = tree_column_name.split('.')
+        else:
+            # Use the original current table
+            current_table = self.current_table
+            column_name = tree_column_name
+
+        # Get foreign key information for the determined table
+        foreign_keys = self.db_manager.get_foreign_keys(current_table)
 
         # Check if the selected column has a foreign key relation
-        related_fk = next((fk for fk in foreign_keys if fk.from_column == self.column_names[column_index]), None)
+        related_fk = next(
+            (fk for fk in foreign_keys if fk.from_column == column_name),
+            None
+        )
 
         if not related_fk:
-            QtWidgets.QMessageBox.information(self, "No Foreign Key", "The selected column has no foreign key relation.")
             return
 
         # Retrieve related table and field from the foreign key data
         related_table = related_fk.table
-        related_field = related_fk.to_column
+        current_foreign_key_field = related_fk.from_column
+        related_primary_key_field = related_fk.to_column
 
         # Retrieve fields from the related table
-        related_fields = self.db_manager.get_table_info(related_table)
-        related_field_names = [field[1] for field in related_fields]
+        related_field_names = [
+            field[1] for field in self.db_manager.get_table_info(related_table)
+        ]
 
         # Create a menu action for each foreign key relation
         for related_field_name in related_field_names[1:]:
             action = QtWidgets.QAction(f"{related_table} ({related_field_name})", self)
-            action.triggered.connect(lambda _, tbl=related_table, col=related_field_name: self.add_relation_column(tbl, col))
+
+            # Pass the correct arguments to add_relation_column
+            action.triggered.connect(
+                lambda: self.add_relation_column(current_table, related_table, related_field_name, current_foreign_key_field, related_primary_key_field)
+            )
 
             self.add_relation_column_menu.addAction(action)
 
-    def add_relation_column(self, related_table: str, related_column: str) -> None:
+        self.add_relation_column_menu.setEnabled(True)
+
+    def add_relation_column(self, current_table: str, related_table: str, related_column: str, current_foreign_key_field: str, related_primary_key_field: str):
         """Add a relation column to the tree widget.
 
         Args:
+            current_table (str): The table from which the relation is originating.
             related_table (str): The name of the related table to join.
             related_column (str): The column from the related table to display.
-
-        Returns:
-            None
+            current_foreign_key_field (str): The foreign key field in the current table.
+            related_primary_key_field (str): The primary key field in the related table.
         """
-        if not self.current_table or not self.db_manager:
-            QtWidgets.QMessageBox.warning(self, "Error", "No table selected or database not loaded.")
+        if not self._validate_table_selection():
             return
 
         # Fetch data from the related table
         related_data, related_headers = self.db_manager.get_table_data(related_table)
+        current_column_names = self.tree_data_widget.column_names
+
+        if self.current_table != current_table:
+            _data, current_headers = self.db_manager.get_table_data(current_table)
+        else:
+            # Use the current headers from the tree widget
+            current_headers = current_column_names.copy()
+
+        # Check if the related column header already exists
+        new_column_name = f"{related_table}.{related_column}"
+        if new_column_name not in current_column_names:
+            current_column_names.append(new_column_name)
+            self.tree_data_widget.setHeaderLabels(current_column_names)
 
         # Fetch data from the current table
-        current_data, current_headers = self.db_manager.get_table_data(self.current_table)
-
-        # Identify the primary key and foreign key fields
-        foreign_keys = self.db_manager.get_foreign_keys(self.current_table)
-        related_fk = next((fk for fk in foreign_keys if fk.table == related_table and fk.to_column == related_column), None)
-
-        if not related_fk:
-            QtWidgets.QMessageBox.warning(self, "Error", f"No matching foreign key found for '{related_column}' in table '{related_table}'.")
-            return
-
-        current_foreign_key_field = related_fk.from_column  # The field in the current table
-        related_primary_key_field = related_fk.to_column    # The field in the related table
+        current_data, _ = self.db_manager.get_table_data(current_table)
 
         # Get the index of the foreign key in the current table and the primary key in the related table
         current_foreign_key_index = current_headers.index(current_foreign_key_field)
         related_primary_key_index = related_headers.index(related_primary_key_field)
         related_column_index = related_headers.index(related_column)
 
-        # Prepare the current headers with the new related column header
-        current_headers.append(f"{related_table}.{related_column}")
-        self.tree_data_widget.setHeaderLabels(current_headers)
+        # Calculate the index for the new related column
+        new_column_index = current_column_names.index(new_column_name)
 
         # Update the tree widget with the new column data
         for i, current_row in enumerate(current_data):
-            current_fk_value = current_row[current_foreign_key_index]
-            related_value = None
+            related_value = self._find_related_value(
+                current_row[current_foreign_key_index], related_data, related_primary_key_index, related_column_index
+            )
 
-            # Find the corresponding related value based on the foreign key
-            for related_row in related_data:
-                if related_row[related_primary_key_index] == current_fk_value:
-                    related_value = related_row[related_column_index]
-                    break
-
-            # Update the tree widget item
+            # TODO: Get items from appropriate depth as len(self.tree_data_widget.group_column_names)
+            # TODO: Fix bug missing data when group by some relation column
             item = self.tree_data_widget.topLevelItem(i)
             if item:
-                item.setText(len(current_headers) - 1, str(related_value) if related_value is not None else "")
+                item.setText(new_column_index, str(related_value) if related_value is not None else "")
+                item.setData(new_column_index, QtCore.Qt.ItemDataRole.UserRole,related_value)
 
-        QtWidgets.QMessageBox.information(self, "Success", f"Added relation column '{related_table}.{related_column}'.")
+    def _validate_table_selection(self) -> bool:
+        """Validate if a table and database manager are selected.
+
+        Returns:
+            bool: True if valid, False otherwise.
+        """
+        if not self.current_table:
+            QtWidgets.QMessageBox.information(self, "Error", "No table selected or database not loaded.")
+            return False
+        return True
+
+    def _find_related_value(self, current_fk_value, related_data, related_primary_key_index, related_column_index):
+        """Find the related value based on the foreign key.
+
+        Args:
+            current_fk_value: The foreign key value in the current row.
+            related_data: The data from the related table.
+            related_primary_key_index: The index of the primary key in the related table.
+            related_column_index: The index of the related column.
+
+        Returns:
+            The related value or None if not found.
+        """
+        return next(
+            (
+                related_row[related_column_index]
+                for related_row in related_data
+                if related_row[related_primary_key_index] == current_fk_value
+            ),
+            None,
+        )
 
     def open_database(self):
         db_name, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open Database", "", "SQLite Database Files (*.db *.sqlite)")

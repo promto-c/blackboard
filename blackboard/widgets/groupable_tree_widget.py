@@ -575,6 +575,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         # Disable 'Group by this column' on the first column
         self.group_by_action.setEnabled(bool(self._current_column_index))
+        if self.column_names[self._current_column_index] in self.grouped_column_names:
+            self.group_by_action.setEnabled(False)
 
         # Show the context menu
         self.header_menu.popup(QtGui.QCursor.pos())
