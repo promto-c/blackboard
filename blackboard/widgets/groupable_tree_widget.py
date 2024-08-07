@@ -402,6 +402,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
     ungrouped_all = QtCore.Signal()
     item_added = QtCore.Signal(TreeWidgetItem)
 
+    # Define the signal that emits the column index
+    about_to_show_header_menu = QtCore.Signal(int)
+
     # Initialization and Setup
     # ------------------------
     def __init__(self, parent: QtWidgets.QWidget = None):
@@ -566,6 +569,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         # Get the index of the column where the right click occurred
         self._current_column_index = self.header().logicalIndexAt(pos)
+
+        # Emit the custom signal with the column index
+        self.about_to_show_header_menu.emit(self._current_column_index)
 
         # Disable 'Group by this column' on the first column
         self.group_by_action.setEnabled(bool(self._current_column_index))
