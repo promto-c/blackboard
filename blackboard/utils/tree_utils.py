@@ -83,7 +83,7 @@ class TreeUtil:
         return items
 
     @classmethod
-    def show_all_items(cls, tree_widget: 'QtWidgets.QTreeWidget') -> None:
+    def show_all_items(cls, tree_widget: 'QtWidgets.QTreeWidget'):
         """Show all items in the QTreeWidget.
 
         Args:
@@ -92,7 +92,7 @@ class TreeUtil:
         cls.set_items_visibility([tree_widget.invisibleRootItem()], True)
 
     @classmethod
-    def hide_all_items(cls, tree_widget: 'QtWidgets.QTreeWidget') -> None:
+    def hide_all_items(cls, tree_widget: 'QtWidgets.QTreeWidget'):
         """Hide all items in the QTreeWidget.
 
         Args:
@@ -104,7 +104,7 @@ class TreeUtil:
     def set_items_visibility(cls, items: List[QtWidgets.QTreeWidgetItem],
                              is_visible: bool,
                              is_affect_parents: bool = True,
-                             is_affect_children: bool = True) -> None:
+                             is_affect_children: bool = True):
         """Set visibility of the specified items, along with their parents and children if desired.
 
         Args:
@@ -123,7 +123,7 @@ class TreeUtil:
                 cls.__set_children_visibility(item, is_visible)
 
     @staticmethod
-    def __set_parents_visibility(item: QtWidgets.QTreeWidgetItem, is_visible: bool) -> None:
+    def __set_parents_visibility(item: QtWidgets.QTreeWidgetItem, is_visible: bool):
         """Set visibility of all parent items of the given item.
 
         Args:
@@ -138,7 +138,7 @@ class TreeUtil:
             parent = parent.parent()
 
     @staticmethod
-    def __set_children_visibility(item: QtWidgets.QTreeWidgetItem, is_visible: bool) -> None:
+    def __set_children_visibility(item: QtWidgets.QTreeWidgetItem, is_visible: bool):
         """Set visibility of all child items of the given item.
 
         Args:
@@ -292,7 +292,7 @@ class TreeUtil:
         return [item for item in all_items if cls.get_child_level(item) == child_level]
 
     @classmethod
-    def fit_column_in_view(cls, tree_widget: 'QtWidgets.QTreeWidget') -> None:
+    def fit_column_in_view(cls, tree_widget: 'QtWidgets.QTreeWidget'):
         """Adjust the width of all columns to fit the entire view.
     
             This method resizes columns so that their sum is equal to the width of the view minus the width of the vertical scroll bar. 
@@ -317,7 +317,7 @@ class TreeUtil:
             column_width_sum -= tree_widget.columnWidth(largest_column) - new_width
 
     @staticmethod
-    def resize_all_to_contents(tree_widget: 'QtWidgets.QTreeWidget') -> None:
+    def resize_all_to_contents(tree_widget: 'QtWidgets.QTreeWidget'):
         """Resize all columns in the object to fit their contents.
         """
         # Iterate through all columns
@@ -436,7 +436,7 @@ class TreeItemUtil:
         return model_indexes
 
     @staticmethod
-    def remove_items(items: List['QtWidgets.QTreeWidgetItem']) -> None:
+    def remove_items(items: List['QtWidgets.QTreeWidgetItem']):
         """Remove the specified QTreeWidgetItem instances from their current parents.
 
         Args:
@@ -462,3 +462,170 @@ class TreeItemUtil:
         # Remove items from their current parents and add them to the new parent
         TreeItemUtil.remove_items(items)
         target_parent.addChildren(items)
+
+class ItemOverlay(QtCore.QObject):
+    """An overlay to add a hoverable widget to items in various item-based widgets.
+
+    This overlay allows you to add any widget (e.g., buttons, labels) to the right side of an item
+    in widgets like QTreeWidget, QListWidget, or QTableWidget when the mouse hovers over it.
+
+    Attributes:
+        hover_widget (QtWidgets.QWidget): The widget that appears on hover.
+        parent_widget (QtWidgets.QAbstractItemView): The widget to which this overlay is applied.
+        current_item (QtWidgets.QTreeWidgetItem or QtWidgets.QListWidgetItem or QtWidgets.QTableWidgetItem):
+            The item currently hovered by the mouse.
+    """
+
+    def __init__(self, hover_widget: QtWidgets.QWidget):
+        """Initialize the ItemOverlay with the specified hover widget.
+
+        Args:
+            hover_widget (QtWidgets.QWidget): The widget to display when hovering over an item.
+        """
+        super().__init__(hover_widget)
+        self.hover_widget = hover_widget
+        self.parent_widget: QtWidgets.QAbstractItemView = None
+        self._current_item = None
+
+        self.hover_widget.hide()
+
+    def register_to(self, parent_widget: QtWidgets.QAbstractItemView):
+        """Register the overlay to the specified item-based widget.
+
+        Args:
+            parent_widget (QtWidgets.QAbstractItemView): The widget to enhance with a hoverable widget.
+        """
+        self.parent_widget = parent_widget
+        self.parent_widget.setMouseTracking(True)
+        self.parent_widget.viewport().installEventFilter(self)
+        self.hover_widget.setParent(self.parent_widget)
+
+    def handle_mouse_move(self, event: QtGui.QMouseEvent):
+        """Handle the mouse move event to show the hover widget on the hovered item.
+
+        Args:
+            event (QtGui.QMouseEvent): The mouse move event.
+        """
+        try:
+            item = self.parent_widget.itemAt(event.pos())
+        except:
+            item = self.parent_widget.indexAt(event.pos())
+
+        if item == self._current_item:
+            return
+
+        self.hover_widget.hide()
+        if item:
+            self.show_hover_widget(item)
+        self._current_item = item
+
+    def handle_leave_event(self, event: QtCore.QEvent):
+        """Handle the leave event to hide the hover widget when the mouse leaves the parent widget.
+
+        Args:
+            event (QtCore.QEvent): The leave event.
+        """
+        # Ensure that the mouse isn't over the hover widget before hiding it
+        mouse_pos = self.parent_widget.mapFromGlobal(QtGui.QCursor.pos())
+        if not self.hover_widget.geometry().contains(mouse_pos):
+            self.hover_widget.hide()
+            self._current_item = None
+
+    def show_hover_widget(self, item):
+        """Show the hover widget at the right edge of the hovered item.
+
+        Args:
+            item: The item currently hovered by the mouse.
+        """
+        if isinstance(item, QtCore.QModelIndex):
+            item_rect = self.parent_widget.visualRect(item)
+        else:
+            item_rect = self.parent_widget.visualItemRect(item)
+
+        # Adjust for header height if needed
+        header_offset = 0
+        if isinstance(self.parent_widget, QtWidgets.QTreeView):
+            header_offset = self.parent_widget.header().height()
+        elif isinstance(self.parent_widget, QtWidgets.QTableView):
+            header_offset = self.parent_widget.horizontalHeader().height()
+
+        item_rect.moveTop(item_rect.top() + header_offset)
+        self.hover_widget.move(item_rect.right() - self.hover_widget.width(), item_rect.top())
+        self.hover_widget.show()
+
+    @property
+    def current_item(self):
+        """Return the item currently being hovered over by the mouse.
+
+        Returns:
+            The currently hovered item.
+        """
+        return self._current_item
+
+    def eventFilter(self, source: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        """Filter events for the parent widget's viewport to handle mouse movements and leave events.
+
+        Args:
+            source (QtCore.QObject): The source object of the event.
+            event (QtCore.QEvent): The event to be filtered.
+
+        Returns:
+            bool: True if the event was handled, False otherwise.
+        """
+        if event.type() == QtCore.QEvent.Type.MouseMove and source is self.parent_widget.viewport():
+            self.handle_mouse_move(event)
+        elif event.type() == QtCore.QEvent.Type.Leave and source is self.parent_widget.viewport():
+            self.handle_leave_event(event)
+        return super().eventFilter(source, event)
+
+
+if __name__ == "__main__":
+    import sys
+
+    def handle_button_click():
+        item = overlay.current_item
+        if item:
+            print(f"Item clicked: {item.text(0)}")
+
+    app = QtWidgets.QApplication(sys.argv)
+
+    # Example using QTreeWidget
+    tree_widget = QtWidgets.QTreeWidget()
+    tree_widget.setColumnCount(2)
+    tree_widget.setHeaderHidden(True)
+    for i in range(5):
+        item = QtWidgets.QTreeWidgetItem(tree_widget)
+        item.setText(0, f"Tree Item {i + 1}")
+        item.setText(1, f"Tree Item {i + 1}")
+
+    # Example using QListWidget
+    list_widget = QtWidgets.QListWidget()
+    for i in range(5):
+        item = QtWidgets.QListWidgetItem(f"List Item {i + 1}")
+        list_widget.addItem(item)
+
+    # Example using QTableWidget
+    table_widget = QtWidgets.QTableWidget(5, 1)
+    for i in range(5):
+        item = QtWidgets.QTableWidgetItem(f"Table Item {i + 1}")
+        table_widget.setItem(i, 0, item)
+        table_widget.setItem(i, 1, item)
+
+    # Create a hover button
+    hover_button = QtWidgets.QPushButton("X")
+    hover_button.setStyleSheet("background-color: none; border: none;")
+    hover_button.setFixedSize(20, 20)
+
+    # Apply the ItemOverlay to different widgets
+    overlay = ItemOverlay(hover_button)
+    overlay.register_to(tree_widget)
+    # overlay.register_to(list_widget)
+    # overlay.register_to(table_widget)
+    hover_button.clicked.connect(handle_button_click)
+
+    # Display the widgets (choose one to display)
+    tree_widget.show()
+    # list_widget.show()
+    # table_widget.show()
+
+    sys.exit(app.exec_())

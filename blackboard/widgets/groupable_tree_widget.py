@@ -22,7 +22,7 @@ from blackboard import widgets
 from blackboard.widgets.header_view import SearchableHeaderView
 from blackboard.utils.thread_pool import ThreadPoolManager, GeneratorWorker
 from blackboard.utils.tree_utils import TreeUtil, TreeItemUtil
-from blackboard.widgets.animate_button import DataFetchingButtons
+from blackboard.widgets.button import DataFetchingButtons
 from blackboard.widgets.menu import ContextMenu
 
 
@@ -57,7 +57,6 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         if isinstance(item_data, dict):
             # Get the column names from the header item
             column_names = TreeUtil.get_column_names(parent)
-            item_data['id'] = item_id
 
             # Create a list of data for the tree item
             item_data_list = [item_data.get(column, '') for column in column_names]
@@ -83,34 +82,36 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
 
     # Extended Methods
     # ----------------
-    def get_value(self, column: Union[int, str]) -> Any:
-        """Get the value of the item's UserRole data for the given column.
+    def get_value(self, column: Union[int, str], data_role: QtCore.Qt.ItemDataRole = QtCore.Qt.ItemDataRole.UserRole) -> Any:
+        """Get the value of the item's data for the given column and role.
 
         Args:
             column (Union[int, str]): The column index or name.
+            data_role (QtCore.Qt.ItemDataRole, optional): The role of the data to retrieve. Defaults to UserRole.
 
         Returns:
-            Any: The value of the UserRole data.
+            Any: The value of the specified role data.
         """
         # Get the column index from the column name if necessary
         column_index = self.treeWidget().get_column_index(column) if isinstance(column, str) else column
 
-        # Get the UserRole or DisplayRole data for the column
-        value = self.data(column_index, QtCore.Qt.ItemDataRole.UserRole) or self.data(column_index, QtCore.Qt.ItemDataRole.DisplayRole)
+        # Get the data for the specified role and column
+        value = self.data(column_index, data_role) or self.data(column_index, QtCore.Qt.ItemDataRole.DisplayRole)
 
         return value
 
     def set_value(self, column: Union[int, str], value: Any, data_role: QtCore.Qt.ItemDataRole = None):
-        """Set the value of the item's UserRole data for the given column.
+        """Set the value of the item's data for the given column and role.
 
         Args:
             column (Union[int, str]): The column index or name.
             value (Any): The value to set.
+            data_role (QtCore.Qt.ItemDataRole, optional): The role of the data to set. Defaults to UserRole.
         """
         # Get the column index from the column name if necessary
         column_index = self.treeWidget().get_column_index(column) if isinstance(column, str) else column
 
-        # Set the value for the column in the UserRole data
+        # Set the value for the specified role and column
         if data_role is None:
             self.setData(column_index, QtCore.Qt.ItemDataRole.UserRole, value)
             self.setData(column_index, QtCore.Qt.ItemDataRole.DisplayRole, str(value))
@@ -147,15 +148,6 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         self_data = self.get_value(column)
         other_data = other_item.get_value(column)
 
-        # If the UserRole data is None, fallback to DisplayRole data
-        if other_data is None:
-            # Get the DisplayRole data for the column of the other item
-            other_data = other_item.data(column, QtCore.Qt.ItemDataRole.DisplayRole)
-
-        # If both UserRole data are None, compare their texts
-        if self_data is None and other_data is None:
-            return self.text(column) < other_item.text(column)
-
         # If this item's UserRole data is None, it is considered greater
         if self_data is None:
             return True
@@ -165,7 +157,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
             return False
 
         try:
-            # Try to compare the UserRole data directly
+            # Try to compare data directly
             return self_data < other_data
         except TypeError:
             # If the comparison fails, compare their string representations

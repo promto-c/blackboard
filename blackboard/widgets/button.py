@@ -1,6 +1,7 @@
 from qtpy import QtCore, QtGui, QtWidgets
 from tablerqicon import TablerQIcon
 
+from blackboard.utils.tree_utils import ItemOverlay
 
 class AnimatedButton(QtWidgets.QPushButton):
     entered = QtCore.Signal()
@@ -268,6 +269,117 @@ class DataFetchingButtons(QtWidgets.QWidget):
         """
         self.fetch_all_button.collapse()
         self.fetch_more_button.expand()
+
+class InlineConfirmButton(QtWidgets.QWidget):
+
+    # Initialization and Setup
+    # ------------------------
+    def __init__(self, button_text: str = '⨉', confirm_button_text: str = 'Delete', cancel_button_text: str = 'Cancel', parent=None):
+        super().__init__(parent)
+
+        # Store the arguments
+        self.button_text = button_text
+        self.confirm_button_text = confirm_button_text
+        self.cancel_button_text = cancel_button_text
+
+        # Initialize setup
+        self.__init_attributes()
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_attributes(self):
+        """Initialize attributes for the widget.
+        """
+        self._is_buttons_visible = False
+        self._button_size = QtCore.QSize(0, 0)
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        self.setStyleSheet('''
+            QPushButton {
+                background-color: #222;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #444;
+            }
+        ''')
+
+        # Create Layouts
+        # --------------
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 16)
+        layout.addStretch()
+        layout.setSpacing(4)
+
+        # Create Widgets
+        # --------------
+        self.x_button = QtWidgets.QPushButton(self.button_text)
+        self.confirm_button = QtWidgets.QPushButton(self.confirm_button_text)
+        self.cancel_button = QtWidgets.QPushButton(self.cancel_button_text)
+
+        self.confirm_button.setStyleSheet('''
+            QPushButton {
+                color: #D66;
+                padding: 1 2 1 4;
+            }
+            QPushButton:hover {
+                color: #E44;
+            }
+        ''')
+
+        confirm_size = self.confirm_button.sizeHint()
+        cancel_size = self.cancel_button.sizeHint()
+        self._button_size = confirm_size + cancel_size
+        self.confirm_button.setVisible(False)  # Initially hidden
+        self.cancel_button.setVisible(False)  # Initially hidden
+
+        # Add Widgets to Layouts
+        # ----------------------
+        layout.addWidget(self.x_button)
+        layout.addWidget(self.confirm_button)
+        layout.addWidget(self.cancel_button)
+
+    def __init_signal_connections(self):
+        """Connect signals to slots.
+        """
+        self.x_button.clicked.connect(self.__toggle_buttons)
+        self.cancel_button.clicked.connect(self.__toggle_buttons)
+
+        self.installEventFilter(self)
+
+    def __toggle_buttons(self):
+        """Toggle the visibility of the confirm and cancel buttons.
+        """
+        self._is_buttons_visible = not self._is_buttons_visible
+        self.x_button.setVisible(not self._is_buttons_visible)
+        self.confirm_button.setVisible(self._is_buttons_visible)
+        self.cancel_button.setVisible(self._is_buttons_visible)
+
+    def sizeHint(self) -> QtCore.QSize:
+        """Provide a size hint for the widget based on the visibility of buttons.
+        """
+        return self._button_size
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        """Event filter to detect movement or focus change.
+        """
+        if event.type() == QtCore.QEvent.WindowDeactivate or event.type() == QtCore.QEvent.Move:
+            if self._is_buttons_visible:
+                self.__toggle_buttons()
+        
+        return super().eventFilter(obj, event)
+
+class ItemOverlayButton(ItemOverlay):
+
+    triggered = QtCore.Signal(object)
+
+    def __init__(self, button_text: str = '⨉', confirm_button_text: str = 'Delete', cancel_button_text: str = 'Cancel', parent=None):
+        self.button = InlineConfirmButton(button_text=button_text, confirm_button_text=confirm_button_text, cancel_button_text=cancel_button_text, parent=parent)
+        super().__init__(self.button)
+
+        self.button.confirm_button.clicked.connect(lambda :self.triggered.emit(self.current_item))
 
 
 if __name__ == "__main__":
