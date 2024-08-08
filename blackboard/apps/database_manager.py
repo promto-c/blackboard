@@ -41,7 +41,73 @@ class DatabaseManager:
         self.db_name = db_name
         self.connection = sqlite3.connect(db_name)
         self.cursor = self.connection.cursor()
+        self.create_metadata_table()
 
+    def create_metadata_table(self):
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS metadata (
+                id INTEGER PRIMARY KEY,
+                table_name TEXT NOT NULL,
+                column_name TEXT NOT NULL,
+                is_enum BOOLEAN NOT NULL,
+                enum_table_name TEXT,
+                description TEXT
+            );
+        ''')
+        self.connection.commit()
+
+    def add_enum_metadata(self, table_name: str, column_name: str, enum_table_name: str, description: str = ""):
+        self.cursor.execute('''
+            INSERT INTO metadata (table_name, column_name, is_enum, enum_table_name, description)
+            VALUES (?, ?, 1, ?, ?);
+        ''', (table_name, column_name, enum_table_name, description))
+        self.connection.commit()
+
+    def is_enum_field(self, table_name: str, column_name: str) -> bool:
+        self.cursor.execute('''
+            SELECT is_enum
+            FROM metadata
+            WHERE table_name = ? AND column_name = ?;
+        ''', (table_name, column_name))
+        result = self.cursor.fetchone()
+        return result is not None and result[0] == 1
+
+    def get_enum_table_name(self, table_name: str, column_name: str) -> str:
+        self.cursor.execute('''
+            SELECT enum_table_name
+            FROM metadata
+            WHERE table_name = ? AND column_name = ?;
+        ''', (table_name, column_name))
+        result = self.cursor.fetchone()
+        return result[0] if result else None
+
+    def get_enum_values(self, enum_table_name: str) -> List[str]:
+        """Retrieve all values from an enum table.
+
+        Args:
+            enum_table_name (str): The name of the enum table.
+
+        Returns:
+            List[str]: A list of enum values.
+
+        Raises:
+            sqlite3.Error: If there is an error executing the SQL command.
+        """
+        self.cursor.execute(f"SELECT value FROM {enum_table_name}")
+        return [row[0] for row in self.cursor.fetchall()]
+
+    def create_enum_table(self, enum_name: str, values: List[str]) -> None:
+        if not enum_name.isidentifier():
+            raise ValueError("Invalid enum name")
+
+        table_name = f"enum_{enum_name}"
+        self.cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT UNIQUE)")
+
+        # Insert enum values
+        for value in values:
+            self.cursor.execute(f"INSERT OR IGNORE INTO {table_name} (value) VALUES (?)", (value,))
+
+        self.connection.commit()
     def create_table(self, table_name: str, fields: Dict[str, str]) -> None:
         """Create a new table in the database with specified fields.
 
@@ -158,6 +224,7 @@ class DatabaseManager:
             self.create_enum_table(field_name, enum_values)
             field_type = "INTEGER"
             foreign_key = f"{enum_table_name}(id)"
+            self.add_enum_metadata(table_name, field_name, enum_table_name)
 
         self.cursor.execute(f"PRAGMA table_info({table_name})")
         columns = self.cursor.fetchall()
@@ -434,9 +501,9 @@ class AddTableDialog(QtWidgets.QDialog):
     def add_field(self):
         dialog = AddFieldDialog(self)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            field_name, field_definition, foreign_key, enum_values = dialog.get_field_data()
+            field_name, field_definition, enum_values = dialog.get_field_data()
             if field_name and field_definition:
-                self.fields.append((field_name, field_definition, foreign_key, enum_values))
+                self.fields.append((field_name, field_definition, enum_values))
                 field_label = QtWidgets.QLabel(f"{field_name} {field_definition}")
                 self.fields_layout.addWidget(field_label)
 
@@ -714,12 +781,14 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         self.inputs = {}
         self.auto_increment_fields = []
 
+        self.db_manager = parent.db_manager  # Reference to DatabaseManager for enum values
+
         for field, field_type in zip(fields, types):
             if field == 'rowid':
                 continue  # Skip the 'rowid' field
 
             label = QtWidgets.QLabel(field)
-            input_widget = self.create_input_widget(field_type)
+            input_widget = self.create_input_widget(field, field_type)
             self.layout.addWidget(label)
             self.layout.addWidget(input_widget)
             self.inputs[field] = input_widget
@@ -736,7 +805,14 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         self.submit_button.clicked.connect(self.accept)
         self.layout.addWidget(self.submit_button)
 
-    def create_input_widget(self, field_type):
+    def create_input_widget(self, field, field_type):
+        if self.db_manager.is_enum_field(self.parent().current_table, field):
+            enum_table_name = self.db_manager.get_enum_table_name(self.parent().current_table, field)
+            enum_values = self.db_manager.get_enum_values(enum_table_name)
+            widget = QtWidgets.QComboBox()
+            widget.addItems(enum_values)
+            return widget
+
         if "INTEGER" in field_type and "PRIMARY KEY" not in field_type:
             widget = QtWidgets.QSpinBox()
             widget.setRange(-2147483648, 2147483647)  # Set the range for typical 32-bit integers
@@ -772,7 +848,11 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             line_edit.setText(file_name)
 
     def set_input_value(self, input_widget, value):
-        if isinstance(input_widget, QtWidgets.QSpinBox) or isinstance(input_widget, QtWidgets.QDoubleSpinBox):
+        if isinstance(input_widget, QtWidgets.QComboBox):
+            index = input_widget.findText(value)
+            if index != -1:
+                input_widget.setCurrentIndex(index)
+        elif isinstance(input_widget, QtWidgets.QSpinBox) or isinstance(input_widget, QtWidgets.QDoubleSpinBox):
             if value is None or value == "None":
                 input_widget.clear()
             else:
@@ -790,6 +870,8 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         return {field: self.get_input_value(input_widget) for field, input_widget in self.inputs.items()}
 
     def get_input_value(self, input_widget):
+        if isinstance(input_widget, QtWidgets.QComboBox):
+            return input_widget.currentText()
         if isinstance(input_widget, QtWidgets.QSpinBox) or isinstance(input_widget, QtWidgets.QDoubleSpinBox):
             return input_widget.value() if input_widget.value() != input_widget.minimum() else None
         elif isinstance(input_widget, QtWidgets.QLineEdit):
@@ -1203,7 +1285,7 @@ class DBWidget(QtWidgets.QMainWindow):
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             table_name, fields = dialog.get_table_data()
             if table_name and fields:
-                fields_dict = dict(fields)
+                fields_dict = {field[0]: field[1] for field in fields}
                 self.db_manager.create_table(table_name, fields_dict)
                 self.load_table_names()
             else:
