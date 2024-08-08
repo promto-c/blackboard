@@ -711,22 +711,26 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         self.layout = QtWidgets.QVBoxLayout(self)
 
         self.fields = fields
-        self.inputs = []
+        self.inputs = {}
         self.auto_increment_fields = []
 
         for field, field_type in zip(fields, types):
+            if field == 'rowid':
+                continue  # Skip the 'rowid' field
+
             label = QtWidgets.QLabel(field)
             input_widget = self.create_input_widget(field_type)
             self.layout.addWidget(label)
             self.layout.addWidget(input_widget)
-            self.inputs.append(input_widget)
+            self.inputs[field] = input_widget
             if "INTEGER PRIMARY KEY" in field_type:
                 input_widget.setDisabled(True)
                 self.auto_increment_fields.append(field)
 
         if record:
-            for i, value in enumerate(record):
-                self.set_input_value(self.inputs[i], value)
+            for field, value in record.items():
+                if field != 'rowid':
+                    self.set_input_value(self.inputs[field], value)
 
         self.submit_button = QtWidgets.QPushButton("Submit")
         self.submit_button.clicked.connect(self.accept)
@@ -783,7 +787,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
                 line_edit.setText("" if value is None else str(value))
 
     def get_record_data(self):
-        return [self.get_input_value(input_field) for input_field in self.inputs]
+        return {field: self.get_input_value(input_widget) for field, input_widget in self.inputs.items()}
 
     def get_input_value(self, input_widget):
         if isinstance(input_widget, QtWidgets.QSpinBox) or isinstance(input_widget, QtWidgets.QDoubleSpinBox):
@@ -1207,16 +1211,19 @@ class DBWidget(QtWidgets.QMainWindow):
 
     def edit_record(self, item, column):
         if self.current_table:
-            row_data = [item.text(col) for col in range(len(self.column_names))]
+            # Fetching row data and mapping it to column names
+            row_data = {self.tree_data_widget.headerItem().text(col): item.text(col) for col in range(self.tree_data_widget.columnCount())}
             dialog = AddEditRecordDialog(self.column_names, self.column_types, row_data, self)
             if dialog.exec_() == QtWidgets.QDialog.Accepted:
                 new_values = dialog.get_record_data()
-                if all(new_values):
-                    rowid = int(item.text(0))  # Assuming the first column is the rowid
-                    self.db_manager.update_record(self.current_table, self.column_names, new_values, rowid)
+                not_null_fields = [field for field, column in zip(self.column_names, self.column_types) if "NOT NULL" in column]
+
+                if all(new_values.get(field) is not None for field in not_null_fields):
+                    rowid = int(row_data['rowid'])  # Fetch rowid from row_data
+                    self.db_manager.update_record(self.current_table, self.column_names, [new_values.get(field) for field in self.column_names], rowid)
                     self.load_table_data()
                 else:
-                    QtWidgets.QMessageBox.warning(self, "Error", "Please fill in all fields.")
+                    QtWidgets.QMessageBox.warning(self, "Error", "Please fill in all required fields.")
         else:
             QtWidgets.QMessageBox.warning(self, "Error", "Please select a table first.")
 
