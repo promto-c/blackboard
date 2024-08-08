@@ -19,6 +19,15 @@ class ForeignKey:
     on_update: str      # The action on update (e.g., "CASCADE", "RESTRICT")
     on_delete: str      # The action on delete (e.g., "CASCADE", "RESTRICT")
 
+@dataclass
+class ColumnInfo:
+    cid: int
+    name: str
+    type: str
+    notnull: int
+    dflt_value: str
+    pk: int
+
 class DatabaseManager:
     def __init__(self, db_name: str):
         """Initialize a DatabaseManager instance to interact with a SQLite database.
@@ -51,14 +60,14 @@ class DatabaseManager:
         self.cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({fields_str})")
         self.connection.commit()
 
-    def get_table_info(self, table_name: str) -> List[Tuple]:
+    def get_table_info(self, table_name: str) -> List[ColumnInfo]:
         """Retrieve information about the columns of a specified table.
 
         Args:
             table_name (str): The name of the table to retrieve information from.
 
         Returns:
-            List[Tuple]: A list of tuples, each representing a column in the table.
+            List[ColumnInfo]: A list of ColumnInfo dataclass instances, each representing a column in the table.
 
         Raises:
             ValueError: If the table name is not a valid Python identifier.
@@ -68,7 +77,28 @@ class DatabaseManager:
             raise ValueError("Invalid table name")
 
         self.cursor.execute(f"PRAGMA table_info({table_name})")
-        return self.cursor.fetchall()
+        columns = self.cursor.fetchall()
+        return [ColumnInfo(*col) for col in columns]
+
+    def get_field_names(self, table_name: str) -> List[str]:
+        """Retrieve the names of the fields (columns) in a specified table.
+
+        Args:
+            table_name (str): The name of the table to retrieve field names from.
+
+        Returns:
+            List[str]: A list of field names in the specified table.
+
+        Raises:
+            ValueError: If the table name is not a valid Python identifier.
+            sqlite3.Error: If there is an error executing the SQL command.
+        """
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
+
+        self.cursor.execute(f"PRAGMA table_info({table_name})")
+        columns = self.cursor.fetchall()
+        return [column[1] for column in columns]
 
     def get_foreign_keys(self, table_name: str) -> List[ForeignKey]:
         """Retrieve the foreign keys of a specified table.
@@ -469,9 +499,9 @@ class AddRelationDialog(QtWidgets.QDialog):
     def update_fields(self):
         selected_table = self.table_dropdown.currentText()
         if selected_table:
-            fields = self.parent().db_manager.get_table_info(selected_table)
+            field_names = self.parent().db_manager.get_field_names(selected_table)
             self.field_dropdown.clear()
-            self.field_dropdown.addItems([field[1] for field in fields])
+            self.field_dropdown.addItems(field_names)
 
     def get_relation_data(self):
         return self.table_dropdown.currentText(), self.field_dropdown.currentText()
@@ -665,6 +695,7 @@ class DBWidget(QtWidgets.QMainWindow):
         self.db_size_label, self.db_size_display = self.create_label_pair("Size:")
 
         self.open_db_button = self.create_action_button("Open Database", self.open_database)
+        self.create_db_button = self.create_action_button("Create Database", self.create_database)
         self.tables_list = QtWidgets.QListWidget()
         self.tables_list.currentItemChanged.connect(self.load_table_info)
         self.columns_list = QtWidgets.QListWidget()
@@ -688,6 +719,7 @@ class DBWidget(QtWidgets.QMainWindow):
     def setup_left_layout(self, layout):
         """Add widgets to the left layout."""
         layout.addWidget(self.open_db_button)
+        layout.addWidget(self.create_db_button)
 
         layout.addWidget(self.db_name_label)
         layout.addWidget(self.db_name_display)
@@ -723,7 +755,7 @@ class DBWidget(QtWidgets.QMainWindow):
         self.add_relation_column_menu.clear()
         self.add_relation_column_menu.setDisabled(True)
 
-        if not self._validate_table_selection():
+        if not self.current_table:
             return
 
         # Determine the current table based on the selected column's header
@@ -756,13 +788,11 @@ class DBWidget(QtWidgets.QMainWindow):
         related_primary_key_field = related_fk.to_column
 
         # Retrieve fields from the related table
-        related_field_names = [
-            field[1] for field in self.db_manager.get_table_info(related_table)
-        ]
+        related_field_names = self.db_manager.get_field_names(related_table)
 
         # Create a menu action for each foreign key relation
         for related_field_name in related_field_names[1:]:
-            action = QtWidgets.QAction(f"{related_table} ({related_field_name})", self)
+            action = QtWidgets.QAction(f"{related_table}.{related_field_name}", self)
 
             # Pass the correct arguments to add_relation_column
             action.triggered.connect(
@@ -783,9 +813,6 @@ class DBWidget(QtWidgets.QMainWindow):
             current_foreign_key_field (str): The foreign key field in the current table.
             related_primary_key_field (str): The primary key field in the related table.
         """
-        if not self._validate_table_selection():
-            return
-
         # Fetch data from the related table
         related_data, related_headers = self.db_manager.get_table_data(related_table)
         current_column_names = self.tree_data_widget.column_names
@@ -824,18 +851,7 @@ class DBWidget(QtWidgets.QMainWindow):
             item = self.tree_data_widget.topLevelItem(i)
             if item:
                 item.setText(new_column_index, str(related_value) if related_value is not None else "")
-                item.setData(new_column_index, QtCore.Qt.ItemDataRole.UserRole,related_value)
-
-    def _validate_table_selection(self) -> bool:
-        """Validate if a table and database manager are selected.
-
-        Returns:
-            bool: True if valid, False otherwise.
-        """
-        if not self.current_table:
-            QtWidgets.QMessageBox.information(self, "Error", "No table selected or database not loaded.")
-            return False
-        return True
+                item.setData(new_column_index, QtCore.Qt.ItemDataRole.UserRole, related_value)
 
     def _find_related_value(self, current_fk_value, related_data, related_primary_key_index, related_column_index):
         """Find the related value based on the foreign key.
@@ -867,6 +883,20 @@ class DBWidget(QtWidgets.QMainWindow):
             self.db_size_display.setText(f"{self.db_manager.get_database_size()} bytes")
             self.load_table_names()
 
+    def create_database(self):
+        db_name, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Create Database", "", "SQLite Database Files (*.db *.sqlite)")
+        if db_name:
+            # Ensure the database file does not already exist
+            if not os.path.exists(db_name):
+                self.db_manager = DatabaseManager(db_name)
+                open(db_name, 'w').close()  # Create an empty file
+                self.db_name_display.setText(os.path.basename(db_name))
+                self.db_path_display.setText(db_name)
+                self.db_size_display.setText(f"{self.db_manager.get_database_size()} bytes")
+                self.load_table_names()
+            else:
+                QtWidgets.QMessageBox.warning(self, "Error", "Database file already exists.")
+
     def load_table_names(self):
         if self.db_manager:
             tables = self.db_manager.get_table_names()
@@ -896,13 +926,13 @@ class DBWidget(QtWidgets.QMainWindow):
             column_types = []
 
             for column in columns:
-                column_names.append(column[1])
-                column_types.append(column[2])
-                column_definition = f"{column[1]} {column[2]} {column[3] and 'NOT NULL' or ''} {column[5] and 'PRIMARY KEY' or ''}".strip()
+                column_names.append(column.name)
+                column_types.append(column.type)
+                column_definition = f"{column.name} {column.type} {'NOT NULL' if column.notnull else ''} {'PRIMARY KEY' if column.pk else ''}".strip()
                 
                 # Check for foreign key constraints
                 for fk in foreign_keys:
-                    if fk.from_column == column[1]:
+                    if fk.from_column == column.name:
                         column_definition += f" (FK to {fk.table}({fk.to_column}))"
                 
                 self.columns_list.addItem(column_definition)
