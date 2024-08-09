@@ -63,19 +63,24 @@ class DatabaseManager:
         ''', (table_name, column_name, enum_table_name, description))
         self.connection.commit()
 
+    def get_existing_enum_tables(self):
+        """Get a list of existing enum tables."""
+        self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'enum_%'")
+        return [row[0] for row in self.cursor.fetchall()]
+
     def is_enum_field(self, table_name: str, column_name: str) -> bool:
+        """Check if a field is an enum based on metadata."""
         self.cursor.execute('''
-            SELECT is_enum
-            FROM metadata
+            SELECT is_enum FROM metadata
             WHERE table_name = ? AND column_name = ?;
         ''', (table_name, column_name))
         result = self.cursor.fetchone()
         return result is not None and result[0] == 1
 
-    def get_enum_table_name(self, table_name: str, column_name: str) -> str:
+    def get_enum_table_name(self, table_name: str, column_name: str) -> Optional[str]:
+        """Retrieve the name of the enum table associated with a given field."""
         self.cursor.execute('''
-            SELECT enum_table_name
-            FROM metadata
+            SELECT enum_table_name FROM metadata
             WHERE table_name = ? AND column_name = ?;
         ''', (table_name, column_name))
         result = self.cursor.fetchone()
@@ -202,7 +207,7 @@ class DatabaseManager:
             for fk in foreign_keys
         ]
 
-    def add_column(self, table_name: str, field_name: str, field_type: str, foreign_key: Optional[str] = None, enum_values: Optional[List[str]] = None) -> None:
+    def add_column(self, table_name: str, field_name: str, field_type: str, foreign_key: Optional[str] = None, enum_values: Optional[List[str]] = None, enum_table: Optional[str] = None) -> None:
         """Add a new column to an existing table, optionally with a foreign key or enum constraint.
 
         Args:
@@ -211,6 +216,7 @@ class DatabaseManager:
             field_type (str): The data type of the new column.
             foreign_key (Optional[str]): A foreign key constraint in the form of "referenced_table(referenced_column)".
             enum_values (Optional[List[str]]): A list of enum values if the field is of enum type.
+            enum_table (Optional[str]): The name of an existing enum table if the field is an enum.
 
         Raises:
             ValueError: If the table name or field name is not a valid Python identifier.
@@ -221,12 +227,19 @@ class DatabaseManager:
 
         # Handle enum values if provided
         if enum_values:
+            # Create a new enum table and update the metadata
             enum_table_name = f"enum_{field_name}"
             self.create_enum_table(field_name, enum_values)
             field_type = "INTEGER"
             foreign_key = f"{enum_table_name}(id)"
             self.add_enum_metadata(table_name, field_name, enum_table_name)
+        elif enum_table:
+            # Use an existing enum table and update the metadata
+            field_type = "INTEGER"
+            foreign_key = f"{enum_table}(id)"
+            self.add_enum_metadata(table_name, field_name, enum_table)
 
+        # Update the table schema
         self.cursor.execute(f"PRAGMA table_info({table_name})")
         columns = self.cursor.fetchall()
 
@@ -236,7 +249,7 @@ class DatabaseManager:
         # Create a new table schema with the new column
         new_columns = []
         pk_columns = []
-        
+
         for col in columns:
             col_def = f"{col[1]} {col[2]}"
             if col[3]:  # NOT NULL constraint
@@ -244,18 +257,18 @@ class DatabaseManager:
             if col[5]:  # Primary key
                 pk_columns.append(col[1])
             new_columns.append(col_def)
-        
+
         # Add the new column definition
         new_columns.append(f"{field_name} {field_type}")
-        
+
         # Add primary key constraint if it exists
         if pk_columns:
             new_columns.append(f"PRIMARY KEY ({', '.join(pk_columns)})")
-        
+
         # Include existing foreign keys
         for fk in foreign_keys:
             new_columns.append(f"FOREIGN KEY({fk[3]}) REFERENCES {fk[2]}({fk[4]}) ON UPDATE {fk[5]} ON DELETE {fk[6]}")
-        
+
         if foreign_key:
             new_columns.append(f"FOREIGN KEY({field_name}) REFERENCES {foreign_key}")
 
@@ -273,6 +286,11 @@ class DatabaseManager:
         self.cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {table_name}")
 
         self.connection.commit()
+
+        # Update metadata for the new column
+        if enum_table or enum_values:
+            enum_table_name = enum_table if enum_table else enum_table_name
+            self.add_enum_metadata(table_name, field_name, enum_table_name)
 
     def delete_column(self, table_name: str, field_name: str) -> None:
         """Delete a column from a table by recreating the table without that column.
@@ -487,14 +505,15 @@ class DatabaseManager:
         raise ValueError(f"Field '{field_name}' not found in table '{table_name}'")
 
 class AddTableDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, db_manager: DatabaseManager, parent=None):
         super().__init__(parent)
+        self.db_manager = db_manager
         self.setWindowTitle("Add Table")
         self.layout = QtWidgets.QVBoxLayout(self)
 
         self.table_name_label = QtWidgets.QLabel("Table Name:")
         self.table_name_input = QtWidgets.QLineEdit()
-        
+
         self.fields = []
         self.fields_layout = QtWidgets.QVBoxLayout()
 
@@ -513,11 +532,19 @@ class AddTableDialog(QtWidgets.QDialog):
         self.setLayout(self.layout)
 
     def add_field(self):
-        dialog = AddFieldDialog(self)
+        dialog = AddFieldDialog(self.db_manager, self)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            field_name, field_definition, enum_values = dialog.get_field_data()
+            field_name, field_definition, enum_values, enum_table = dialog.get_field_data()
             if field_name and field_definition:
-                self.fields.append((field_name, field_definition, enum_values))
+                # If creating a new enum table, create it first
+                if enum_values:
+                    enum_table_name = f"enum_{field_name}"
+                    self.db_manager.create_enum_table(enum_table_name, enum_values)
+                    field_definition = f"INTEGER REFERENCES {enum_table_name}(id)"
+                elif enum_table:
+                    field_definition = f"INTEGER REFERENCES {enum_table}(id)"
+                
+                self.fields.append((field_name, field_definition))
                 field_label = QtWidgets.QLabel(f"{field_name} {field_definition}")
                 self.fields_layout.addWidget(field_label)
 
@@ -553,11 +580,11 @@ class AddFieldDialog(QtWidgets.QDialog):
     +--------------------------------------+
     """
 
-    def __init__(self, tables, parent=None):
+    def __init__(self, db_manager: DatabaseManager, parent=None):
         super().__init__(parent)
 
         # Store the arguments
-        self.tables = tables
+        self.db_manager = db_manager
 
         # Initialize setup
         self.__init_attributes()
@@ -567,7 +594,8 @@ class AddFieldDialog(QtWidgets.QDialog):
     def __init_attributes(self):
         """Initialize the attributes.
         """
-        self.enum_values = []
+        self.use_existing_enum = False
+        self.existing_enum_tables = self.db_manager.get_existing_enum_tables()
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -591,9 +619,14 @@ class AddFieldDialog(QtWidgets.QDialog):
         self.primary_key_checkbox = QtWidgets.QCheckBox("PRIMARY KEY")
         self.auto_increment_checkbox = QtWidgets.QCheckBox("AUTOINCREMENT")
 
+        self.enum_option_button = QtWidgets.QPushButton("Use Existing Enum Table")
         self.enum_values_label = QtWidgets.QLabel("Enum Values:")
         self.enum_values_list = QtWidgets.QListWidget()
         self.add_enum_value_button = QtWidgets.QPushButton("Add New Value")
+
+        self.existing_enum_label = QtWidgets.QLabel("Select Existing Enum Table:")
+        self.existing_enum_dropdown = QtWidgets.QComboBox()
+        self.existing_enum_dropdown.addItems(self.existing_enum_tables)
 
         self.add_button = QtWidgets.QPushButton("Add Field")
 
@@ -606,21 +639,23 @@ class AddFieldDialog(QtWidgets.QDialog):
         layout.addWidget(self.not_null_checkbox)
         layout.addWidget(self.primary_key_checkbox)
         layout.addWidget(self.auto_increment_checkbox)
+        layout.addWidget(self.enum_option_button)
         layout.addWidget(self.enum_values_label)
         layout.addWidget(self.enum_values_list)
         layout.addWidget(self.add_enum_value_button)
+        layout.addWidget(self.existing_enum_label)
+        layout.addWidget(self.existing_enum_dropdown)
         layout.addWidget(self.add_button)
 
-        # Hide Enum related widgets by default
-        self.enum_values_label.setVisible(False)
-        self.enum_values_list.setVisible(False)
-        self.add_enum_value_button.setVisible(False)
+        # Hide enum-related fields by default
+        self.toggle_enum_fields(False)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
         # Connect signals to slots
         self.field_type_dropdown.currentTextChanged.connect(self.toggle_enum_input)
+        self.enum_option_button.clicked.connect(self.toggle_enum_source)
         self.add_enum_value_button.clicked.connect(self.add_enum_value)
         self.add_button.clicked.connect(self.accept)
 
@@ -628,9 +663,23 @@ class AddFieldDialog(QtWidgets.QDialog):
     # --------------
     def toggle_enum_input(self, field_type):
         is_enum = field_type == "ENUM"
-        self.enum_values_label.setVisible(is_enum)
-        self.enum_values_list.setVisible(is_enum)
-        self.add_enum_value_button.setVisible(is_enum)
+        self.toggle_enum_fields(is_enum)
+
+    def toggle_enum_fields(self, visible):
+        self.enum_values_label.setVisible(visible and not self.use_existing_enum)
+        self.enum_values_list.setVisible(visible and not self.use_existing_enum)
+        self.add_enum_value_button.setVisible(visible and not self.use_existing_enum)
+        self.existing_enum_label.setVisible(visible and self.use_existing_enum)
+        self.existing_enum_dropdown.setVisible(visible and self.use_existing_enum)
+        self.enum_option_button.setVisible(visible)
+
+    def toggle_enum_source(self):
+        self.use_existing_enum = not self.use_existing_enum
+        if self.use_existing_enum:
+            self.enum_option_button.setText("Create New Enum Table")
+        else:
+            self.enum_option_button.setText("Use Existing Enum Table")
+        self.toggle_enum_fields(True)
 
     def add_enum_value(self):
         item = QtWidgets.QListWidgetItem()
@@ -692,10 +741,15 @@ class AddFieldDialog(QtWidgets.QDialog):
         field_definition = f"{field_type} {not_null} {primary_key} {auto_increment}".strip()
 
         enum_values = None
-        if field_type == "ENUM":
-            enum_values = self.get_enum_values()
+        enum_table = None
 
-        return field_name, field_definition, enum_values
+        if field_type == "ENUM":
+            if self.use_existing_enum:
+                enum_table = self.existing_enum_dropdown.currentText()
+            else:
+                enum_values = self.get_enum_values()
+
+        return field_name, field_definition, enum_values, enum_table
 
 class AddRelationFieldDialog(QtWidgets.QDialog):
     """
@@ -1253,11 +1307,17 @@ class DBWidget(QtWidgets.QMainWindow):
 
     def show_add_field_dialog(self):
         if self.current_table:
-            dialog = AddFieldDialog(self.db_manager.get_table_names(), self)
+            dialog = AddFieldDialog(self.db_manager, self)
             if dialog.exec_() == QtWidgets.QDialog.Accepted:
-                field_name, field_definition, enum_values = dialog.get_field_data()
+                field_name, field_definition, enum_values, enum_table = dialog.get_field_data()
                 if field_name and field_definition:
-                    self.db_manager.add_column(self.current_table, field_name, field_definition, enum_values=enum_values)
+                    self.db_manager.add_column(
+                        self.current_table, 
+                        field_name, 
+                        field_definition, 
+                        enum_values=enum_values, 
+                        enum_table=enum_table
+                    )
                     QtWidgets.QMessageBox.information(self, "Success", f"Field '{field_name}' added successfully.")
                     self.load_table_info(self.tables_list.currentItem())
                 else:
@@ -1284,19 +1344,23 @@ class DBWidget(QtWidgets.QMainWindow):
             dialog = AddEditRecordDialog(self.column_names, self.column_types, parent=self)
             if dialog.exec_() == QtWidgets.QDialog.Accepted:
                 values = dialog.get_record_data()
+
                 # Filter out primary key columns from both values and column names
                 values_filtered = [values[c] for c, t in zip(self.column_names, self.column_types) if "PRIMARY KEY" not in t]
                 column_names_filtered = [c for c, t in zip(self.column_names, self.column_types) if "PRIMARY KEY" not in t]
-                if all(values_filtered):
+
+                # Check only NOT NULL fields
+                not_null_fields = [c for c, t in zip(self.column_names, self.column_types) if "NOT NULL" in t]
+                if all(values.get(field) is not None for field in not_null_fields):
                     self.db_manager.insert_record(self.current_table, column_names_filtered, values_filtered)
                     self.load_table_data()
                 else:
-                    QtWidgets.QMessageBox.warning(self, "Error", "Please fill in all fields.")
+                    QtWidgets.QMessageBox.warning(self, "Error", "Please fill in all required fields.")
         else:
             QtWidgets.QMessageBox.warning(self, "Error", "Please select a table first.")
 
     def show_add_table_dialog(self):
-        dialog = AddTableDialog(self)
+        dialog = AddTableDialog(self.db_manager, self)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             table_name, fields = dialog.get_table_data()
             if table_name and fields:
@@ -1313,8 +1377,9 @@ class DBWidget(QtWidgets.QMainWindow):
             dialog = AddEditRecordDialog(self.column_names, self.column_types, row_data, self)
             if dialog.exec_() == QtWidgets.QDialog.Accepted:
                 new_values = dialog.get_record_data()
-                not_null_fields = [field for field, column in zip(self.column_names, self.column_types) if "NOT NULL" in column]
 
+                # Check only NOT NULL fields
+                not_null_fields = [field for field, column in zip(self.column_names, self.column_types) if "NOT NULL" in column]
                 if all(new_values.get(field) is not None for field in not_null_fields):
                     rowid = int(row_data['rowid'])  # Fetch rowid from row_data
                     self.db_manager.update_record(self.current_table, self.column_names, [new_values.get(field) for field in self.column_names], rowid)
