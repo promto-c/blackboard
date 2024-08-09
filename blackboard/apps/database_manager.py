@@ -219,6 +219,7 @@ class DatabaseManager:
         if not table_name.isidentifier() or not field_name.isidentifier():
             raise ValueError("Invalid table name or field name")
 
+        # Handle enum values if provided
         if enum_values:
             enum_table_name = f"enum_{field_name}"
             self.create_enum_table(field_name, enum_values)
@@ -233,21 +234,34 @@ class DatabaseManager:
         foreign_keys = self.cursor.fetchall()
 
         # Create a new table schema with the new column
-        new_columns = [f"{col[1]} {col[2]}" for col in columns]
+        new_columns = []
+        pk_columns = []
+        
+        for col in columns:
+            col_def = f"{col[1]} {col[2]}"
+            if col[3]:  # NOT NULL constraint
+                col_def += " NOT NULL"
+            if col[5]:  # Primary key
+                pk_columns.append(col[1])
+            new_columns.append(col_def)
+        
+        # Add the new column definition
         new_columns.append(f"{field_name} {field_type}")
-
+        
+        # Add primary key constraint if it exists
+        if pk_columns:
+            new_columns.append(f"PRIMARY KEY ({', '.join(pk_columns)})")
+        
         # Include existing foreign keys
-        fk_constraints = []
         for fk in foreign_keys:
-            fk_constraints.append(f"FOREIGN KEY({fk[3]}) REFERENCES {fk[2]}({fk[4]}) ON UPDATE {fk[5]} ON DELETE {fk[6]}")
+            new_columns.append(f"FOREIGN KEY({fk[3]}) REFERENCES {fk[2]}({fk[4]}) ON UPDATE {fk[5]} ON DELETE {fk[6]}")
         
         if foreign_key:
-            fk_constraints.append(f"FOREIGN KEY({field_name}) REFERENCES {foreign_key}")
+            new_columns.append(f"FOREIGN KEY({field_name}) REFERENCES {foreign_key}")
 
-        new_columns.extend(fk_constraints)
+        new_columns_str = ', '.join(new_columns)
 
         temp_table_name = f"{table_name}_temp"
-        new_columns_str = ', '.join(new_columns)
         self.cursor.execute(f"CREATE TABLE {temp_table_name} ({new_columns_str})")
 
         # Copy data from the old table to the new table
@@ -1270,7 +1284,8 @@ class DBWidget(QtWidgets.QMainWindow):
             dialog = AddEditRecordDialog(self.column_names, self.column_types, parent=self)
             if dialog.exec_() == QtWidgets.QDialog.Accepted:
                 values = dialog.get_record_data()
-                values_filtered = [v for v, t in zip(values, self.column_types) if "PRIMARY KEY" not in t]
+                # Filter out primary key columns from both values and column names
+                values_filtered = [values[c] for c, t in zip(self.column_names, self.column_types) if "PRIMARY KEY" not in t]
                 column_names_filtered = [c for c, t in zip(self.column_names, self.column_types) if "PRIMARY KEY" not in t]
                 if all(values_filtered):
                     self.db_manager.insert_record(self.current_table, column_names_filtered, values_filtered)
