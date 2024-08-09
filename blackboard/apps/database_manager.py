@@ -29,6 +29,9 @@ class ColumnInfo:
     pk: int
 
 class DatabaseManager:
+
+    FIELD_TYPES = ["INTEGER", "REAL", "TEXT", "BLOB", "NULL", "DATETIME", "ENUM"]
+
     def __init__(self, db_name: str):
         """Initialize a DatabaseManager instance to interact with a SQLite database.
 
@@ -63,13 +66,18 @@ class DatabaseManager:
         ''', (table_name, column_name, enum_table_name, description))
         self.connection.commit()
 
-    def get_existing_enum_tables(self):
-        """Get a list of existing enum tables."""
+    def get_existing_enum_tables(self) -> List[str]:
+        """Get a list of existing enum tables.
+
+        Returns:
+            List[str]: A list of table names that match the 'enum_%' pattern.
+        """
         self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'enum_%'")
         return [row[0] for row in self.cursor.fetchall()]
 
     def is_enum_field(self, table_name: str, column_name: str) -> bool:
-        """Check if a field is an enum based on metadata."""
+        """Check if a field is an enum based on metadata.
+        """
         self.cursor.execute('''
             SELECT is_enum FROM metadata
             WHERE table_name = ? AND column_name = ?;
@@ -78,7 +86,8 @@ class DatabaseManager:
         return result is not None and result[0] == 1
 
     def get_enum_table_name(self, table_name: str, column_name: str) -> Optional[str]:
-        """Retrieve the name of the enum table associated with a given field."""
+        """Retrieve the name of the enum table associated with a given field.
+        """
         self.cursor.execute('''
             SELECT enum_table_name FROM metadata
             WHERE table_name = ? AND column_name = ?;
@@ -101,7 +110,16 @@ class DatabaseManager:
         self.cursor.execute(f"SELECT value FROM {enum_table_name}")
         return [row[0] for row in self.cursor.fetchall()]
 
-    def create_enum_table(self, enum_name: str, values: List[str]) -> None:
+    def create_enum_table(self, enum_name: str, values: List[str]):
+        """Create a table to store enum values.
+
+        Args:
+            enum_name (str): The name of the enum.
+            values (List[str]): The values of the enum.
+
+        Raises:
+            sqlite3.Error: If there is an error executing the SQL command.
+        """
         if not enum_name.isidentifier():
             raise ValueError("Invalid enum name")
 
@@ -113,7 +131,8 @@ class DatabaseManager:
             self.cursor.execute(f"INSERT OR IGNORE INTO {table_name} (value) VALUES (?)", (value,))
 
         self.connection.commit()
-    def create_table(self, table_name: str, fields: Dict[str, str]) -> None:
+
+    def create_table(self, table_name: str, fields: Dict[str, str]):
         """Create a new table in the database with specified fields.
 
         Args:
@@ -207,7 +226,7 @@ class DatabaseManager:
             for fk in foreign_keys
         ]
 
-    def add_column(self, table_name: str, field_name: str, field_type: str, foreign_key: Optional[str] = None, enum_values: Optional[List[str]] = None, enum_table: Optional[str] = None) -> None:
+    def add_column(self, table_name: str, field_name: str, field_type: str, foreign_key: Optional[str] = None, enum_values: Optional[List[str]] = None, enum_table: Optional[str] = None):
         """Add a new column to an existing table, optionally with a foreign key or enum constraint.
 
         Args:
@@ -230,12 +249,12 @@ class DatabaseManager:
             # Create a new enum table and update the metadata
             enum_table_name = f"enum_{field_name}"
             self.create_enum_table(field_name, enum_values)
-            field_type = "INTEGER"
+            field_type = "TEXT"
             foreign_key = f"{enum_table_name}(id)"
             self.add_enum_metadata(table_name, field_name, enum_table_name)
         elif enum_table:
             # Use an existing enum table and update the metadata
-            field_type = "INTEGER"
+            field_type = "TEXT"
             foreign_key = f"{enum_table}(id)"
             self.add_enum_metadata(table_name, field_name, enum_table)
 
@@ -252,9 +271,9 @@ class DatabaseManager:
 
         for col in columns:
             col_def = f"{col[1]} {col[2]}"
-            if col[3]:  # NOT NULL constraint
+            if col[3]:
                 col_def += " NOT NULL"
-            if col[5]:  # Primary key
+            if col[5]:
                 pk_columns.append(col[1])
             new_columns.append(col_def)
 
@@ -287,12 +306,7 @@ class DatabaseManager:
 
         self.connection.commit()
 
-        # Update metadata for the new column
-        if enum_table or enum_values:
-            enum_table_name = enum_table if enum_table else enum_table_name
-            self.add_enum_metadata(table_name, field_name, enum_table_name)
-
-    def delete_column(self, table_name: str, field_name: str) -> None:
+    def delete_column(self, table_name: str, field_name: str):
         """Delete a column from a table by recreating the table without that column.
 
         Args:
@@ -336,7 +350,7 @@ class DatabaseManager:
 
         self.connection.commit()
 
-    def delete_table(self, table_name: str) -> None:
+    def delete_table(self, table_name: str):
         """Delete an entire table from the database.
 
         Args:
@@ -352,7 +366,7 @@ class DatabaseManager:
         self.cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
         self.connection.commit()
 
-    def delete_record(self, table_name: str, rowid: int) -> None:
+    def delete_record(self, table_name: str, rowid: int):
         """Delete a specific record from a table by rowid.
 
         Args:
@@ -415,7 +429,7 @@ class DatabaseManager:
         """
         return os.path.getsize(self.db_name)
 
-    def insert_record(self, table_name: str, fields: List[str], values: List) -> None:
+    def insert_record(self, table_name: str, fields: List[str], values: List):
         """Insert a new record into a table.
 
         Args:
@@ -436,7 +450,7 @@ class DatabaseManager:
         self.cursor.execute(sql, values)
         self.connection.commit()
 
-    def update_record(self, table_name: str, fields: List[str], values: List, rowid: int) -> None:
+    def update_record(self, table_name: str, fields: List[str], values: List, rowid: int):
         """Update an existing record in a table by rowid.
 
         Args:
@@ -455,28 +469,6 @@ class DatabaseManager:
         set_clause = ', '.join([f"{field} = ?" for field in fields])
         sql = f"UPDATE {table_name} SET {set_clause} WHERE rowid = ?"
         self.cursor.execute(sql, values + [rowid])
-        self.connection.commit()
-
-    def create_enum_table(self, enum_name: str, values: List[str]) -> None:
-        """Create a table to store enum values.
-
-        Args:
-            enum_name (str): The name of the enum.
-            values (List[str]): The values of the enum.
-
-        Raises:
-            sqlite3.Error: If there is an error executing the SQL command.
-        """
-        if not enum_name.isidentifier():
-            raise ValueError("Invalid enum name")
-
-        table_name = f"enum_{enum_name}"
-        self.cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT UNIQUE)")
-
-        # Insert enum values
-        for value in values:
-            self.cursor.execute(f"INSERT OR IGNORE INTO {table_name} (value) VALUES (?)", (value,))
-
         self.connection.commit()
 
     def get_field_type(self, table_name: str, field_name: str) -> str:
@@ -505,52 +497,74 @@ class DatabaseManager:
         raise ValueError(f"Field '{field_name}' not found in table '{table_name}'")
 
 class AddTableDialog(QtWidgets.QDialog):
+    """
+    AddTableDialog UI Design:
+    
+    +--------------------------------------+
+    |           Add Table                  |
+    +--------------------------------------+
+    | Table Name: [____________________]   |
+    |                                      |
+    | Primary Key Field:                   |
+    |                                      |
+    |   Name: [____________________]       |
+    |   Type: [INTEGER      v]             |
+    |                                      |
+    | [ Create Table ]                     |
+    +--------------------------------------+
+    
+    UI Components:
+    - Table Name Input: QLineEdit for entering the table name.
+    - Primary Key Field: Inputs for defining the primary key field:
+      - Name: QLineEdit for the primary key field name.
+      - Type: QComboBox for selecting the data type (e.g., INTEGER).
+      - Autoincrement: QCheckBox for enabling auto-increment if the type is INTEGER.
+    - Create Table Button: QPushButton to create the table with the primary key field.
+    """
+
     def __init__(self, db_manager: DatabaseManager, parent=None):
         super().__init__(parent)
         self.db_manager = db_manager
         self.setWindowTitle("Add Table")
         self.layout = QtWidgets.QVBoxLayout(self)
 
+        # Table Name Section
         self.table_name_label = QtWidgets.QLabel("Table Name:")
         self.table_name_input = QtWidgets.QLineEdit()
 
-        self.fields = []
-        self.fields_layout = QtWidgets.QVBoxLayout()
+        # Primary Key Field Section
+        self.primary_key_label = QtWidgets.QLabel("Primary Key Field:")
+        self.primary_key_name_label = QtWidgets.QLabel("Name:")
+        self.primary_key_name_input = QtWidgets.QLineEdit()
 
-        self.add_field_button = QtWidgets.QPushButton("Add Field")
-        self.add_field_button.clicked.connect(self.add_field)
+        self.primary_key_type_label = QtWidgets.QLabel("Type:")
+        self.primary_key_type_dropdown = QtWidgets.QComboBox()
+        self.primary_key_type_dropdown.addItems(["INTEGER", "TEXT"])  # Limiting to common PK types
 
+        # Create Table Button
         self.create_table_button = QtWidgets.QPushButton("Create Table")
         self.create_table_button.clicked.connect(self.accept)
 
+        # Layout Setup
         self.layout.addWidget(self.table_name_label)
         self.layout.addWidget(self.table_name_input)
-        self.layout.addLayout(self.fields_layout)
-        self.layout.addWidget(self.add_field_button)
+        self.layout.addWidget(self.primary_key_label)
+        self.layout.addWidget(self.primary_key_name_label)
+        self.layout.addWidget(self.primary_key_name_input)
+        self.layout.addWidget(self.primary_key_type_label)
+        self.layout.addWidget(self.primary_key_type_dropdown)
         self.layout.addWidget(self.create_table_button)
 
         self.setLayout(self.layout)
 
-    def add_field(self):
-        dialog = AddFieldDialog(self.db_manager, self)
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            field_name, field_definition, enum_values, enum_table = dialog.get_field_data()
-            if field_name and field_definition:
-                # If creating a new enum table, create it first
-                if enum_values:
-                    enum_table_name = f"enum_{field_name}"
-                    self.db_manager.create_enum_table(enum_table_name, enum_values)
-                    field_definition = f"INTEGER REFERENCES {enum_table_name}(id)"
-                elif enum_table:
-                    field_definition = f"INTEGER REFERENCES {enum_table}(id)"
-                
-                self.fields.append((field_name, field_definition))
-                field_label = QtWidgets.QLabel(f"{field_name} {field_definition}")
-                self.fields_layout.addWidget(field_label)
-
     def get_table_data(self):
         table_name = self.table_name_input.text()
-        return table_name, self.fields
+        primary_key_name = self.primary_key_name_input.text()
+        primary_key_type = self.primary_key_type_dropdown.currentText()
+
+        primary_key_definition = f"{primary_key_type} PRIMARY KEY".strip()
+
+        return table_name, [(primary_key_name, primary_key_definition)]
 
 class AddFieldDialog(QtWidgets.QDialog):
     """
@@ -564,8 +578,6 @@ class AddFieldDialog(QtWidgets.QDialog):
     | Field Type: [INTEGER      v]         |
     |                                      |
     | [ ] NOT NULL                         |
-    | [ ] PRIMARY KEY                      |
-    | [ ] AUTOINCREMENT                    |
     |                                      |
     | Enum Values:                         |
     | +----------------------------+       |
@@ -579,6 +591,8 @@ class AddFieldDialog(QtWidgets.QDialog):
     |                [ Add Field ]         |
     +--------------------------------------+
     """
+
+    WINDOW_TITLE = 'Add Field'
 
     def __init__(self, db_manager: DatabaseManager, parent=None):
         super().__init__(parent)
@@ -600,7 +614,7 @@ class AddFieldDialog(QtWidgets.QDialog):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setWindowTitle("Add Field")
+        self.setWindowTitle(self.WINDOW_TITLE)
 
         # Create Layouts
         # --------------
@@ -613,11 +627,9 @@ class AddFieldDialog(QtWidgets.QDialog):
 
         self.field_type_label = QtWidgets.QLabel("Field Type:")
         self.field_type_dropdown = QtWidgets.QComboBox()
-        self.field_type_dropdown.addItems(["INTEGER", "REAL", "TEXT", "BLOB", "NULL", "DATETIME", "ENUM"])
+        self.field_type_dropdown.addItems(DatabaseManager.FIELD_TYPES)
 
         self.not_null_checkbox = QtWidgets.QCheckBox("NOT NULL")
-        self.primary_key_checkbox = QtWidgets.QCheckBox("PRIMARY KEY")
-        self.auto_increment_checkbox = QtWidgets.QCheckBox("AUTOINCREMENT")
 
         self.enum_option_button = QtWidgets.QPushButton("Use Existing Enum Table")
         self.enum_values_label = QtWidgets.QLabel("Enum Values:")
@@ -637,8 +649,6 @@ class AddFieldDialog(QtWidgets.QDialog):
         layout.addWidget(self.field_type_label)
         layout.addWidget(self.field_type_dropdown)
         layout.addWidget(self.not_null_checkbox)
-        layout.addWidget(self.primary_key_checkbox)
-        layout.addWidget(self.auto_increment_checkbox)
         layout.addWidget(self.enum_option_button)
         layout.addWidget(self.enum_values_label)
         layout.addWidget(self.enum_values_list)
@@ -732,13 +742,8 @@ class AddFieldDialog(QtWidgets.QDialog):
         field_name = self.field_name_input.text()
         field_type = self.field_type_dropdown.currentText()
         not_null = "NOT NULL" if self.not_null_checkbox.isChecked() else ""
-        primary_key = "PRIMARY KEY" if self.primary_key_checkbox.isChecked() else ""
-        auto_increment = "AUTOINCREMENT" if self.auto_increment_checkbox.isChecked() else ""
 
-        if primary_key and auto_increment:
-            field_type = "INTEGER PRIMARY KEY AUTOINCREMENT"
-
-        field_definition = f"{field_type} {not_null} {primary_key} {auto_increment}".strip()
+        field_definition = f"{field_type} {not_null}".strip()
 
         enum_values = None
         enum_table = None
@@ -840,40 +845,39 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
         return field_name, reference_table, reference_field, not_null
 
 class AddEditRecordDialog(QtWidgets.QDialog):
-    def __init__(self, fields, types, record=None, parent=None):
+    def __init__(self, column_metadata, record=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Add/Edit Record")
         self.layout = QtWidgets.QVBoxLayout(self)
 
-        self.fields = fields
+        self.column_metadata = column_metadata
         self.inputs = {}
-        self.auto_increment_fields = []
-
         self.db_manager = parent.db_manager  # Reference to DatabaseManager for enum values
 
-        for field, field_type in zip(fields, types):
-            if field == 'rowid':
-                continue  # Skip the 'rowid' field
+        for field, metadata in self.column_metadata.items():
+            if metadata['primary_key']:
+                continue  # Skip the primary key field; it is usually auto-managed by SQLite
 
             label = QtWidgets.QLabel(field)
-            input_widget = self.create_input_widget(field, field_type)
+            input_widget = self.create_input_widget(field, metadata)
             self.layout.addWidget(label)
             self.layout.addWidget(input_widget)
             self.inputs[field] = input_widget
-            if "INTEGER PRIMARY KEY" in field_type:
-                input_widget.setDisabled(True)
-                self.auto_increment_fields.append(field)
 
         if record:
             for field, value in record.items():
-                if field != 'rowid':
+                if field in self.inputs:
                     self.set_input_value(self.inputs[field], value)
 
         self.submit_button = QtWidgets.QPushButton("Submit")
         self.submit_button.clicked.connect(self.accept)
         self.layout.addWidget(self.submit_button)
 
-    def create_input_widget(self, field, field_type):
+    def create_input_widget(self, field, metadata):
+        if metadata["foreign_key"]:
+            # You might want to handle foreign keys differently, such as offering a dropdown of related records
+            pass  # Implementation for handling foreign keys
+
         if self.db_manager.is_enum_field(self.parent().current_table, field):
             enum_table_name = self.db_manager.get_enum_table_name(self.parent().current_table, field)
             enum_values = self.db_manager.get_enum_values(enum_table_name)
@@ -881,20 +885,20 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             widget.addItems(enum_values)
             return widget
 
-        if "INTEGER" in field_type and "PRIMARY KEY" not in field_type:
+        if metadata["type"] == "INTEGER":
             widget = QtWidgets.QSpinBox()
             widget.setRange(-2147483648, 2147483647)  # Set the range for typical 32-bit integers
             widget.setSpecialValueText("")  # Allow clearing the value
             return widget
-        elif "REAL" in field_type:
+        elif metadata["type"] == "REAL":
             widget = QtWidgets.QDoubleSpinBox()
             widget.setSpecialValueText("")  # Allow clearing the value
             return widget
-        elif "TEXT" in field_type:
+        elif metadata["type"] == "TEXT":
             return QtWidgets.QLineEdit()
-        elif "BLOB" in field_type:
+        elif metadata["type"] == "BLOB":
             return self.create_blob_widget()
-        elif "DATETIME" in field_type:
+        elif metadata["type"] == "DATETIME":
             return QtWidgets.QDateTimeEdit(QtCore.QDateTime.currentDateTime())
         else:
             return QtWidgets.QLineEdit()
@@ -918,8 +922,10 @@ class AddEditRecordDialog(QtWidgets.QDialog):
     def set_input_value(self, input_widget, value):
         if isinstance(input_widget, QtWidgets.QComboBox):
             index = input_widget.findText(value)
-            if index != -1:
-                input_widget.setCurrentIndex(index)
+            if index == -1:
+                input_widget.addItem(value)
+                index = input_widget.findText(value)
+            input_widget.setCurrentIndex(index)
         elif isinstance(input_widget, QtWidgets.QSpinBox) or isinstance(input_widget, QtWidgets.QDoubleSpinBox):
             if value is None or value == "None":
                 input_widget.clear()
@@ -975,14 +981,13 @@ class DBWidget(QtWidgets.QMainWindow):
     def create_tree_data_widget(self):
         """Create and configure the tree data widget."""
         tree_data_widget = GroupableTreeWidget()
-        # SearchableHeaderView(tree_data_widget)
 
         tree_data_widget.setHeaderLabels([])  # Header labels will be set dynamically
         tree_data_widget.itemDoubleClicked.connect(self.edit_record)
         tree_data_widget.about_to_show_header_menu.connect(self.handle_header_context_menu)
-        
+
         self.add_relation_column_menu = tree_data_widget.header_menu.addMenu('Add Relation Column')
-        
+
         return tree_data_widget
 
     def create_main_layout(self):
@@ -1001,8 +1006,6 @@ class DBWidget(QtWidgets.QMainWindow):
 
         self.refresh_button = self.create_action_button("Refresh", self.refresh_data)
         self.add_record_button = self.create_action_button("Add Record", self.show_add_record_dialog)
-        self.add_table_button = self.create_action_button("Add Table", self.show_add_table_dialog)
-        self.delete_table_button = self.create_action_button("Delete Table", self.delete_table)
         self.delete_record_button = self.create_action_button("Delete Record", self.delete_record)
 
         self.filter_input = QtWidgets.QLineEdit()  # Initialize the QLineEdit
@@ -1095,14 +1098,11 @@ class DBWidget(QtWidgets.QMainWindow):
 
         return layout
 
-    def handle_header_context_menu(self, column_index: int) -> None:
+    def handle_header_context_menu(self, column_index: int):
         """Handle the header context menu signal.
 
         Args:
             column_index (int): The index of the column where the context menu was requested.
-
-        Returns:
-            None
         """
         self.add_relation_column_menu.clear()
         self.add_relation_column_menu.setDisabled(True)
@@ -1255,14 +1255,11 @@ class DBWidget(QtWidgets.QMainWindow):
             self.tables_list.clear()
             self.tables_list.addItems(tables)
 
-    def load_table_info(self, current_item: Optional[QtWidgets.QListWidgetItem]) -> None:
+    def load_table_info(self, current_item: Optional[QtWidgets.QListWidgetItem]):
         """Load information about the selected table and display its columns and foreign keys.
 
         Args:
             current_item (Optional[QtWidgets.QListWidgetItem]): The currently selected item in the table list.
-
-        Returns:
-            None
 
         Raises:
             ValueError: If there is an issue retrieving data from the database.
@@ -1274,23 +1271,38 @@ class DBWidget(QtWidgets.QMainWindow):
             foreign_keys = self.db_manager.get_foreign_keys(table_name)
             
             self.columns_list.clear()
-            column_names = []
-            column_types = []
+            self.column_metadata = {}
 
             for column in columns:
-                column_names.append(column.name)
-                column_types.append(column.type)
-                column_definition = f"{column.name} {column.type} {'NOT NULL' if column.notnull else ''} {'PRIMARY KEY' if column.pk else ''}".strip()
-                
+                column_name = column.name
+                column_type = column.type
+                is_not_null = column.notnull == 1
+                is_primary_key = column.pk == 1
+                foreign_key_info = None
+
                 # Check for foreign key constraints
                 for fk in foreign_keys:
-                    if fk.from_column == column.name:
-                        column_definition += f" (FK to {fk.table}({fk.to_column}))"
-                
+                    if fk.from_column == column_name:
+                        foreign_key_info = {
+                            "table": fk.table,
+                            "column": fk.to_column,
+                        }
+
+                # Store detailed metadata
+                self.column_metadata[column_name] = {
+                    "type": column_type,
+                    "not_null": is_not_null,
+                    "primary_key": is_primary_key,
+                    "foreign_key": foreign_key_info,
+                }
+
+                # Display the column information
+                column_definition = f"{column_name} {column_type} {'NOT NULL' if is_not_null else ''} {'PRIMARY KEY' if is_primary_key else ''}".strip()
+                if foreign_key_info:
+                    column_definition += f" (FK to {foreign_key_info['table']}({foreign_key_info['column']}))"
+
                 self.columns_list.addItem(column_definition)
 
-            self.column_names = column_names
-            self.column_types = column_types
             self.load_table_data()
 
     def load_table_data(self):
@@ -1339,25 +1351,6 @@ class DBWidget(QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.warning(self, "Error", "Please select a table first.")
 
-    def show_add_record_dialog(self):
-        if self.current_table:
-            dialog = AddEditRecordDialog(self.column_names, self.column_types, parent=self)
-            if dialog.exec_() == QtWidgets.QDialog.Accepted:
-                values = dialog.get_record_data()
-
-                # Filter out primary key columns from both values and column names
-                values_filtered = [values[c] for c, t in zip(self.column_names, self.column_types) if "PRIMARY KEY" not in t]
-                column_names_filtered = [c for c, t in zip(self.column_names, self.column_types) if "PRIMARY KEY" not in t]
-
-                # Check only NOT NULL fields
-                not_null_fields = [c for c, t in zip(self.column_names, self.column_types) if "NOT NULL" in t]
-                if all(values.get(field) is not None for field in not_null_fields):
-                    self.db_manager.insert_record(self.current_table, column_names_filtered, values_filtered)
-                    self.load_table_data()
-                else:
-                    QtWidgets.QMessageBox.warning(self, "Error", "Please fill in all required fields.")
-        else:
-            QtWidgets.QMessageBox.warning(self, "Error", "Please select a table first.")
 
     def show_add_table_dialog(self):
         dialog = AddTableDialog(self.db_manager, self)
@@ -1370,20 +1363,70 @@ class DBWidget(QtWidgets.QMainWindow):
             else:
                 QtWidgets.QMessageBox.warning(self, "Error", "Please enter a valid table name and fields.")
 
+    def show_add_record_dialog(self):
+        if self.current_table:
+            dialog = AddEditRecordDialog(self.column_metadata, parent=self)
+            if dialog.exec_() == QtWidgets.QDialog.Accepted:
+                values = dialog.get_record_data()
+
+                # Filter out primary key columns from both values and column names
+                values_filtered = [values[c] for c, meta in self.column_metadata.items() if not meta.get("primary_key")]
+                column_names_filtered = [c for c, meta in self.column_metadata.items() if not meta.get("primary_key")]
+
+                # Check only NOT NULL fields, excluding the primary key
+                not_null_fields = [c for c, meta in self.column_metadata.items() if meta.get("not_null") and not meta.get("primary_key")]
+                if all(values.get(field) is not None for field in not_null_fields):
+                    self.db_manager.insert_record(self.current_table, column_names_filtered, values_filtered)
+                    self.load_table_data()
+                else:
+                    QtWidgets.QMessageBox.warning(self, "Error", "Please fill in all required fields.")
+        else:
+            QtWidgets.QMessageBox.warning(self, "Error", "Please select a table first.")
+
     def edit_record(self, item, column):
         if self.current_table:
             # Fetching row data and mapping it to column names
             row_data = {self.tree_data_widget.headerItem().text(col): item.text(col) for col in range(self.tree_data_widget.columnCount())}
-            dialog = AddEditRecordDialog(self.column_names, self.column_types, row_data, self)
+            dialog = AddEditRecordDialog(self.column_metadata, row_data, self)
             if dialog.exec_() == QtWidgets.QDialog.Accepted:
                 new_values = dialog.get_record_data()
 
-                # Check only NOT NULL fields
-                not_null_fields = [field for field, column in zip(self.column_names, self.column_types) if "NOT NULL" in column]
+                # Check only NOT NULL fields, skipping INTEGER PRIMARY KEY fields
+                not_null_fields = [
+                    field for field, meta in self.column_metadata.items() 
+                    if meta.get("not_null") and not (meta.get("type") == "INTEGER" and meta.get("primary_key"))
+                ]
+
                 if all(new_values.get(field) is not None for field in not_null_fields):
-                    rowid = int(row_data['rowid'])  # Fetch rowid from row_data
-                    self.db_manager.update_record(self.current_table, self.column_names, [new_values.get(field) for field in self.column_names], rowid)
-                    self.load_table_data()
+                    # Determine which fields have changed
+                    updated_fields = {}
+                    for field, new_value in new_values.items():
+                        old_value = row_data.get(field)
+                        field_type = self.column_metadata[field].get("type")
+
+                        # Convert old_value to the appropriate type based on column metadata
+                        if field_type == "INTEGER":
+                            old_value = int(old_value) if old_value != 'None' else None
+                        elif field_type == "REAL":
+                            old_value = float(old_value) if old_value != 'None' else None
+                        elif field_type == "TEXT":
+                            old_value = str(old_value)
+                        # Add other type conversions if needed
+
+                        if new_value != old_value:
+                            updated_fields[field] = new_value
+
+                    if updated_fields:
+                        rowid = int(row_data['rowid'])  # Fetch rowid from row_data
+                        self.db_manager.update_record(
+                            self.current_table, 
+                            list(updated_fields.keys()), 
+                            list(updated_fields.values()), 
+                            rowid
+                        )
+                        self.load_table_data()
+                    else:
+                        QtWidgets.QMessageBox.information(self, "No Changes", "No changes were made.")
                 else:
                     QtWidgets.QMessageBox.warning(self, "Error", "Please fill in all required fields.")
         else:

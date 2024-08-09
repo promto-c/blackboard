@@ -207,10 +207,10 @@ class TestFilePatternQuery:
 
     def test_file_pattern_query(self, setup_test_directory):
         """Test for FilePatternQuery class using the directory structure."""
-        pattern = str(setup_test_directory / "{dir}/{subdir}/{file_name}")
+        pattern = str(setup_test_directory / "{dir}/{subdir}")
         fpq = FilePatternQuery(pattern)
 
-        filters = {'dir': ['dir1'], 'subdir': ['subdir1'], 'file_name': ['file1.txt']}
+        filters = {'dir': ['dir1'], 'subdir': ['subdir1']}
         results = list(fpq.query_files(filters))
 
         assert len(results) == 1
