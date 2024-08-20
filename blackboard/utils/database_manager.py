@@ -58,7 +58,7 @@ class FieldInfo:
 
     @property
     def is_primary_key(self) -> bool:
-        return self.pk == 1
+        return bool(self.pk)
 
     @property
     def is_foreign_key(self) -> bool:
@@ -67,6 +67,13 @@ class FieldInfo:
     @property
     def is_unique(self) -> bool:
         return self.unique
+
+@dataclass
+class ManyToManyField:
+    """Represents a many-to-many relationship field."""
+    from_table: str                         # The name of the originating table
+    track_field_name: str                   # The field name in the originating table
+    junction_table: str                     # The name of the junction table
 
 class DatabaseManager:
 
@@ -101,7 +108,8 @@ class DatabaseManager:
         self.connection.commit()
 
     def _create_meta_enum_field_table(self):
-        """Create the meta table to store enum field information."""
+        """Create the meta table to store enum field information.
+        """
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS _meta_enum_field (
                 table_name TEXT,
@@ -109,6 +117,19 @@ class DatabaseManager:
                 enum_table_name TEXT,
                 description TEXT,
                 PRIMARY KEY (table_name, field_name)
+            );
+        ''')
+        self.connection.commit()
+
+    def _create_meta_many_to_many_table(self):
+        """Create the meta table to store many-to-many relationship information, including display field names.
+        """
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS _meta_many_to_many (
+                from_table TEXT NOT NULL,
+                track_field_name TEXT NOT NULL,
+                junction_table TEXT NOT NULL,
+                PRIMARY KEY (from_table, track_field_name)
             );
         ''')
         self.connection.commit()
@@ -233,7 +254,7 @@ class DatabaseManager:
 
         return unique_fields
 
-    def get_table_info(self, table_name: str) -> Dict[str, FieldInfo]:
+    def get_table_info(self, table_name: str) -> Dict[str, 'FieldInfo']:
         """Retrieve information about the fields of a specified table, including whether they have UNIQUE constraints.
 
         Args:
@@ -284,7 +305,7 @@ class DatabaseManager:
         fields = self.cursor.fetchall()
         return [field[1] for field in fields]
 
-    def get_foreign_keys(self, table_name: str) -> List[ForeignKey]:
+    def get_foreign_keys(self, table_name: str) -> List['ForeignKey']:
         """Retrieve the foreign keys of a specified table.
 
         Args:
@@ -319,6 +340,49 @@ class DatabaseManager:
             )
             for fk in foreign_keys
         ]
+
+    def get_many_to_many_fields(self, table_name: str) -> List['ManyToManyField']:
+        """Retrieve many-to-many relationships for a specified table.
+
+        Args:
+            table_name (str): The name of the table to retrieve many-to-many relationships for.
+
+        Returns:
+            List[ManyToManyField]: A list of ManyToManyField dataclass instances representing the relationships.
+        """
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
+
+        try:
+            self.cursor.execute('''
+                SELECT track_field_name, junction_table
+                FROM _meta_many_to_many
+                WHERE from_table = ?
+            ''', (table_name,))
+            
+            records = self.cursor.fetchall()
+        except sqlite3.OperationalError:
+            return []
+
+        return [
+            ManyToManyField(
+                from_table=table_name,
+                track_field_name=record[0],
+                junction_table=record[1],
+            )
+            for record in records
+        ]
+
+    def get_many_to_many_field_names(self, table_name: str) -> List[str]:
+        """Retrieve the track field names of all many-to-many relationships for the current table.
+
+        Args:
+            table_name (str): The name of the table for which to retrieve many-to-many field names.
+
+        Returns:
+            List[str]: A list of track field names representing many-to-many relationships in the current table.
+        """
+        return [m2m.track_field_name for m2m in self.get_many_to_many_fields(table_name)]
 
     def add_field(self, table_name: str, field_name: str, field_definition: str, foreign_key: Optional[str] = None, enum_values: Optional[List[str]] = None, enum_table_name: Optional[str] = None):
         """Add a new field to an existing table, optionally with a foreign key or enum constraint.
@@ -419,7 +483,7 @@ class DatabaseManager:
             self.cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {table_name}")
 
             # Remove the display field metadata
-            self.remove_display_field(table_name, field_name)
+            self._remove_display_field(table_name, field_name)
 
             # Commit the transaction
             self.connection.commit()
@@ -449,8 +513,9 @@ class DatabaseManager:
         self.cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
         self.connection.commit()
 
+    # TODO: Handle composite pks
     def delete_record(self, table_name: str, pk_value: Union[int, str, float], pk_field: str = 'rowid'):
-        """Delete a specific record from a table by primary key.
+        """Delete a specific record from a table by primary key, including related data in many-to-many junction tables.
 
         Args:
             table_name (str): The name of the table to delete the record from.
@@ -464,10 +529,29 @@ class DatabaseManager:
         if not table_name.isidentifier() or not pk_field.isidentifier():
             raise ValueError("Invalid table name or primary key field")
 
+        # First, delete related data in the many-to-many junction tables
+        m2m_fields = self.get_many_to_many_fields(table_name)
+        for m2m_field in m2m_fields:
+            junction_table = m2m_field.junction_table
+            fks = self.get_foreign_keys(junction_table)
+
+            for fk in fks:
+                if fk.table == table_name:
+                    from_table_fk = fk
+                    break
+
+            # Delete related entries in the junction table
+            self.cursor.execute(f'''
+                DELETE FROM {junction_table}
+                WHERE {from_table_fk.from_field} = ?
+            ''', (pk_value,))
+
+        # Then, delete the main record from the table
         query = f"DELETE FROM {table_name} WHERE {pk_field} = ?"
         self.cursor.execute(query, (pk_value,))
         self.connection.commit()
 
+    # TODO: Handle composite pks
     def delete_records(self, table_name: str, pk_values: List[Union[int, str, float]], pk_field: str = 'rowid'):
         """Delete multiple records from a table by a list of primary key values.
 
@@ -488,7 +572,7 @@ class DatabaseManager:
 
         placeholders = ', '.join('?' * len(pk_values))
         query = f"DELETE FROM {table_name} WHERE {pk_field} IN ({placeholders})"
-        
+
         self.cursor.execute(query, pk_values)
         self.connection.commit()
 
@@ -516,7 +600,77 @@ class DatabaseManager:
         self.cursor.execute("SELECT name FROM sqlite_master WHERE type='view'")
         return [row[0] for row in self.cursor.fetchall()]
 
-    def query_table_data(self, table_name: str, fields: Optional[List[str]] = None, where_clause: Optional[str] = None, as_dict: bool = False,
+    def get_many_to_many_data(self, table_name: str, track_field: str, from_values: Optional[List[Union[int, str, float]]] = None, display_field: str = '') -> List[Dict[str, Union[int, str, float]]]:
+        """Retrieve the display field data related to specific records in a many-to-many relationship.
+
+        Args:
+            table_name (str): The name of the table from which the relationship starts.
+            track_field (str): The field name that tracks the many-to-many relationship.
+            from_values (Optional[List[Union[int, str, float]]]): A list of values in the from_table to match. If None, retrieve for all.
+            display_field (str): The name of the display field in the related table to retrieve.
+
+        Returns:
+            List[Dict[str, Union[int, str, float]]]: A list of dictionaries, each containing the 'id' from the original table and the corresponding list of related tags or other display fields.
+        """
+        self.cursor.execute('''
+            SELECT junction_table
+            FROM _meta_many_to_many
+            WHERE from_table = ? AND track_field_name = ?
+        ''', (table_name, track_field))
+
+        junction_table = self.cursor.fetchone()[0]
+
+        fks = self.get_foreign_keys(junction_table)
+        for fk in fks:
+            if fk.table == table_name:
+                from_table_fk = fk
+                key_type = self.get_field_type(table_name, from_table_fk.to_field)
+            else:
+                to_table_fk = fk
+
+        display_field = display_field or to_table_fk.to_field
+        display_field_type = self.get_field_type(from_table_fk.table, display_field)
+
+        if from_values is None:
+            # Get all values if from_values is not provided
+            self.cursor.execute(f'''
+                SELECT DISTINCT {from_table_fk.from_field}
+                FROM {junction_table}
+            ''')
+            from_values = [row[0] for row in self.cursor.fetchall()]
+
+        placeholders = ', '.join('?' for _ in from_values)
+        query = f'''
+            SELECT CAST({junction_table}.{from_table_fk.from_field} AS {key_type}) AS {from_table_fk.to_field},
+                GROUP_CONCAT({to_table_fk.table}.{display_field}) AS {track_field}
+            FROM {junction_table}
+            JOIN {to_table_fk.table} ON {junction_table}.{to_table_fk.from_field} = {to_table_fk.table}.{to_table_fk.to_field}
+            WHERE {junction_table}.{from_table_fk.from_field} IN ({placeholders})
+            GROUP BY {junction_table}.{from_table_fk.from_field}
+        '''
+
+        self.cursor.execute(query, from_values)
+        results = self.cursor.fetchall()
+
+        # Convert each result row into a dictionary, converting display fields back to their original type
+        def convert_value(value: str, value_type: str) -> Union[int, str, float]:
+            if value_type == 'INTEGER':
+                return int(value)
+            elif value_type == 'REAL':
+                return float(value)
+            else:
+                return value
+
+        return [
+            {
+                from_table_fk.to_field: row[0],
+                track_field: [convert_value(val, display_field_type) for val in row[1].split(',')]
+            }
+            for row in results
+        ]
+
+    def query_table_data(self, table_name: str, fields: Optional[List[str]] = None, where_clause: Optional[str] = None,
+                         as_dict: bool = False, handle_m2m: bool = False
                         ) -> Union[Generator[Tuple, None, None], Generator[Dict[str, Union[int, str, float, None]], None, None]]:
         """Retrieve data from a specified table as a generator.
 
@@ -525,6 +679,7 @@ class DatabaseManager:
             fields (Optional[List[str]]): Specific fields to retrieve. Defaults to all fields.
             where_clause (Optional[str]): Optional SQL WHERE clause to filter results.
             as_dict (bool): If True, yield rows as dictionaries.
+            handle_m2m (bool): Whether to retrieve many-to-many related data as well.
 
         Yields:
             Union[Generator[Tuple, None, None], Generator[Dict[str, Union[int, str, float, None]], None, None]]:
@@ -543,18 +698,42 @@ class DatabaseManager:
         if not all(field.isidentifier() for field in fields):
             raise ValueError("Invalid field name")
 
+        if handle_m2m:
+            many_to_many_field_names = self.get_many_to_many_field_names(table_name)
+            fields = [field for field in fields if field not in many_to_many_field_names]
+
         fields_str = ', '.join(fields)
 
         query = f"SELECT {fields_str} FROM {table_name}"
         if where_clause:
             query += f" WHERE {where_clause}"
 
-        self.cursor.execute(query)
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(query)
 
-        if as_dict:
-            yield from (dict(zip(fields, row)) for row in self.cursor)
-        else:
-            yield from self.cursor
+            if handle_m2m:
+                for row in cursor:
+                    row_dict = dict(zip(fields, row))
+                    for m2m_field in many_to_many_field_names:
+                        m2m_data = self.get_many_to_many_data(table_name, m2m_field, [row_dict[self.get_primary_keys(table_name)[0]]])
+                        if not m2m_data:
+                            continue
+                        row_dict.update(m2m_data[0])
+
+                    if as_dict:
+                        yield row_dict
+                    else:
+                        yield tuple(row_dict.values())
+
+            else:
+                if as_dict:
+                    yield from (dict(zip(fields, row)) for row in cursor)
+                else:
+                    yield from cursor
+        finally:
+            cursor.close()
+
 
     def fetch_related_value(self, related_table_name: str, target_field_name: str,
                             reference_field_name: str, foreign_key_value: Union[int, str, float],
@@ -597,50 +776,91 @@ class DatabaseManager:
         """
         return os.path.getsize(self.db_name)
 
-    def insert_record(self, table_name: str, fields: List[str], values: List):
+    def insert_record(self, table_name: str, data_dict: Dict[str, Union[int, str, float, None]],
+                      handle_m2m: bool = False) -> int:
         """Insert a new record into a table.
 
         Args:
             table_name (str): The name of the table to insert the record into.
-            fields (List[str]): A list of field names where the values should be inserted.
-            values (List): A list of values corresponding to the fields.
+            data_dict (Dict[str, Union[int, str, float, None]]): A dictionary mapping field names to their values.
+            handle_m2m (bool): Whether to handle many-to-many relationships. Defaults to False.
+
+        Returns:
+            int: The rowid of the newly inserted record.
 
         Raises:
             ValueError: If the table name or field names are not valid Python identifiers.
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        if not table_name.isidentifier() or not all(f.isidentifier() for f in fields):
+        if not table_name.isidentifier() or not all(f.isidentifier() for f in data_dict.keys()):
             raise ValueError("Invalid table name or field names")
 
-        placeholders = ', '.join(['?'] * len(values))
-        field_names = ', '.join(fields)
+        # Separate M2M data from the main data if handling M2M relationships
+        m2m_data = {}
+        if handle_m2m:
+            for m2m_field in self.get_many_to_many_fields(table_name):
+                if m2m_field.track_field_name not in data_dict:
+                    continue
+                m2m_data[m2m_field.track_field_name] = data_dict.pop(m2m_field.track_field_name)
+
+        # Insert the main record
+        field_names = ', '.join(data_dict.keys())
+        placeholders = ', '.join(['?'] * len(data_dict))
         sql = f"INSERT INTO {table_name} ({field_names}) VALUES ({placeholders})"
-        self.cursor.execute(sql, values)
+        self.cursor.execute(sql, list(data_dict.values()))
         self.connection.commit()
 
-    def update_record(self, table_name: str, fields: List[str], values: List, pk_value: Union[int, str, float], pk_field: str = 'rowid'):
-        """Update an existing record in a table by rowid.
+        # Get the primary key of the newly inserted record
+        rowid = self.cursor.lastrowid
+
+        # Insert M2M data into the junction table(s) if handling M2M relationships
+        if handle_m2m:
+            for track_field_name, selected_values in m2m_data.items():
+                self.update_junction_table(table_name, track_field_name, rowid, selected_values, is_rowid=True)
+
+        return rowid
+
+    # TODO: Handle composite pks
+    def update_record(self, table_name: str, data_dict: Dict[str, Union[int, str, float, None]], 
+                      pk_value: Union[int, str, float], pk_field: str = 'rowid', handle_m2m: bool = False):
+        """Update an existing record in a table by primary key.
 
         Args:
             table_name (str): The name of the table containing the record to update.
-            fields (List[str]): A list of field names to update.
-            values (List): A list of new values corresponding to the fields.
-            rowid (int): The unique rowid of the record to update.
+            data_dict (Dict[str, Union[int, str, float, None]]): A dictionary mapping field names to their new values.
+            pk_value (Union[int, str, float]): The primary key value of the record to update.
+            pk_field (str): The name of the primary key field. Defaults to 'rowid'.
+            handle_m2m (bool): Whether to handle many-to-many relationships. Defaults to False.
 
         Raises:
             ValueError: If the table name or field names are not valid Python identifiers.
             sqlite3.Error: If there is an error executing the SQL command.
         """
         if (not table_name.isidentifier() or 
-            not all(f.isidentifier() for f in fields) or
+            not all(f.isidentifier() for f in data_dict.keys()) or
             not pk_field.isidentifier()
-           ):
+        ):
             raise ValueError("Invalid table name or field names")
 
-        set_clause = ', '.join([f"{field} = ?" for field in fields])
-        sql = f"UPDATE {table_name} SET {set_clause} WHERE {pk_field} = ?"
-        self.cursor.execute(sql, values + [pk_value])
-        self.connection.commit()
+        # Separate M2M data from the main data if handling M2M relationships
+        m2m_data = {}
+        if handle_m2m:
+            for m2m_field in self.get_many_to_many_fields(table_name):
+                if m2m_field.track_field_name not in data_dict:
+                    continue
+                m2m_data[m2m_field.track_field_name] = data_dict.pop(m2m_field.track_field_name)
+
+        if data_dict:
+            # Update the main record
+            set_clause = ', '.join([f"{field} = ?" for field in data_dict.keys()])
+            sql = f"UPDATE {table_name} SET {set_clause} WHERE {pk_field} = ?"
+            self.cursor.execute(sql, list(data_dict.values()) + [pk_value])
+            self.connection.commit()
+
+        # Update M2M data in the junction table(s) if handling M2M relationships
+        if handle_m2m:
+            for track_field_name, selected_values in m2m_data.items():
+                self.update_junction_table(table_name, track_field_name, pk_value, selected_values)
 
     def get_field_type(self, table_name: str, field_name: str) -> str:
         """Retrieve the data type of a specific field in a specified table.
@@ -683,50 +903,129 @@ class DatabaseManager:
         fields = self.cursor.fetchall()
 
         # Filter fields to include only those that are part of the primary key
-        primary_keys = [field[1] for field in fields if field[5] == 1]  # field[5] indicates the primary key part
+        primary_keys = [field[1] for field in fields if field[5]]  # field[5] indicates the primary key part
         return primary_keys
 
-    # TODO: Test
-    def create_junction_table(self, junction_table_name: str, table1: str, field1: str, table2: str, field2: str):
-        """Create a junction table for many-to-many relationships.
+    def create_junction_table(self, from_table: str, to_table: str, from_field: str = 'id', to_field: str = 'id',
+                            junction_table_name: Optional[str] = None, track_field_name: str = None, track_field_vice_versa_name: str = None,
+                            from_display_field: Optional[str] = None, to_display_field: Optional[str] = None,
+                            track_vice_versa: bool = False):
+        """Create a junction table to represent a many-to-many relationship between two tables.
 
         Args:
-            junction_table_name (str): The name of the junction table.
-            table1 (str): The name of the first table.
-            field1 (str): The name of the field in the first table.
-            table2 (str): The name of the second table.
-            field2 (str): The name of the field in the second table.
+            from_table (str): The name of the first table involved in the relationship.
+            to_table (str): The name of the second table involved in the relationship.
+            from_field (str): The field in the first table that is referenced by the foreign key (default is 'id').
+            to_field (str): The field in the second table that is referenced by the foreign key (default is 'id').
+            junction_table_name (Optional[str]): The name of the junction table to be created. Defaults to '{from_table}_{to_table}' in alphabetical order.
+            from_display_field (Optional[str]): The field from the "from" table to be used for display purposes.
+            to_display_field (Optional[str]): The field from the "to" table to be used for display purposes.
+            track_vice_versa (bool): Whether to track the relationship in both directions.
 
         Raises:
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        if not junction_table_name.isidentifier():
-            raise ValueError("Invalid junction table name")
+        # Assign the default junction table name if not provided
+        junction_table_name = junction_table_name or f"{'_'.join(sorted([from_table, to_table]))}"
+        track_field_name = track_field_name or f"{to_table}_{to_field}s"
+        track_field_vice_versa_name = track_field_vice_versa_name or f"{from_table}_{from_field}s"
 
-        # Define the junction table schema
-        junction_fields = {
-            f"{table1}_id": "INTEGER NOT NULL",
-            f"{table2}_id": "INTEGER NOT NULL",
-            "PRIMARY KEY": f"({table1}_id, {table2}_id)"
-        }
+        # Set keys
+        from_table_key = f"{from_table}_{from_field}"
+        to_table_key = f"{to_table}_{to_field}"
 
-        # Create the junction table
-        self.create_table(junction_table_name, junction_fields)
+        # Construct the SQL for creating the junction table
+        sql = f"""
+            CREATE TABLE IF NOT EXISTS {junction_table_name} (
+                {from_table_key} TEXT NOT NULL,
+                {to_table_key} TEXT NOT NULL,
+                PRIMARY KEY ({from_table_key}, {to_table_key}),
+                FOREIGN KEY ({from_table_key}) REFERENCES {from_table}({from_field}) ON DELETE CASCADE,
+                FOREIGN KEY ({to_table_key}) REFERENCES {to_table}({to_field}) ON DELETE CASCADE
+            );
+        """
 
-        # Add foreign key constraints to the junction table
-        self.add_field(
-            junction_table_name,
-            f"{table1}_id",
-            "INTEGER",
-            foreign_key=f"{table1}(rowid)"
-        )
+        # Execute the SQL command
+        self.cursor.execute(sql)
+        self.connection.commit()
 
-        self.add_field(
-            junction_table_name,
-            f"{table2}_id",
-            "INTEGER",
-            foreign_key=f"{table2}(rowid)"
-        )
+        self._create_meta_many_to_many_table()
+
+        # Track the many-to-many relationship in the metadata table
+        self.cursor.execute('''
+            INSERT OR REPLACE INTO _meta_many_to_many (
+                from_table, track_field_name, junction_table
+            ) VALUES (?, ?, ?);
+        ''', (from_table, track_field_name, junction_table_name))
+
+        # Add display field metadata for the "to" table
+        if to_display_field:
+            self.add_display_field(junction_table_name, to_table_key, to_display_field)
+            self.add_display_field(from_table, track_field_name, to_display_field)
+
+        # Optionally track the relationship in the reverse direction
+        if track_vice_versa:
+            self.cursor.execute('''
+                INSERT OR REPLACE INTO _meta_many_to_many (
+                    from_table, track_field_name, junction_table
+                ) VALUES (?, ?, ?);
+            ''', (to_table, track_field_vice_versa_name, junction_table_name))
+
+            # Add display field metadata for the "from" table
+            if from_display_field:
+                self.add_display_field(junction_table_name, from_table_key, from_display_field)
+                self.add_display_field(to_table, track_field_vice_versa_name, from_display_field)
+
+        self.connection.commit()
+
+    def update_junction_table(self, from_table: str, track_field_name: str, from_value: Union[int, str, float], 
+                            selected_values: List[Union[int, str, float]], is_rowid: bool = False):
+        """Update the junction table for a many-to-many relationship.
+
+        Args:
+            from_table (str): The name of the table from which the relationship starts.
+            track_field_name (str): The field name that tracks the many-to-many relationship.
+            from_value (Union[int, str, float]): The value in the from_table to match, either a rowid or an existing key.
+            selected_values (List[Union[int, str, float]]): The list of values to insert into the junction table.
+            is_rowid (bool): Indicates if `from_value` is a rowid that needs to be translated into the corresponding foreign key value.
+        """
+        self.cursor.execute('''
+            SELECT junction_table
+            FROM _meta_many_to_many
+            WHERE from_table = ? AND track_field_name = ?
+        ''', (from_table, track_field_name))
+        
+        junction_table = self.cursor.fetchone()[0]
+        fks = self.get_foreign_keys(junction_table)
+        for fk in fks:
+            if fk.table == from_table:
+                from_table_fk = fk
+            else:
+                to_table_fk = fk
+
+        if is_rowid:
+            # Translate the rowid into the corresponding foreign key value
+            self.cursor.execute(f'''
+                SELECT {from_table_fk.to_field}
+                FROM {from_table}
+                WHERE rowid = ?
+            ''', (from_value,))
+            from_value = self.cursor.fetchone()[0]
+
+        # Clear existing junction table entries for this record
+        self.cursor.execute(f'''
+            DELETE FROM {junction_table}
+            WHERE {from_table_fk.from_field} = ?
+        ''', (from_value,))
+
+        # Insert new entries into the junction table
+        for value in selected_values:
+            self.cursor.execute(f'''
+                INSERT INTO {junction_table} ({from_table_fk.from_field}, {to_table_fk.from_field})
+                VALUES (?, ?)
+            ''', (from_value, value))
+        
+        self.connection.commit()
 
     def add_display_field(self, table_name: str, field_name: str, display_field_name: str, display_format: str = None):
         """Add a display field entry to the meta table.
@@ -755,7 +1054,7 @@ class DatabaseManager:
 
         return results[0]
 
-    def remove_display_field(self, table_name: str, field_name: str):
+    def _remove_display_field(self, table_name: str, field_name: str):
         """Remove a display field entry from the meta table.
         """
         try:
@@ -766,42 +1065,3 @@ class DatabaseManager:
             self.connection.commit()
         except sqlite3.OperationalError:
             pass
-
-    # NOTE: Tmp
-    def create_view_with_display_field(
-        self, 
-        view_name: str, 
-        main_table: str, 
-        field_name: str, 
-        reference_table: str, 
-        key_field: str, 
-        display_field: str
-    ):
-        """
-        Create a view that includes the display field from the reference table.
-
-        Args:
-            view_name (str): The name of the view to be created.
-            main_table (str): The name of the main table.
-            field_name (str): The field name in the main table that references the key field in the reference table.
-            reference_table (str): The name of the reference table.
-            key_field (str): The key field in the reference table.
-            display_field (str): The display field in the reference table.
-        """
-        # Construct the SQL to create the view
-        create_view_sql = f"""
-        CREATE VIEW IF NOT EXISTS {view_name} AS
-        SELECT 
-            {main_table}.*,
-            {reference_table}.{display_field} AS {field_name}_{display_field}
-        FROM 
-            {main_table}
-        JOIN 
-            {reference_table}
-        ON 
-            {main_table}.{field_name} = {reference_table}.{key_field};
-        """
-
-        # Execute the SQL command to create the view
-        self.cursor.execute(create_view_sql)
-        self.connection.commit()

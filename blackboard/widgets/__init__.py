@@ -16,6 +16,7 @@ from .database_view import DatabaseViewWidget
 from .app_selection_dialog import AppSelectionDialog
 from .menu import ContextMenu
 from .list_widget import EnumListWidget
+from .drag_pixmap import DragPixmap
 
 
 __all__ = [
@@ -35,4 +36,5 @@ __all__ = [
     'MomentumScrollListView', 'MomentumScrollTreeView',
     'ContextMenu',
     'EnumListWidget',
+    'DragPixmap',
 ]

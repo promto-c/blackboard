@@ -58,11 +58,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, widget: QtWidgets.QWidget = None, parent: QtWidgets.QWidget = None):
-        super().__init__()
+    def __init__(self, widget: QtWidgets.QWidget = None, parent: QtWidgets.QWidget = None, use_scalable_view: bool = True):
+        super().__init__(parent)
 
         # Store the arguments
         self.widget = widget
+        self.use_scalable_view = use_scalable_view
 
         # Initialize setup
         self.__init_attributes()
@@ -77,8 +78,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setDockNestingEnabled(True)
 
         if self.widget is not None:
-            self.widget_view = ScalableView(parent=self, widget=self.widget)
-            self.setCentralWidget(self.widget_view)
+            if self.use_scalable_view:
+                self.widget_view = ScalableView(parent=self, widget=self.widget)
+                self.setCentralWidget(self.widget_view)
+            else:
+                self.setCentralWidget(self.widget)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.

@@ -239,6 +239,9 @@ class DataFetchingButtons(QtWidgets.QWidget):
         layout.addWidget(self.fetch_all_button)
         layout.addWidget(self.stop_fetch_button)
 
+        if self.parent():
+            self.parent().installEventFilter(self)  # Install the event filter on the parent
+
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
@@ -269,6 +272,25 @@ class DataFetchingButtons(QtWidgets.QWidget):
         """
         self.fetch_all_button.collapse()
         self.fetch_more_button.expand()
+
+    def position_fetch_more_button(self):
+        """Position the 'Fetch More' button."""
+        if self.isHidden():
+            return
+
+        # Position the Fetch More button at the center bottom of the tree widget
+        x = (self.parent().width() - self.width()) / 2
+        y = self.parent().height() - self.height() - 30
+
+        self.move(int(x), int(y))
+
+    def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        """Filter events from the parent widget.
+        """
+        if event.type() == QtCore.QEvent.Type.Resize:
+            # Reposition the button on parent resize
+            self.position_fetch_more_button()
+        return super().eventFilter(watched, event)
 
 class InlineConfirmButton(QtWidgets.QWidget):
 

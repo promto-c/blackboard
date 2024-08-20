@@ -39,7 +39,7 @@ class SectionAction(QtWidgets.QWidgetAction):
     
     def addMenu(self, title: str) -> QtWidgets.QMenu:
 
-        menu = QtWidgets.QMenu(title, self.parent_menu)
+        menu = ContextMenu(title, self.parent_menu)
         self.parent_menu.insertMenu(self.separator, menu)
 
         return menu
@@ -49,11 +49,22 @@ class SectionAction(QtWidgets.QWidgetAction):
 
 class ContextMenu(QtWidgets.QMenu):
 
-    def __init__(self, parent: QtWidgets.QWidget = None):
-        super().__init__(parent)
+    def __init__(self, title: str = '', parent: QtWidgets.QWidget = None):
+        super().__init__(title, parent)
 
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def addSection(self, text: str, icon: QtGui.QIcon = None) -> 'SectionAction':
         return SectionAction(self, text, icon)
 
+    def insert_after_action(self, target_action: QtWidgets.QAction, action_to_insert: QtWidgets.QAction):
+        """Insert an action after a specific target action in the menu.
+        """
+        actions = self.actions()
+        for index, action in enumerate(actions):
+            if action == target_action:
+                if index + 1 < len(actions):
+                    self.insertAction(actions[index + 1], action_to_insert)
+                else:
+                    self.addAction(action_to_insert)
+                break

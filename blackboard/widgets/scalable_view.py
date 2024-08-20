@@ -53,6 +53,12 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Set the current zoom level to 1.0 (no zoom)
         self.current_zoom_level = self.DEFAULT_ZOOM_LEVEL
 
+        # Get the reference to the QApplication instance
+        if hasattr(QtWidgets.qApp, 'scalable_widgets'):
+            QtWidgets.qApp.scalable_widgets.append(self.widget)
+        else:
+            QtWidgets.qApp.scalable_widgets = [self.widget]
+
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
@@ -83,6 +89,23 @@ class ScalableView(QtWidgets.QGraphicsView):
         # ---------
         # Create a QShortcut for the F key to reset the scaling of the view.
         KeyBinder.bind_key('F', self, self.reset_scale, QtCore.Qt.ShortcutContext.WindowShortcut)
+
+    # Utility Methods
+    # ---------------
+    @staticmethod
+    def is_scalable(widget: QtWidgets.QWidget) -> bool:
+        """Check if the given widget is a descendant of a ScalableView.
+
+        Args:
+            widget (QtWidgets.QWidget): The widget to check.
+
+        Returns:
+            bool: True if the widget is a descendant of a ScalableView, False otherwise.
+        """
+        if not hasattr(QtWidgets.qApp, 'scalable_widgets'):
+            return False
+
+        return any(scalable_widget.isAncestorOf(widget) for scalable_widget in QtWidgets.qApp.scalable_widgets)
 
     # Extended Methods
     # ----------------
@@ -148,8 +171,9 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Create a QRectF object with the size of the view reserved for scaling
         rect = QtCore.QRectF(
             0, 0,
-            view_size.width() / self.current_zoom_level-2,
-            view_size.height() / self.current_zoom_level-2)
+            view_size.width() / self.current_zoom_level - 2,
+            view_size.height() / self.current_zoom_level - 2
+        )
 
         # Set the size of the widget to the size of the view
         self.graphic_proxy_widget.setGeometry(rect)
@@ -194,33 +218,39 @@ class ScalableView(QtWidgets.QGraphicsView):
     #     except (AttributeError, RuntimeError):
     #         pass
 
-def main():
+
+# Example usages
+if __name__ == '__main__':
     import sys
     import blackboard as bb
     from blackboard import widgets
+    from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
 
     # Create the Qt application
     app = QtWidgets.QApplication(sys.argv)
 
-    # Set theme of QApplication to the dark theme
+    # Set the theme of QApplication to the dark theme
     bb.theme.set_theme(app, 'dark')
 
-    from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
-
-    # Create the tree widget with example data
+    # Create the GroupableTreeWidget with example data
     tree_widget = widgets.GroupableTreeWidget()
     tree_widget.setHeaderLabels(COLUMN_NAME_LIST)
     tree_widget.add_items(ID_TO_DATA_DICT)
 
-    # Create the scalable view and set the tree widget as its central widget
+    # Check if the tree widget is within a ScalableView before wrapping it
+    print(ScalableView.is_scalable(tree_widget))
+    # Expected output: False
+
+    # Wrap the tree widget in a ScalableView
     scalable_tree_widget_view = ScalableView(widget=tree_widget)
 
-    # Set the size of the view and show it
+    # Check again if the tree widget is now within a ScalableView
+    print(ScalableView.is_scalable(tree_widget))
+    # Expected output: True
+
+    # Set the size of the scalable view and show it
     scalable_tree_widget_view.resize(800, 600)
     scalable_tree_widget_view.show()
 
     # Run the application loop
     sys.exit(app.exec())
-
-if __name__ == '__main__':
-    main()

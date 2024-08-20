@@ -801,7 +801,7 @@ class MultiSelectFilterWidget(FilterWidget):
         self.set_initial_focus_widget(self.filter_entry_edit)
         self.filter_entry_edit.setModel(self.tree_view.model())
 
-        self.tag_list_view = widgets.TagListView(self)
+        self.tag_list_view = widgets.TagListView(self, show_only_checked=True)
         self.tag_list_view.setModel(self.tree_view.model())
 
         # Copy button

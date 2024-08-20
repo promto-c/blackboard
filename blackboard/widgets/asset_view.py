@@ -28,18 +28,27 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
     def __init__(self, parent: QtWidgets.QWidget = None, identifier: Optional[str] = None):
         super().__init__(parent, identifier)
 
+        # Initialize setup
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        self.__init_context_menu()
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
+        self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
+        self.tree_widget.drag_started.connect(self._drag_data)
+
         # Key Binds
         # ---------
         # Create a shortcut for the copy action and connect its activated signal
         bb.utils.KeyBinder.bind_key("Ctrl+Shift+C", self.tree_widget, self.copy_path)
 
-        self.__init_context_menu()
-
     def __init_context_menu(self):
-        self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
-        self._create_context_menu()
-
-    def _create_context_menu(self):
         self.menu = widgets.ContextMenu()
         self.menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -66,6 +75,8 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         copy_relative_path_action.triggered.connect(self.copy_relative_path)
         copy_selected_cell_action.triggered.connect(self.tree_widget.copy_selected_cells)
 
+    # Public Methods
+    # --------------
     def show_context_menu(self, _position: QtCore.QPoint = None):
         self.menu.exec_(QtGui.QCursor.pos())
 
@@ -147,17 +158,39 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         clipboard = QtWidgets.QApplication.clipboard()
         clipboard.setText("\n".join(relative_paths))
 
-    def insert_after_action(self, menu: QtWidgets.QMenu, target_action: QtWidgets.QAction, action_to_insert: QtWidgets.QAction):
-        """Insert an action after a specific target action in the menu.
+    # Private Methods
+    # ---------------
+    def _drag_data(self, supported_actions: QtCore.Qt.DropActions):
+        """Handle drag event of the tree widget.
+
+        Args:
+            supported_actions (QtCore.Qt.DropActions): The supported actions for the drag event.
         """
-        actions = menu.actions()
-        for index, action in enumerate(actions):
-            if action == target_action:
-                if index + 1 < len(actions):
-                    menu.insertAction(actions[index + 1], action_to_insert)
-                else:
-                    menu.addAction(action_to_insert)
-                break
+        items = self.tree_widget.selectedItems()
+
+        if not items:
+            return
+        
+        mime_data = QtCore.QMimeData()
+
+        # Set mime data in format 'text/plain'
+        texts = bb.utils.TreeUtil.get_column_values(items, self.tree_widget.get_column_index(self.FILE_PATH_COLUMN_NAME))
+        text = '\n'.join(texts)
+        mime_data.setText(text)
+
+        # Set mime data in format 'text/uri-list'
+        urls = [QtCore.QUrl.fromLocalFile(text) for text in texts]
+        mime_data.setUrls(urls)
+
+        # Create drag icon pixmap with badge
+        drag_pixmap = widgets.DragPixmap(len(items))
+
+        # Set up the drag operation with the semi-transparent pixmap
+        drag = QtGui.QDrag(self)
+        drag.setMimeData(mime_data)
+        drag.setPixmap(drag_pixmap)
+        drag.exec_(supported_actions)
+
 
 # Main Function
 # -------------

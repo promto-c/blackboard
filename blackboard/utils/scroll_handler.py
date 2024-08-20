@@ -147,7 +147,7 @@ class MomentumScrollHandler(QtCore.QObject):
     # Private Methods
     # ---------------
     def _update_scroll_position(self):
-        """Handle the timer timeout event to update the scrolling.
+        """Update the scrolling based on the current velocity.
         """
         if self.velocity.manhattanLength() < self.min_velocity:
             self.stop()

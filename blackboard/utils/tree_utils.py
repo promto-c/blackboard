@@ -83,6 +83,21 @@ class TreeUtil:
         return items
 
     @classmethod
+    def get_column_values(cls, items: List['QtWidgets.QTreeWidgetItem'], column: int, 
+                          role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> List[Optional[str]]:
+        """Retrieve values from a specific column across a list of QTreeWidgetItem, using a specified data role.
+
+        Args:
+            items (List[QtWidgets.QTreeWidgetItem]): The list of items to extract column values from.
+            column (int): The index of the column to retrieve values from.
+            role (int): The data role to use when retrieving data. Defaults to DisplayRole.
+
+        Returns:
+            List[Optional[str]]: A list of values from the specified column for each item.
+        """
+        return [item.data(column, role) for item in items]
+
+    @classmethod
     def show_all_items(cls, tree_widget: 'QtWidgets.QTreeWidget'):
         """Show all items in the QTreeWidget.
 

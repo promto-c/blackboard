@@ -48,7 +48,7 @@ def test_add_field(db_manager: DatabaseManager):
 
 def test_insert_and_retrieve_record(db_manager: DatabaseManager):
     db_manager.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
-    db_manager.insert_record("test_table", ["name"], ["Test Name"])
+    db_manager.insert_record("test_table", {"name": "Test Name"})
 
     rows = list(db_manager.query_table_data("test_table"))
     assert len(rows) == 1
@@ -57,14 +57,14 @@ def test_insert_and_retrieve_record(db_manager: DatabaseManager):
 def test_update_record(db_manager: DatabaseManager):
     # Create a test table and insert a record
     db_manager.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
-    db_manager.insert_record("test_table", ["name"], ["Old Name"])
+    db_manager.insert_record("test_table", {"name": "Old Name"})
 
     # Retrieve the inserted record to get the rowid
     rows = list(db_manager.query_table_data("test_table", fields=["rowid", "name"]))
     rowid = rows[0][0]
 
     # Update the record with a new name
-    db_manager.update_record("test_table", ["name"], ["New Name"], rowid)
+    db_manager.update_record("test_table", {"name": "New Name"}, pk_value=rowid)
 
     # Query the updated record and verify the update
     updated_rows = list(db_manager.query_table_data("test_table", fields=["name"]))

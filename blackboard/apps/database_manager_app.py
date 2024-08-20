@@ -6,6 +6,7 @@ from typing import List, Tuple, Optional, Dict
 # ------------------------
 import os
 import sys
+from functools import partial
 
 # Third Party Imports
 # -------------------
@@ -14,9 +15,9 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-from blackboard.utils.database_manager import DatabaseManager, FieldInfo
+from blackboard.utils.database_manager import DatabaseManager, FieldInfo, ManyToManyField
 from blackboard.widgets.main_window import MainWindow
-from blackboard.widgets import GroupableTreeWidget, TreeWidgetItem
+from blackboard.widgets import TreeWidgetItem, DatabaseViewWidget
 from blackboard.widgets.header_view import SearchableHeaderView
 from blackboard.widgets.list_widget import EnumListWidget
 from blackboard.widgets.label import LabelEmbedderWidget
@@ -395,7 +396,7 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
         self.display_field_label = LabelEmbedderWidget(self.display_field_dropdown, "Reference Display Field")
 
         self.relationship_type_dropdown = QtWidgets.QComboBox()
-        self.relationship_type_dropdown.addItems(["Many-to-One", "One-to-One", "Many-to-Many"])
+        self.relationship_type_dropdown.addItems(["Many-to-One", "One-to-One"])
         self.relationship_type_label = LabelEmbedderWidget(self.relationship_type_dropdown, "Relationship Type")
 
         self.not_null_checkbox = QtWidgets.QCheckBox("NOT NULL")
@@ -460,11 +461,6 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
                 foreign_key=f"{reference_table}({key_field})"
             )
 
-        elif relationship_type == "Many-to-Many":
-            junction_table_name = f"{self.table_name}_{reference_table}_junction"
-            # TODO: Implement this
-            self.db_manager.create_junction_table(junction_table_name, self.table_name, key_field, reference_table, key_field)
-
         if display_field != key_field:
             # Store the display field information
             self.db_manager.add_display_field(self.table_name, field_name, display_field)
@@ -507,13 +503,13 @@ class AddEditRecordDialog(QtWidgets.QDialog):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, db_manager: DatabaseManager, table_name: str, record: dict = None, parent=None):
+    def __init__(self, db_manager: DatabaseManager, table_name: str, data_dict: dict = None, parent=None):
         super().__init__(parent)
 
         # Store the arguments
         self.table_name = table_name
         self.db_manager = db_manager
-        self.record = record
+        self.data_dict = data_dict
 
         # Initialize setup
         self.__init_attributes()
@@ -523,8 +519,9 @@ class AddEditRecordDialog(QtWidgets.QDialog):
     def __init_attributes(self):
         """Initialize the attributes.
         """
-        self.inputs = {}
+        self.field_name_to_input_widgets: Dict[str, QtWidgets.QWidget] = {}
         self.field_name_to_info = self.db_manager.get_table_info(self.table_name)
+        self.many_to_many_fields = self.db_manager.get_many_to_many_fields(self.table_name)
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -537,19 +534,28 @@ class AddEditRecordDialog(QtWidgets.QDialog):
 
         # Create Widgets
         # --------------
-        for field_info in self.field_name_to_info.values():
-            if field_info.is_primary_key:
-                continue  # Skip the primary key field; it is usually auto-managed by SQLite
+        for field_name, field_info in self.field_name_to_info.items():
+            # Skip the primary key field; it is usually auto-managed by SQLite
+            if field_info.type == 'INTEGER' and field_info.is_primary_key:
+                continue
 
             input_widget = self.create_input_widget(field_info)
-            label = LabelEmbedderWidget(input_widget, field_info.name)
+            label = LabelEmbedderWidget(input_widget, field_name)
             layout.addWidget(label)
-            self.inputs[field_info.name] = input_widget
+            self.field_name_to_input_widgets[field_name] = input_widget
 
-        if self.record:
-            for field, value in self.record.items():
-                if field in self.inputs:
-                    self.set_input_value(self.inputs[field], value, field_info)
+        for many_to_many_field in self.many_to_many_fields:
+            m2m_widget = self.create_many_to_many_widget(many_to_many_field)
+            label = LabelEmbedderWidget(m2m_widget, many_to_many_field.track_field_name)
+            layout.addWidget(label)
+            self.field_name_to_input_widgets[many_to_many_field.track_field_name] = m2m_widget
+
+        if self.data_dict:
+            for field, value in self.data_dict.items():
+                if field not in self.field_name_to_input_widgets:
+                    continue
+
+                self.set_input_value(field, value)
 
         self.submit_button = QtWidgets.QPushButton("Submit")
 
@@ -579,36 +585,36 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Error", "Please fill in all required fields.")
             return
 
-        if self.record:
+        if self.data_dict:
             # Determine which fields have changed
-            updated_fields = {}
-            for field, new_value in new_values.items():
-                old_value = self.record.get(field)
+            updated_data_dict = {field: new_value for field, new_value in new_values.items() if new_value != self.data_dict.get(field)}
 
-                if new_value != old_value:
-                    updated_fields[field] = new_value
-
-            if not updated_fields:
+            if not updated_data_dict:
                 QtWidgets.QMessageBox.information(self, "No Changes", "No changes were made.")
                 return
  
             # Get the primary key field name and its value
             pk_field = self.db_manager.get_primary_keys(self.table_name)[0]
-            pk_value = self.record.get(pk_field)
+            pk_value = self.data_dict.get(pk_field)
 
-            self.db_manager.update_record(
-                self.table_name, 
-                list(updated_fields.keys()), 
-                list(updated_fields.values()), 
-                pk_value, pk_field,
-            )
+            self.db_manager.update_record(self.table_name, updated_data_dict, pk_value, pk_field, handle_m2m=bool(self.many_to_many_fields))
 
         else:
-            # Filter out primary key columns from both values and column names
-            column_names_filtered = [field_name for field_name, field_info in self.field_name_to_info.items() if not field_info.is_primary_key]
-            values_filtered = [new_values[field_name] for field_name in column_names_filtered]
+            # Filter out primary key fields and create a dictionary for insertion
+            data_filtered = {
+                field_name: new_values[field_name]
+                for field_name, field_info in self.field_name_to_info.items()
+                if not (field_info.type == 'INTEGER' and field_info.is_primary_key)
+            }
 
-            self.db_manager.insert_record(self.table_name, column_names_filtered, values_filtered)
+            for many_to_many_field in self.many_to_many_fields:
+                field_name = many_to_many_field.track_field_name
+                if field_name not in new_values:
+                    continue
+                data_filtered[field_name] = new_values[field_name]
+
+            # Insert the record using the updated insert_record method
+            self.db_manager.insert_record(self.table_name, data_filtered, handle_m2m=bool(self.many_to_many_fields))
 
         self.accept()
 
@@ -658,7 +664,10 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         if file_name:
             line_edit.setText(file_name)
 
-    def set_input_value(self, input_widget, value, field_info: 'FieldInfo'=None):
+    def set_input_value(self, field_name, value):
+        input_widget = self.field_name_to_input_widgets.get(field_name)
+        field_info = self.field_name_to_info.get(field_name)
+
         if isinstance(input_widget, QtWidgets.QComboBox):
             if field_info and field_info.is_foreign_key:
                 # If the field is a foreign key, find the corresponding display value
@@ -678,7 +687,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             input_widget.setCurrentIndex(index)
 
         elif isinstance(input_widget, QtWidgets.QSpinBox) or isinstance(input_widget, QtWidgets.QDoubleSpinBox):
-            if value is None or value == "None":
+            if value is None or value == 'None':
                 input_widget.clear()
             else:
                 input_widget.setValue(value)
@@ -689,18 +698,20 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         elif isinstance(input_widget, QtWidgets.QDateTimeEdit):
             input_widget.setDateTime(QtCore.QDateTime.fromString(value, "yyyy-MM-dd HH:mm:ss") if value else QtCore.QDateTime.currentDateTime())
 
-        elif isinstance(input_widget, QtWidgets.QWidget):
-            line_edit = input_widget.findChild(QtWidgets.QLineEdit)
-            if line_edit:
-                line_edit.setText("" if value is None else str(value))
+        elif isinstance(input_widget, QtWidgets.QListWidget):
+            selected_values = set(value)
+            for i in range(input_widget.count()):
+                item = input_widget.item(i)
+                item_value = item.data(QtCore.Qt.ItemDataRole.UserRole)
+                item.setCheckState(QtCore.Qt.Checked if item_value in selected_values else QtCore.Qt.Unchecked)
 
     def get_record_data(self):
-        return {field: self.get_input_value(input_widget) for field, input_widget in self.inputs.items()}
+        return {field: self.get_input_value(input_widget) for field, input_widget in self.field_name_to_input_widgets.items()}
 
     def get_input_value(self, input_widget):
         if isinstance(input_widget, QtWidgets.QComboBox):
             return input_widget.currentData() or input_widget.currentText()
-        if isinstance(input_widget, QtWidgets.QSpinBox) or isinstance(input_widget, QtWidgets.QDoubleSpinBox):
+        elif isinstance(input_widget, QtWidgets.QSpinBox) or isinstance(input_widget, QtWidgets.QDoubleSpinBox):
             return input_widget.value()
         elif isinstance(input_widget, QtWidgets.QLineEdit):
             return input_widget.text() or None
@@ -708,11 +719,198 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             return input_widget.dateTime().toString("yyyy-MM-dd HH:mm:ss") if input_widget.dateTime() != input_widget.minimumDateTime() else None
         elif isinstance(input_widget, FileBrowseWidget):
             return input_widget.get_value() or None
-        elif isinstance(input_widget, QtWidgets.QWidget):
-            line_edit = input_widget.findChild(QtWidgets.QLineEdit)
-            if line_edit:
-                return line_edit.text() or None
+        elif isinstance(input_widget, QtWidgets.QListWidget):
+            # Retrieve the checked items from the QListWidget
+            selected_items = []
+            for index in range(input_widget.count()):
+                item = input_widget.item(index)
+                if item.checkState() == QtCore.Qt.Checked:
+                    selected_items.append(item.data(QtCore.Qt.ItemDataRole.UserRole) or item.text())
+            return selected_items
+
         return None
+
+    def create_many_to_many_widget(self, many_to_many_field: 'ManyToManyField'):
+        """Create a QListWidget with checkable items for a many-to-many relationship."""
+        widget = QtWidgets.QListWidget()
+
+        fks = self.db_manager.get_foreign_keys(many_to_many_field.junction_table)
+        for fk in fks:
+            if fk.table == self.table_name:
+                from_table_fk = fk
+            else:
+                to_table_fk = fk
+
+        # Get all possible related records
+        display_field = self.db_manager.get_display_field(self.table_name, many_to_many_field.track_field_name)
+        related_records = self.db_manager.query_table_data(
+            to_table_fk.table,
+            fields=[from_table_fk.to_field, display_field],
+            as_dict=True
+        )
+
+        # Add items to the list widget
+        for record in related_records:
+            item = QtWidgets.QListWidgetItem(record[display_field])
+            item.setData(QtCore.Qt.UserRole, record[from_table_fk.to_field])
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            item.setCheckState(QtCore.Qt.Unchecked)
+            widget.addItem(item)
+
+        return widget
+
+class AddManyToManyFieldDialog(QtWidgets.QDialog):
+    """
+    UI Design:
+    
+    +--------------------------------------+
+    |        Add Many-to-Many Field        |
+    +--------------------------------------+
+    | Junction Table Name: [_____________] |
+    |                                      |
+    | From Table: [Table1             v]   |
+    |                                      |
+    | From Key Field: [id             v]   |
+    |                                      |
+    | From Display Field: [name            v]   |
+    |                                      |
+    | To Table: [Table2               v]   |
+    |                                      |
+    | To Key Field: [id               v]   |
+    |                                      |
+    | To Display Field: [name            v]   |
+    |                                      |
+    | Track Vice Versa: [ ]                |
+    |                                      |
+    |                (Add Button)          |
+    |       [ Add Many-to-Many Field ]     |
+    +--------------------------------------+
+    """
+
+    def __init__(self, db_manager: DatabaseManager, from_table: str, parent=None):
+        super().__init__(parent)
+
+        # Store the arguments
+        self.db_manager = db_manager
+        self.from_table = from_table
+
+        # Initialize setup
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI of the widget."""
+        self.setWindowTitle("Add Many-to-Many Field")
+
+        # Create Layouts
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Create Widgets
+        self.junction_table_input = QtWidgets.QLineEdit()
+        self.junction_table_label = LabelEmbedderWidget(self.junction_table_input, "Junction Table Name")
+
+        self.from_table_dropdown = QtWidgets.QComboBox()
+        self.from_table_dropdown.addItems([self.from_table])
+        self.from_table_dropdown.setEnabled(False)
+        self.from_key_field_dropdown = QtWidgets.QComboBox()
+        self.from_display_field_dropdown = QtWidgets.QComboBox()
+
+        self.to_table_dropdown = QtWidgets.QComboBox()
+        table_names = self.db_manager.get_table_names()
+        table_names.remove(self.from_table)
+        self.to_table_dropdown.addItems(table_names)
+        self.to_table_dropdown.setCurrentIndex(-1)
+        self.to_table_label = LabelEmbedderWidget(self.to_table_dropdown, "To Table")
+
+        self.to_key_field_dropdown = QtWidgets.QComboBox()
+        self.to_display_field_dropdown = QtWidgets.QComboBox()
+
+        self.track_vice_versa_checkbox = QtWidgets.QCheckBox("Track Vice Versa")
+
+        self.add_button = QtWidgets.QPushButton("Add Many-to-Many Field")
+
+        # Add Widgets to Layouts
+        layout.addWidget(self.junction_table_label)
+        layout.addWidget(self.from_table_dropdown)
+        layout.addWidget(LabelEmbedderWidget(self.from_key_field_dropdown, "From Key Field"))
+        layout.addWidget(LabelEmbedderWidget(self.from_display_field_dropdown, "From Display Field"))
+        layout.addWidget(self.to_table_label)
+        layout.addWidget(LabelEmbedderWidget(self.to_key_field_dropdown, "To Key Field"))
+        layout.addWidget(LabelEmbedderWidget(self.to_display_field_dropdown, "To Display Field"))
+        layout.addWidget(self.track_vice_versa_checkbox)
+        layout.addStretch()
+        layout.addWidget(self.add_button)
+
+        # Initialize from_table key and display fields based on defaults
+        self._init_from_table_fields()
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections."""
+        self.to_table_dropdown.currentTextChanged.connect(self._update_to_table_fields)
+        self.add_button.clicked.connect(self.add_many_to_many_field)
+
+    def _init_from_table_fields(self):
+        """Initialize the 'from' table's key and display fields."""
+        primary_keys = self.db_manager.get_primary_keys(self.from_table)
+        unique_fields = self.db_manager.get_unique_fields(self.from_table)
+
+        # Combine unique fields and primary keys
+        reference_fields = primary_keys + unique_fields
+
+        # Set default key and display fields for the "from" table
+        self.from_key_field_dropdown.clear()
+        self.from_key_field_dropdown.addItems(reference_fields)
+        self.from_key_field_dropdown.setCurrentText('id' if 'id' in reference_fields else primary_keys[0] if primary_keys else reference_fields[0])
+
+        self.from_display_field_dropdown.clear()
+        self.from_display_field_dropdown.addItems(reference_fields)
+        self.from_display_field_dropdown.setCurrentText('name' if 'name' in reference_fields else reference_fields[0])
+
+    def _update_to_table_fields(self):
+        """Update the 'to' table's key and display fields based on the selected table."""
+        table_name = self.to_table_dropdown.currentText()
+        if not table_name:
+            return
+
+        primary_keys = self.db_manager.get_primary_keys(table_name)
+        unique_fields = self.db_manager.get_unique_fields(table_name)
+
+        # Combine unique fields and primary keys
+        reference_fields = primary_keys + unique_fields
+
+        # Update the key and display fields for the "to" table
+        self.to_key_field_dropdown.clear()
+        self.to_key_field_dropdown.addItems(reference_fields)
+        self.to_key_field_dropdown.setCurrentText('id' if 'id' in reference_fields else primary_keys[0] if primary_keys else reference_fields[0])
+
+        self.to_display_field_dropdown.clear()
+        self.to_display_field_dropdown.addItems(reference_fields)
+        self.to_display_field_dropdown.setCurrentText('name' if 'name' in reference_fields else reference_fields[0])
+
+    def add_many_to_many_field(self):
+        """Handle adding the many-to-many relationship field."""
+        junction_table_name = self.junction_table_input.text()
+        to_table = self.to_table_dropdown.currentText()
+        from_key_field = self.from_key_field_dropdown.currentText()
+        from_display_field = self.from_display_field_dropdown.currentText()
+        to_key_field = self.to_key_field_dropdown.currentText()
+        to_display_field = self.to_display_field_dropdown.currentText()
+        track_vice_versa = self.track_vice_versa_checkbox.isChecked()
+
+        self.db_manager.create_junction_table(
+            from_table=self.from_table,
+            to_table=to_table,
+            from_field=from_key_field,
+            to_field=to_key_field,
+            junction_table_name=junction_table_name,
+            track_field_name=f"{to_table}_{to_key_field}s",
+            track_field_vice_versa_name=f"{self.from_table}_{from_key_field}s",
+            from_display_field=from_display_field,
+            to_display_field=to_display_field,
+            track_vice_versa=track_vice_versa
+        )
+
+        self.accept()
 
 class DBWidget(QtWidgets.QWidget):
 
@@ -758,7 +956,9 @@ class DBWidget(QtWidgets.QWidget):
         self.data_view_widget = QtWidgets.QWidget()
         self.data_view_layout = QtWidgets.QVBoxLayout(self.data_view_widget)
 
-        self.tree_data_widget = GroupableTreeWidget(self)
+        self.data_view = DatabaseViewWidget(self)
+
+        self.tree_data_widget = self.data_view.tree_widget
         self.add_relation_column_menu = self.tree_data_widget.header_menu.addMenu('Add Relation Column')
         self.left_widget = self.create_left_widget()
 
@@ -768,7 +968,12 @@ class DBWidget(QtWidgets.QWidget):
         splitter.addWidget(self.left_widget)
         splitter.addWidget(self.data_view_widget)
         self.data_view_layout.addLayout(self.create_actions_layout())
-        self.data_view_layout.addWidget(LabelEmbedderWidget(self.tree_data_widget, "Table Data"))
+        self.data_view_layout.addWidget(self.data_view)
+
+        # TODO: Implement to support add, edit, populate Many-to-Many fields
+        self.test_button = QtWidgets.QPushButton('test')
+        self.data_view_layout.addWidget(self.test_button)
+        # ---
 
         splitter.setStretchFactor(0, 0)  # widget_a gets a stretch factor of 1
         splitter.setStretchFactor(1, 2)  # widget_b gets a stretch factor of 2
@@ -787,6 +992,7 @@ class DBWidget(QtWidgets.QWidget):
 
         self.add_field_button.clicked.connect(self.show_add_field_dialog)
         self.add_relation_field_button.clicked.connect(self.show_add_relation_field_dialog)
+        self.add_m2m_field_button.clicked.connect(self.show_add_many_to_many_field_dialog)
         self.delete_field_button.triggered.connect(self.delete_field)
 
         self.add_record_button.clicked.connect(self.show_add_record_dialog)
@@ -795,13 +1001,15 @@ class DBWidget(QtWidgets.QWidget):
         self.tree_data_widget.itemDoubleClicked.connect(self.edit_record)
         self.tree_data_widget.about_to_show_header_menu.connect(self.handle_header_context_menu)
 
+        # TODO: Implement to support add, edit, populate Many-to-Many fields
+        self.test_button.clicked.connect(self._test_add_m2m_data)
+
     def create_actions_layout(self):
         """Create and configure the actions layout.
         """
         # Create Layouts
         # --------------
         layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(QtWidgets.QLabel("Actions:"))
 
         # Create Widgets
         # --------------
@@ -813,8 +1021,8 @@ class DBWidget(QtWidgets.QWidget):
 
         # Add Widgets to Layouts
         # ----------------------
-        layout.addWidget(self.add_record_button)
-        layout.addWidget(self.delete_record_button)
+        self.data_view.general_tool_bar.addWidget(self.add_record_button)
+        self.data_view.general_tool_bar.addWidget(self.delete_record_button)
         layout.addWidget(filter_label)
 
         return layout
@@ -851,10 +1059,12 @@ class DBWidget(QtWidgets.QWidget):
         self.add_field_button.setToolTip('Add Field')
         self.add_relation_field_button = QtWidgets.QPushButton(TablerQIcon.link_plus, '')
         self.add_relation_field_button.setToolTip('Add Relation Field')
+        self.add_m2m_field_button = QtWidgets.QPushButton(TablerQIcon.webhook, '')
+        self.add_m2m_field_button.setToolTip('Add Many-to-Many Field')
 
         self.fields_list_widget = QtWidgets.QListWidget()
         self.fields_label = LabelEmbedderWidget(self.fields_list_widget, 'Fields')
-        self.fields_label.add_actions(self.add_relation_field_button, self.add_field_button)
+        self.fields_label.add_actions(self.add_m2m_field_button, self.add_relation_field_button, self.add_field_button)
         self.delete_field_button = ItemOverlayButton()
         self.delete_field_button.register_to(self.fields_list_widget)
 
@@ -919,7 +1129,7 @@ class DBWidget(QtWidgets.QWidget):
 
             # Pass the correct arguments to add_relation_column
             action.triggered.connect(
-                lambda: self.add_relation_column(from_table, to_table, target_field, from_field, to_field)
+                partial(self.add_relation_column, from_table, to_table, target_field, from_field, to_field)
             )
 
             self.add_relation_column_menu.addAction(action)
@@ -1020,6 +1230,14 @@ class DBWidget(QtWidgets.QWidget):
 
             self.fields_list_widget.addItem(column_definition)
 
+        # TODO: Add Many-to-Many track fields to fields_list_widget
+        many_to_many_fields = self.db_manager.get_many_to_many_fields(self.current_table)
+        for m2m in many_to_many_fields:
+            field_name = m2m.track_field_name
+            column_definition = f"{field_name} ({m2m.junction_table})"
+            self.fields_list_widget.addItem(column_definition)
+        # ---
+
         # Check if a view exists for the table and load its data
         self.load_table_data()
 
@@ -1027,17 +1245,31 @@ class DBWidget(QtWidgets.QWidget):
         if not self.db_manager or not self.current_table:
             return
 
-        pks = self.db_manager.get_primary_keys(self.current_table)
+        primary_key = self.db_manager.get_primary_keys(self.current_table)
         fields = self.db_manager.get_field_names(self.current_table)
-        if not pks:
-            fields.insert(0, 'rowid')
+        many_to_many_field_names = self.db_manager.get_many_to_many_field_names(self.current_table)
 
-        generator = self.db_manager.query_table_data(self.current_table, fields, as_dict=True)
+        if not primary_key:
+            primary_key = 'rowid'
+            fields.insert(0, primary_key)
 
         self.tree_data_widget.clear()
-        self.tree_data_widget.setHeaderLabels(fields)
+        self.tree_data_widget.set_primary_key(primary_key)
+        self.tree_data_widget.setHeaderLabels(fields + many_to_many_field_names)
 
+        generator = self.db_manager.query_table_data(self.current_table, fields + many_to_many_field_names, as_dict=True, handle_m2m=True)
         self.tree_data_widget.set_generator(generator)
+
+    # NOTE: Test add Many-to-Many data
+    def _test_add_m2m_data(self):
+        many_to_many_fields = self.db_manager.get_many_to_many_fields(self.current_table)
+        for m2m in many_to_many_fields:
+            # TODO: Handle display_field when create column
+            # display_field = self.db_manager.get_display_field(self.current_table, m2m.track_field_name)
+            data_dicts = self.db_manager.get_many_to_many_data(self.current_table, m2m.track_field_name)
+            for data_dict in data_dicts:
+                self.tree_data_widget.update_item(data_dict)
+    # ---
 
     def show_add_field_dialog(self):
         if not self.current_table:
@@ -1052,6 +1284,14 @@ class DBWidget(QtWidgets.QWidget):
             return
 
         dialog = AddRelationFieldDialog(self.db_manager, self.current_table, self)
+        if dialog.exec_():
+            self.load_table_info()
+
+    def show_add_many_to_many_field_dialog(self):
+        if not self.current_table:
+            return
+
+        dialog = AddManyToManyFieldDialog(self.db_manager, self.current_table, self)
         if dialog.exec_():
             self.load_table_info()
 
@@ -1091,6 +1331,7 @@ class DBWidget(QtWidgets.QWidget):
         self.db_manager.delete_field(self.current_table, field_name)
         self.load_table_info()
 
+    # TODO: Add support composite pks
     def delete_record(self):
         if not self.current_table:
             return
@@ -1121,6 +1362,6 @@ if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     theme.set_theme(app, 'dark')
     widget = DBWidget()
-    main_window = MainWindow(widget)
+    main_window = MainWindow(widget, use_scalable_view=True)
     main_window.show()
     sys.exit(app.exec_())
