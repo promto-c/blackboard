@@ -217,14 +217,14 @@ class DataFetchingButtons(QtWidgets.QWidget):
         self.fetch_all_button = AnimatedButton(
             icon=self.tabler_icon.arrow_down_to_arc,
             text='Fetch All',
-            hover_icon=self.tabler_icon.arrow_bar_to_down, 
+            hover_icon=self.tabler_icon.arrow_bar_to_down,
             hover_color=QtGui.QColor("#187"),
             parent=self)
         self.stop_fetch_button = AnimatedButton(
             icon=self.tabler_icon.loader,
             text='Fetching',
-            hover_icon=self.tabler_icon.x, 
-            hover_text='Stop', 
+            hover_icon=self.tabler_icon.x,
+            hover_text='Stop',
             hover_color=QtGui.QColor("#A45"),
             parent=self)
         self.stop_fetch_button.set_animate_text()
@@ -274,7 +274,8 @@ class DataFetchingButtons(QtWidgets.QWidget):
         self.fetch_more_button.expand()
 
     def position_fetch_more_button(self):
-        """Position the 'Fetch More' button."""
+        """Position the 'Fetch More' button.
+        """
         if self.isHidden():
             return
 
@@ -291,6 +292,12 @@ class DataFetchingButtons(QtWidgets.QWidget):
             # Reposition the button on parent resize
             self.position_fetch_more_button()
         return super().eventFilter(watched, event)
+
+    def showEvent(self, event: QtGui.QShowEvent):
+        """Handle the widget show event.
+        """
+        super().showEvent(event)
+        self.position_fetch_more_button()
 
 class InlineConfirmButton(QtWidgets.QWidget):
 

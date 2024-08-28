@@ -970,11 +970,6 @@ class DBWidget(QtWidgets.QWidget):
         self.data_view_layout.addLayout(self.create_actions_layout())
         self.data_view_layout.addWidget(self.data_view)
 
-        # TODO: Implement to support add, edit, populate Many-to-Many fields
-        self.test_button = QtWidgets.QPushButton('test')
-        self.data_view_layout.addWidget(self.test_button)
-        # ---
-
         splitter.setStretchFactor(0, 0)  # widget_a gets a stretch factor of 1
         splitter.setStretchFactor(1, 2)  # widget_b gets a stretch factor of 2
 
@@ -1000,9 +995,6 @@ class DBWidget(QtWidgets.QWidget):
 
         self.tree_data_widget.itemDoubleClicked.connect(self.edit_record)
         self.tree_data_widget.about_to_show_header_menu.connect(self.handle_header_context_menu)
-
-        # TODO: Implement to support add, edit, populate Many-to-Many fields
-        self.test_button.clicked.connect(self._test_add_m2m_data)
 
     def create_actions_layout(self):
         """Create and configure the actions layout.
@@ -1113,10 +1105,40 @@ class DBWidget(QtWidgets.QWidget):
         # Check if the selected column has a foreign key relation
         related_fk = next((fk for fk in foreign_keys if fk.from_field == from_field), None)
 
+        # Check for many-to-many fields if no direct foreign key was found
         if not related_fk:
+            # TODO: Handle m2m > relation > relation
+            many_to_many_fields = self.db_manager.get_many_to_many_fields(from_table)
+            m2m_field_map = {m2m.track_field_name: m2m for m2m in many_to_many_fields}
+
+            if from_field in m2m_field_map:
+                m2m_field = m2m_field_map[from_field]
+                junction_table = m2m_field.junction_table
+
+                # Retrieve foreign keys from the junction table
+                fks = self.db_manager.get_foreign_keys(junction_table)
+                from_table_fk = next(fk for fk in fks if fk.table == from_table)
+                to_table_fk = next(fk for fk in fks if fk != from_table_fk)
+
+                # Get the related fields from the 'to' table
+                related_field_names = self.db_manager.get_field_names(to_table_fk.table)
+
+                # Add actions for each field in the related table to handle m2m relation columns
+                for display_field in related_field_names[1:]:
+                    display_column_label = f"{to_table_fk.table}.{display_field}"
+                    action = QtWidgets.QAction(display_column_label, self)
+
+                    # Connect the action to the m2m-specific add relation function
+                    action.triggered.connect(
+                        partial(self.add_relation_column_m2m, from_table, display_field, m2m_field, display_column_label)
+                    )
+
+                    self.add_relation_column_menu.addAction(action)
+
+                self.add_relation_column_menu.setEnabled(True)
             return
 
-        # Retrieve related table and field from the foreign key data
+        # If a direct foreign key relation is found, handle it as before
         to_table = related_fk.table
         to_field = related_fk.to_field
 
@@ -1124,32 +1146,32 @@ class DBWidget(QtWidgets.QWidget):
         related_field_names = self.db_manager.get_field_names(to_table)
 
         # Create a menu action for each foreign key relation
-        for target_field in related_field_names[1:]:
-            action = QtWidgets.QAction(f"{to_table}.{target_field}", self)
+        for display_field in related_field_names[1:]:
+            action = QtWidgets.QAction(f"{to_table}.{display_field}", self)
 
             # Pass the correct arguments to add_relation_column
             action.triggered.connect(
-                partial(self.add_relation_column, from_table, to_table, target_field, from_field, to_field)
+                partial(self.add_relation_column, from_table, to_table, display_field, from_field, to_field)
             )
 
             self.add_relation_column_menu.addAction(action)
 
         self.add_relation_column_menu.setEnabled(True)
 
-    def add_relation_column(self, from_table: str, to_table: str, target_field: str, from_field: str, to_field: str):
+    def add_relation_column(self, from_table: str, to_table: str, display_field: str, from_field: str, to_field: str):
         """Add a relation column to the tree widget.
 
         Args:
             from_table (str): The table from which the relation is originating.
             to_table (str): The name of the related table to join.
-            target_field (str): The column from the related table to display.
+            display_field (str): The column from the related table to display.
             from_field (str): The foreign key field in the current table.
             to_field (str): The primary key field in the related table.
         """
-        current_column_names = self.tree_data_widget.column_names
+        current_column_names = self.tree_data_widget.column_names.copy()
 
         # Check if the related column header already exists
-        target_column_name = f"{to_table}.{target_field}"
+        target_column_name = f"{to_table}.{display_field}"
         if target_column_name not in current_column_names:
             current_column_names.append(target_column_name)
             self.tree_data_widget.setHeaderLabels(current_column_names)
@@ -1159,12 +1181,31 @@ class DBWidget(QtWidgets.QWidget):
 
         # Update the tree widget with the new column data
         for i, data_tuple in enumerate(list(data_tuples)):
-            target_value = self.db_manager.fetch_related_value(to_table, target_field, to_field, data_tuple[0])
+            target_value = self.db_manager.fetch_related_value(to_table, display_field, to_field, data_tuple[0])
 
             # TODO: Handle when grouping
             item: 'TreeWidgetItem' = self.tree_data_widget.topLevelItem(i)
             if item:
                 item.set_value(target_column_name, target_value)
+
+    def add_relation_column_m2m(self, from_table: str, display_field: str, m2m_field: ManyToManyField, display_column_label: str):
+        """
+        Add a many-to-many relation column to the tree widget.
+
+        Args:
+            from_table (str): The name of the originating table.
+            display_field (str): The field in the related table to display.
+            m2m_field (ManyToManyField): The ManyToManyField object containing information about the relationship.
+        """
+        current_column_names = self.tree_data_widget.column_names.copy()
+
+        # Check if the related column header already exists
+        if display_column_label not in current_column_names:
+            current_column_names.append(display_column_label)
+            self.tree_data_widget.setHeaderLabels(current_column_names)
+        data_dicts = self.db_manager.get_many_to_many_data(from_table, m2m_field.track_field_name, display_field=display_field, display_field_label=display_column_label)
+        for data_dict in data_dicts:
+            self.tree_data_widget.update_item(data_dict)
 
     def open_database(self):
         db_name, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open Database", "", "SQLite Database Files (*.db *.sqlite)")
@@ -1259,17 +1300,6 @@ class DBWidget(QtWidgets.QWidget):
 
         generator = self.db_manager.query_table_data(self.current_table, fields + many_to_many_field_names, as_dict=True, handle_m2m=True)
         self.tree_data_widget.set_generator(generator)
-
-    # NOTE: Test add Many-to-Many data
-    def _test_add_m2m_data(self):
-        many_to_many_fields = self.db_manager.get_many_to_many_fields(self.current_table)
-        for m2m in many_to_many_fields:
-            # TODO: Handle display_field when create column
-            # display_field = self.db_manager.get_display_field(self.current_table, m2m.track_field_name)
-            data_dicts = self.db_manager.get_many_to_many_data(self.current_table, m2m.track_field_name)
-            for data_dict in data_dicts:
-                self.tree_data_widget.update_item(data_dict)
-    # ---
 
     def show_add_field_dialog(self):
         if not self.current_table:

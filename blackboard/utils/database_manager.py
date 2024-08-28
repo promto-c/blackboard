@@ -600,7 +600,8 @@ class DatabaseManager:
         self.cursor.execute("SELECT name FROM sqlite_master WHERE type='view'")
         return [row[0] for row in self.cursor.fetchall()]
 
-    def get_many_to_many_data(self, table_name: str, track_field: str, from_values: Optional[List[Union[int, str, float]]] = None, display_field: str = '') -> List[Dict[str, Union[int, str, float]]]:
+    def get_many_to_many_data(self, table_name: str, track_field: str, from_values: Optional[List[Union[int, str, float]]] = None,
+                              display_field: str = '', display_field_label: str = '') -> List[Dict[str, Union[int, str, float]]]:
         """Retrieve the display field data related to specific records in a many-to-many relationship.
 
         Args:
@@ -612,6 +613,7 @@ class DatabaseManager:
         Returns:
             List[Dict[str, Union[int, str, float]]]: A list of dictionaries, each containing the 'id' from the original table and the corresponding list of related tags or other display fields.
         """
+        # Retrieve the junction table associated with the many-to-many field
         self.cursor.execute('''
             SELECT junction_table
             FROM _meta_many_to_many
@@ -620,6 +622,7 @@ class DatabaseManager:
 
         junction_table = self.cursor.fetchone()[0]
 
+        # Identify foreign key relationships in the junction table
         fks = self.get_foreign_keys(junction_table)
         for fk in fks:
             if fk.table == table_name:
@@ -628,17 +631,19 @@ class DatabaseManager:
             else:
                 to_table_fk = fk
 
+        # Determine the display field and its type
         display_field = display_field or to_table_fk.to_field
-        display_field_type = self.get_field_type(from_table_fk.table, display_field)
+        display_field_type = self.get_field_type(to_table_fk.table, display_field)
 
+        # Retrieve all values if not specified
         if from_values is None:
-            # Get all values if from_values is not provided
             self.cursor.execute(f'''
                 SELECT DISTINCT {from_table_fk.from_field}
                 FROM {junction_table}
             ''')
             from_values = [row[0] for row in self.cursor.fetchall()]
 
+        # Prepare the SQL query
         placeholders = ', '.join('?' for _ in from_values)
         query = f'''
             SELECT CAST({junction_table}.{from_table_fk.from_field} AS {key_type}) AS {from_table_fk.to_field},
@@ -661,10 +666,12 @@ class DatabaseManager:
             else:
                 return value
 
+        display_field_label = display_field_label or track_field
+        # Return data with proper formatting
         return [
             {
                 from_table_fk.to_field: row[0],
-                track_field: [convert_value(val, display_field_type) for val in row[1].split(',')]
+                display_field_label: [convert_value(val, display_field_type) for val in row[1].split(',')]
             }
             for row in results
         ]
@@ -698,10 +705,8 @@ class DatabaseManager:
         if not all(field.isidentifier() for field in fields):
             raise ValueError("Invalid field name")
 
-        if handle_m2m:
-            many_to_many_field_names = self.get_many_to_many_field_names(table_name)
-            fields = [field for field in fields if field not in many_to_many_field_names]
-
+        many_to_many_field_names = self.get_many_to_many_field_names(table_name) if handle_m2m else []
+        fields = [field for field in fields if field not in many_to_many_field_names]
         fields_str = ', '.join(fields)
 
         query = f"SELECT {fields_str} FROM {table_name}"
@@ -719,7 +724,7 @@ class DatabaseManager:
                         m2m_data = self.get_many_to_many_data(table_name, m2m_field, [row_dict[self.get_primary_keys(table_name)[0]]])
                         if not m2m_data:
                             continue
-                        row_dict.update(m2m_data[0])
+                        row_dict[m2m_field] = m2m_data[0].get(m2m_field, [])
 
                     if as_dict:
                         yield row_dict
@@ -731,9 +736,9 @@ class DatabaseManager:
                     yield from (dict(zip(fields, row)) for row in cursor)
                 else:
                     yield from cursor
+
         finally:
             cursor.close()
-
 
     def fetch_related_value(self, related_table_name: str, target_field_name: str,
                             reference_field_name: str, foreign_key_value: Union[int, str, float],
