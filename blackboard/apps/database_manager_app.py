@@ -953,23 +953,14 @@ class DBWidget(QtWidgets.QWidget):
         # Create a splitter
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
-        self.data_view_widget = QtWidgets.QWidget()
-        self.data_view_layout = QtWidgets.QVBoxLayout(self.data_view_widget)
-
-        self.data_view = DatabaseViewWidget(self)
-
-        self.tree_data_widget = self.data_view.tree_widget
-        self.add_relation_column_menu = self.tree_data_widget.header_menu.addMenu('Add Relation Column')
-        self.left_widget = self.create_left_widget()
+        self.__init_left_widget()
+        self.__init_data_view_widget()
 
         # Add Widgets to Layouts
         # ----------------------
         self.main_layout.addWidget(splitter)
         splitter.addWidget(self.left_widget)
         splitter.addWidget(self.data_view_widget)
-        self.data_view_layout.addLayout(self.create_actions_layout())
-        self.data_view_layout.addWidget(self.data_view)
-
         splitter.setStretchFactor(0, 0)  # widget_a gets a stretch factor of 1
         splitter.setStretchFactor(1, 2)  # widget_b gets a stretch factor of 2
 
@@ -996,33 +987,11 @@ class DBWidget(QtWidgets.QWidget):
         self.tree_data_widget.itemDoubleClicked.connect(self.edit_record)
         self.tree_data_widget.about_to_show_header_menu.connect(self.handle_header_context_menu)
 
-    def create_actions_layout(self):
-        """Create and configure the actions layout.
+    def __init_left_widget(self):
+        """Create and configure the left widget.
         """
-        # Create Layouts
-        # --------------
-        layout = QtWidgets.QHBoxLayout()
-
-        # Create Widgets
-        # --------------
-        self.add_record_button = QtWidgets.QPushButton(TablerQIcon.file_plus, 'Add Record')
-        self.delete_record_button = QtWidgets.QPushButton(TablerQIcon.file_minus, 'Delete Record')
-
-        self.filter_input = QtWidgets.QLineEdit()
-        filter_label = LabelEmbedderWidget(self.filter_input, "Filter")
-
-        # Add Widgets to Layouts
-        # ----------------------
-        self.data_view.general_tool_bar.addWidget(self.add_record_button)
-        self.data_view.general_tool_bar.addWidget(self.delete_record_button)
-        layout.addWidget(filter_label)
-
-        return layout
-
-    def create_left_widget(self):
-        """Create and configure the left widget."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
+        self.left_widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(self.left_widget)
 
         top_layout = QtWidgets.QHBoxLayout()
         layout.addLayout(top_layout)
@@ -1073,7 +1042,29 @@ class DBWidget(QtWidgets.QWidget):
         layout.addWidget(self.tables_label)
         layout.addWidget(self.fields_label)
 
-        return widget
+    def __init_data_view_widget(self):
+        """Create and configure the data view widget.
+        """
+        # Create Widgets
+        # --------------
+        self.data_view_widget = QtWidgets.QWidget()
+        data_view_layout = QtWidgets.QVBoxLayout(self.data_view_widget)
+
+        self.data_view = DatabaseViewWidget(self)
+
+        self.tree_data_widget = self.data_view.tree_widget
+        self.add_relation_column_menu = self.tree_data_widget.header_menu.addMenu('Add Relation Column')
+
+        # Data View
+        self.add_record_button = QtWidgets.QPushButton(TablerQIcon.file_plus, 'Add Record')
+        self.delete_record_button = QtWidgets.QPushButton(TablerQIcon.file_minus, 'Delete Record')
+
+        # Add Widgets to Layouts
+        # ----------------------
+        # Data View
+        self.data_view.general_tool_bar.addWidget(self.add_record_button)
+        self.data_view.general_tool_bar.addWidget(self.delete_record_button)
+        data_view_layout.addWidget(self.data_view)
 
     def handle_header_context_menu(self, column_index: int):
         """Handle the header context menu signal.
