@@ -7,6 +7,9 @@ from typing import List, Tuple, Optional, Dict
 import os
 import sys
 from functools import partial
+import ast
+import operator
+import re
 
 # Third Party Imports
 # -------------------
@@ -912,6 +915,125 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
 
         self.accept()
 
+# NOTE: WIP
+SAFE_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+}
+
+class FunctionalColumnDialog(QtWidgets.QDialog):
+    def __init__(self, db_manager, table_name, sample_data, parent=None):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.table_name = table_name
+        self.sample_data = sample_data
+        self.init_ui()
+
+    def init_ui(self):
+        """Initialize the UI components."""
+        self.setWindowTitle("Create Functional Column")
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Column Selector
+        self.column_selector = QtWidgets.QListWidget()
+        self.column_selector.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.column_selector.addItems(self.db_manager.get_field_names(self.table_name))
+        layout.addWidget(QtWidgets.QLabel("Select Columns:"))
+        layout.addWidget(self.column_selector)
+
+        # Function Input
+        self.function_input = QtWidgets.QLineEdit()
+        self.function_input.setPlaceholderText("Enter function, e.g., <col1> - <col2>")
+        layout.addWidget(QtWidgets.QLabel("Define Function:"))
+        layout.addWidget(self.function_input)
+
+        # Tree Widget for Preview
+        self.preview_tree = QtWidgets.QTreeWidget()
+        self.preview_tree.setColumnCount(len(self.sample_data[0]) + 1)  # +1 for the new column
+        self.preview_tree.setHeaderLabels(list(self.sample_data[0].keys()) + ['New Column'])
+        layout.addWidget(QtWidgets.QLabel("Preview:"))
+        layout.addWidget(self.preview_tree)
+
+        # Buttons
+        self.create_button = QtWidgets.QPushButton("Create Column")
+        self.create_button.clicked.connect(self.create_column)
+        layout.addWidget(self.create_button)
+
+        # Connect signals
+        self.column_selector.itemSelectionChanged.connect(self.update_preview)
+        self.function_input.textChanged.connect(self.auto_select_columns)
+        self.function_input.textChanged.connect(self.update_preview)
+
+        # Initial Preview
+        self.update_preview()
+
+    def auto_select_columns(self):
+        """Automatically select columns in the list based on the function input."""
+        function_text = self.function_input.text()
+        used_columns = self.extract_used_columns(function_text)
+
+        # Auto-select columns in the list widget
+        for i in range(self.column_selector.count()):
+            item = self.column_selector.item(i)
+            item.setSelected(item.text() in used_columns)
+
+    def extract_used_columns(self, function_text):
+        """Extract column names used in the function."""
+        # Use regex to find patterns like <col_name>
+        return set(re.findall(r"<(.*?)>", function_text))
+
+    def update_preview(self):
+        """Update the tree preview of the functional column based on sample data."""
+        selected_columns = [item.text() for item in self.column_selector.selectedItems()]
+        function_text = self.function_input.text()
+
+        # Clear previous items
+        self.preview_tree.clear()
+
+        # Check if the function is valid and safe
+        try:
+            for row in self.sample_data:
+                preview_row = {col: row[col] for col in selected_columns if col in row}
+                result = self.evaluate_function(function_text, preview_row)
+                
+                # Create tree widget items for each row
+                item = QtWidgets.QTreeWidgetItem([str(row[col]) for col in row.keys()] + [str(result)])
+                self.preview_tree.addTopLevelItem(item)
+
+        except Exception as e:
+            error_item = QtWidgets.QTreeWidgetItem(["Error: " + str(e)])
+            self.preview_tree.addTopLevelItem(error_item)
+
+    def evaluate_function(self, function_text, row):
+        """Evaluate the function safely using the provided row data."""
+        for col, value in row.items():
+            function_text = function_text.replace(f"<{col}>", str(value))
+
+        node = ast.parse(function_text, mode='eval')
+        return self.safe_eval(node.body)
+
+    def safe_eval(self, node):
+        """Evaluate an expression node safely."""
+        if isinstance(node, ast.BinOp):
+            left = self.safe_eval(node.left)
+            right = self.safe_eval(node.right)
+            operator_func = SAFE_OPERATORS.get(type(node.op))
+            if operator_func:
+                return operator_func(left, right)
+        elif isinstance(node, ast.Num):
+            return node.n
+        raise ValueError("Invalid expression")
+
+    def create_column(self):
+        """Create the new functional column in the database."""
+        column_name, ok = QtWidgets.QInputDialog.getText(self, "Column Name", "Enter name for new column:")
+        if ok and column_name:
+            QtWidgets.QMessageBox.information(self, "Success", f"Column '{column_name}' created successfully.")
+        else:
+            QtWidgets.QMessageBox.warning(self, "Error", "Column creation cancelled.")
+
 class DBWidget(QtWidgets.QWidget):
 
     # Initialization and Setup
@@ -955,6 +1077,11 @@ class DBWidget(QtWidgets.QWidget):
 
         self.__init_left_widget()
         self.__init_data_view_widget()
+
+        # NOTE: WIP
+        add_functional_column_action = QtWidgets.QAction('Add Functional Column', self)
+        add_functional_column_action.triggered.connect(self.open_functional_column_dialog)
+        self.tree_data_widget.header_menu.addAction(add_functional_column_action)
 
         # Add Widgets to Layouts
         # ----------------------
@@ -1148,6 +1275,24 @@ class DBWidget(QtWidgets.QWidget):
             self.add_relation_column_menu.addAction(action)
 
         self.add_relation_column_menu.setEnabled(True)
+
+    # NOTE: WIP
+    def open_functional_column_dialog(self):
+        """Open the Functional Column Dialog to create a new column.
+        """
+        if not self.current_table:
+            QtWidgets.QMessageBox.warning(self, "Error", "No table selected.")
+            return
+
+        # Fetch sample data for preview (e.g., first 5 rows)
+        sample_data = list(self.db_manager.query_table_data(self.current_table, as_dict=True))[:5]
+
+        # Create and show the Functional Column Dialog
+        dialog = FunctionalColumnDialog(self.db_manager, self.current_table, sample_data, self)
+        dialog.exec_()
+
+        # Update the view if a new column was successfully created
+        self.refresh_data()
 
     def add_relation_column(self, from_table: str, to_table: str, display_field: str, from_field: str, to_field: str):
         """Add a relation column to the tree widget.

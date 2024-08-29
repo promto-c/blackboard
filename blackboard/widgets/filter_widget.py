@@ -1202,6 +1202,141 @@ class FileTypeFilterWidget(FilterWidget):
         custom_input_text = ', '.join(custom_input)
         self.custom_input.setText(custom_input_text)
 
+# NOTE: WIP
+class NumericFilterWidget(widgets.FilterWidget):
+    """A widget for filtering numeric data with dynamic two-way condition handling.
+    """
+
+    CONDITIONS = ['Equal', 'Greater Than', 'Less Than', 'Between']
+
+    def __init__(self, filter_name: str = "Numeric Filter", parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
+
+        # Initialize setup specific to NumericFilterWidget
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI elements specific to the NumericFilterWidget."""
+        self.setIcon(TablerQIcon.filter)  # Set an appropriate icon for numeric filter
+
+        # Update the condition combo box to include numeric conditions
+        self.condition_combo_box.clear()
+        self.condition_combo_box.addItems(self.CONDITIONS)
+
+        # Add line edits for entering numeric values with placeholders
+        self.lower_value_edit = QtWidgets.QLineEdit(self)
+        self.lower_value_edit.setPlaceholderText("Lower limit...")
+        self.lower_value_edit.setProperty('has-placeholder', True)
+        self.lower_value_edit.setValidator(QtGui.QDoubleValidator())  # Ensure numeric input only
+        self.lower_value_edit.textChanged.connect(self.update_style)
+        # Create a clear action for the line edit
+        clear_action = QtWidgets.QAction(self)
+        clear_action.setIcon(TablerQIcon.x)  # Icon for the clear button
+        clear_action.setToolTip("Clear")
+        clear_action.triggered.connect(self.lower_value_edit.clear)
+        self.lower_value_edit.addAction(clear_action, QtWidgets.QLineEdit.TrailingPosition)
+        self.lower_value_label = widgets.LabelEmbedderWidget(self.lower_value_edit, 'From')
+
+        self.upper_value_edit = QtWidgets.QLineEdit(self)
+        self.upper_value_edit.setPlaceholderText("Upper limit......")
+        self.upper_value_edit.setProperty('has-placeholder', True)
+        self.upper_value_edit.setValidator(QtGui.QDoubleValidator())  # Ensure numeric input only
+        self.upper_value_edit.textChanged.connect(self.update_style)
+        # Create a clear action for the line edit
+        clear_action = QtWidgets.QAction(self)
+        clear_action.setIcon(TablerQIcon.x)  # Icon for the clear button
+        clear_action.setToolTip("Clear")
+        clear_action.triggered.connect(self.upper_value_edit.clear)
+        self.upper_value_edit.addAction(clear_action, QtWidgets.QLineEdit.TrailingPosition)
+        self.upper_value_label = widgets.LabelEmbedderWidget(self.upper_value_edit, 'To')
+
+        # Add the line edits to the specific content area of the widget
+        self.value_layout = QtWidgets.QHBoxLayout()
+        self.value_layout.addWidget(self.lower_value_label)
+        self.value_layout.addWidget(QtWidgets.QLabel("--", self))  # Icon or writer to separate fields
+        self.value_layout.addWidget(self.upper_value_label)
+        self.widget_layout.addLayout(self.value_layout)
+
+        # Set the initial focus widget to the condition combo box
+        self.set_initial_focus_widget(self.condition_combo_box)
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections for NumericFilterWidget."""
+        self.condition_combo_box.currentIndexChanged.connect(self.update_ui_for_condition)
+        self.lower_value_edit.textChanged.connect(self.handle_input_change)
+        self.upper_value_edit.textChanged.connect(self.handle_input_change)
+
+    # Slot Implementations
+    # --------------------
+    def discard_change(self):
+        """Revert the widget to its previously saved state."""
+        saved_condition = self.load_state('condition', 'Equal')
+        self.condition_combo_box.setCurrentText(saved_condition)
+
+        self.lower_value_edit.setText(self.load_state('lower_value', ""))
+        self.upper_value_edit.setText(self.load_state('upper_value', ""))
+
+    def save_change(self):
+        """Save the current state of the filter settings."""
+        self.save_state('condition', self.condition_combo_box.currentText())
+        self.save_state('lower_value', self.lower_value_edit.text())
+        self.save_state('upper_value', self.upper_value_edit.text())
+
+        # Emit signals with appropriate data
+        lower_value = self.lower_value_edit.text()
+        upper_value = self.upper_value_edit.text()
+
+        label_text = self.format_label(lower_value, upper_value)
+        self.label_changed.emit(label_text)
+        self.activated.emit([float(lower_value) if lower_value else None, 
+                             float(upper_value) if upper_value else None])
+
+    def clear_filter(self):
+        """Clear all filter settings and reset to the default state."""
+        self.condition_combo_box.setCurrentIndex(0)
+        self.lower_value_edit.clear()
+        self.upper_value_edit.clear()
+
+    def update_ui_for_condition(self, index: int):
+        """Update UI components based on the selected condition."""
+        condition = self.condition_combo_box.itemText(index)
+        if condition in ['Greater Than', 'Equal']:
+            self.upper_value_edit.clear()  # Use only lower value
+        elif condition == 'Less Than':
+            self.lower_value_edit.clear()  # Use only upper value
+
+    def handle_input_change(self):
+        """Adjust the condition dynamically based on user input."""
+        lower_value = self.lower_value_edit.text()
+        upper_value = self.upper_value_edit.text()
+
+        if lower_value and upper_value:
+            if lower_value == upper_value:
+                self.condition_combo_box.setCurrentText("Equal")
+            self.condition_combo_box.setCurrentText("Between")
+        elif lower_value:
+            self.condition_combo_box.setCurrentText("Greater Than")
+        elif upper_value:
+            self.condition_combo_box.setCurrentText("Less Than")
+
+    def format_label(self, lower_value: str, upper_value: str) -> str:
+        """Format the display label based on current inputs."""
+        if lower_value and upper_value:
+            return f"{lower_value} - {upper_value}"
+        elif lower_value:
+            return f"> {lower_value}"
+        elif upper_value:
+            return f"< {upper_value}"
+        return "Equal"
+
+    # Class Properties
+    # ----------------
+    @property
+    def is_active(self):
+        """Check if the filter is active based on current values."""
+        return bool(self.lower_value_edit.text() or self.upper_value_edit.text())
+
 class BooleanFilterWidget(FilterWidget):
     def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
