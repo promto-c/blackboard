@@ -17,6 +17,7 @@ from .app_selection_dialog import AppSelectionDialog
 from .menu import ContextMenu
 from .list_widget import EnumListWidget
 from .drag_pixmap import DragPixmap
+from .label import LabelEmbedderWidget
 
 
 __all__ = [
@@ -37,4 +38,5 @@ __all__ = [
     'ContextMenu',
     'EnumListWidget',
     'DragPixmap',
+    'LabelEmbedderWidget',
 ]
