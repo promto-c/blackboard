@@ -20,7 +20,7 @@ from blackboard import widgets
 
 # Class Definitions
 # -----------------
-class AssetViewWidget(widgets.DatabaseViewWidget):
+class AssetViewWidget(widgets.DataViewWidget):
 
     LABEL = 'Asset View'
     FILE_PATH_COLUMN_NAME = 'file_path'

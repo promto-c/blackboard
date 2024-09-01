@@ -134,6 +134,30 @@ class DatabaseManager:
         ''')
         self.connection.commit()
 
+    def is_table_exists(self, table_name: str) -> bool:
+        """Check if a table exists in the current database.
+
+        Args:
+            table_name (str): The name of the table to check.
+
+        Returns:
+            bool: True if the table exists, False otherwise.
+        """
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
+
+        cursor = self.connection.cursor()
+        cursor.execute('''
+            SELECT name
+            FROM sqlite_master
+            WHERE type='table' AND name=?
+        ''', (table_name,))
+
+        exists = cursor.fetchone() is not None
+        cursor.close()
+        
+        return exists
+
     def add_enum_metadata(self, table_name: str, field_name: str, enum_table_name: str, description: str = ""):
         self._create_meta_enum_field_table()
         self.cursor.execute('''
@@ -238,8 +262,9 @@ class DatabaseManager:
             raise ValueError("Invalid table name")
 
         # Retrieve the list of indexes for the table
-        self.cursor.execute(f"PRAGMA index_list({table_name})")
-        indexes = self.cursor.fetchall()
+        cursor = self.connection.cursor()
+        cursor.execute(f"PRAGMA index_list({table_name})")
+        indexes = cursor.fetchall()
 
         unique_fields = []
 
@@ -247,10 +272,11 @@ class DatabaseManager:
         for index in indexes:
             index_name = index[1]
             if index[2]:  # If the index is unique
-                self.cursor.execute(f"PRAGMA index_info({index_name})")
-                index_fields = self.cursor.fetchall()
+                cursor.execute(f"PRAGMA index_info({index_name})")
+                index_fields = cursor.fetchall()
                 for field in index_fields:
                     unique_fields.append(field[2])  # Add the field name to the set
+        cursor.close()
 
         return unique_fields
 
@@ -271,8 +297,10 @@ class DatabaseManager:
             raise ValueError("Invalid table name")
 
         # Retrieve field information
-        self.cursor.execute(f"PRAGMA table_info({table_name})")
-        fields = self.cursor.fetchall()
+        cursor = self.connection.cursor()
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        fields = cursor.fetchall()
+        cursor.close()
 
         # Get unique fields using the new method
         unique_fields = self.get_unique_fields(table_name)
@@ -327,8 +355,10 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
 
-        self.cursor.execute(f"PRAGMA foreign_key_list({table_name})")
-        foreign_keys = self.cursor.fetchall()
+        cursor = self.connection.cursor()
+        cursor.execute(f"PRAGMA foreign_key_list({table_name})")
+        foreign_keys = cursor.fetchall()
+        cursor.close()
 
         return [
             ForeignKey(
@@ -353,16 +383,20 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
 
-        try:
-            self.cursor.execute('''
-                SELECT track_field_name, junction_table
-                FROM _meta_many_to_many
-                WHERE from_table = ?
-            ''', (table_name,))
-            
-            records = self.cursor.fetchall()
-        except sqlite3.OperationalError:
+        # Return an empty list if the _meta_many_to_many table does not exist
+        if not self.is_table_exists('_meta_many_to_many'):
             return []
+
+        # Proceed with fetching the many-to-many relationships
+        cursor = self.connection.cursor()
+        cursor.execute('''
+            SELECT track_field_name, junction_table
+            FROM _meta_many_to_many
+            WHERE from_table = ?
+        ''', (table_name,))
+        
+        records = cursor.fetchall()
+        cursor.close()
 
         return [
             ManyToManyField(
@@ -613,14 +647,15 @@ class DatabaseManager:
         Returns:
             List[Dict[str, Union[int, str, float]]]: A list of dictionaries, each containing the 'id' from the original table and the corresponding list of related tags or other display fields.
         """
+        cursor = self.connection.cursor()
         # Retrieve the junction table associated with the many-to-many field
-        self.cursor.execute('''
+        cursor.execute('''
             SELECT junction_table
             FROM _meta_many_to_many
             WHERE from_table = ? AND track_field_name = ?
         ''', (table_name, track_field))
 
-        junction_table = self.cursor.fetchone()[0]
+        junction_table = cursor.fetchone()[0]
 
         # Identify foreign key relationships in the junction table
         fks = self.get_foreign_keys(junction_table)
@@ -637,11 +672,11 @@ class DatabaseManager:
 
         # Retrieve all values if not specified
         if from_values is None:
-            self.cursor.execute(f'''
+            cursor.execute(f'''
                 SELECT DISTINCT {from_table_fk.from_field}
                 FROM {junction_table}
             ''')
-            from_values = [row[0] for row in self.cursor.fetchall()]
+            from_values = [row[0] for row in cursor.fetchall()]
 
         # Prepare the SQL query
         placeholders = ', '.join('?' for _ in from_values)
@@ -654,8 +689,9 @@ class DatabaseManager:
             GROUP BY {junction_table}.{from_table_fk.from_field}
         '''
 
-        self.cursor.execute(query, from_values)
-        results = self.cursor.fetchall()
+        cursor.execute(query, from_values)
+        results = cursor.fetchall()
+        cursor.close()
 
         # Convert each result row into a dictionary, converting display fields back to their original type
         def convert_value(value: str, value_type: str) -> Union[int, str, float]:
@@ -904,8 +940,10 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
 
-        self.cursor.execute(f"PRAGMA table_info({table_name})")
-        fields = self.cursor.fetchall()
+        cursor = self.connection.cursor()
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        fields = cursor.fetchall()
+        cursor.close()
 
         # Filter fields to include only those that are part of the primary key
         primary_keys = [field[1] for field in fields if field[5]]  # field[5] indicates the primary key part

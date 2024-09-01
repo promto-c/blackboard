@@ -937,11 +937,11 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         # Use the provided update_key or fall back to the primary key
         update_key = update_key or self._primary_key
-        if not update_key:
-            raise ValueError("Update key not provided or primary key not set.")
 
+        if not update_key:
+            item_id = uuid.uuid1()
         # Handle single key or composite key
-        if isinstance(update_key, list):
+        elif isinstance(update_key, list):
             # Create a tuple of item_id values from the composite key
             item_id = tuple(data_dict[key] for key in update_key)
         else:

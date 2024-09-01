@@ -22,13 +22,24 @@ from blackboard import widgets
 
 # Class Definitions
 # -----------------
+# TODO: Add support to set column name mapping to filter widget
 class FilterBarWidget(QtWidgets.QWidget):
+
+    filter_widget_removed = QtCore.Signal(str)
 
     def __init__(self, parent: QtWidgets.QWidget = None):
         super().__init__(parent)
 
         # Initialize setup
+        self.__init_attributes()
         self.__init_ui()
+
+    def __init_attributes(self):
+        """Initialize the attributes.
+        """
+        # Private Attributes
+        # ------------------
+        self._filter_widgets: List['FilterWidget'] = []
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -54,6 +65,7 @@ class FilterBarWidget(QtWidgets.QWidget):
         # Add filter button
         self.add_filter_button = QtWidgets.QToolButton(self)
         self.add_filter_button.setIcon(self.tabler_icon.plus)
+        self.add_filter_button.setToolTip("Add Filter from Column")
         self.add_filter_button.setProperty('widget-style', 'round')
         self.add_filter_button.setFixedSize(24, 24)
 
@@ -72,6 +84,43 @@ class FilterBarWidget(QtWidgets.QWidget):
         """Add a filter widget to the filter area layout.
         """
         self.filter_area_layout.addWidget(filter_widget.button)
+        self._filter_widgets.append(filter_widget)
+        filter_widget.removed.connect(self.remove_filter_widget)
+
+    def remove_filter_widget(self, filter_widget: 'FilterWidget' = None):
+        """Remove a filter widget from the filter area layout.
+        """
+        filter_widget = filter_widget or self.sender()
+        if filter_widget in self._filter_widgets:
+            self.filter_area_layout.removeWidget(filter_widget.button)
+            filter_widget.button.deleteLater()  # Remove the button associated with the filter
+            self._filter_widgets.remove(filter_widget)
+            self.filter_widget_removed.emit(filter_widget.filter_name)
+
+    def clear(self):
+        """Clear all filter widgets from the filter bar.
+        """
+        for filter_widget in self._filter_widgets:
+            self.remove_filter_widget(filter_widget)
+        self._filter_widgets.clear()
+
+    def get_active_filters(self) -> List['FilterWidget']:
+        """Return a list of currently active filters.
+        """
+        return [filter_widget for filter_widget in self._filter_widgets if filter_widget.is_active]
+
+    def get_filter_widgets(self) -> List['FilterWidget']:
+        return self._filter_widgets
+
+    def filter_exists(self, filter_name: str) -> bool:
+        """Check if a filter already exists by its name.
+        """
+        return any(filter_widget.filter_name == filter_name for filter_widget in self._filter_widgets)
+
+    def count_filters(self) -> int:
+        """Return the number of active filters.
+        """
+        return len(self._filter_widgets)
 
 class MoreOptionsButton(QtWidgets.QToolButton):
     def __init__(self, parent=None):
@@ -256,6 +305,7 @@ class FilterWidget(QtWidgets.QWidget):
 
     label_changed = QtCore.Signal(str)
     activated = QtCore.Signal(list)
+    removed = QtCore.Signal()
 
     # Initialization and Setup
     # ------------------------
@@ -373,7 +423,7 @@ class FilterWidget(QtWidgets.QWidget):
 
         self.cancel_button.clicked.connect(self.discard_change)
         self.cancel_button.clicked.connect(self.hide_popup)
-        
+
         self.clear_button.clicked.connect(self.set_filter_applied)
         self.clear_button.clicked.connect(self.clear_state)
         self.clear_button.clicked.connect(self.clear_filter)
@@ -495,6 +545,12 @@ class FilterWidget(QtWidgets.QWidget):
         """
         self._initial_focus_widget = widget
 
+    def remove_filter(self):
+        """Remove the filter.
+        """
+        self.removed.emit()
+        self.hide_popup()
+
     # Class Properties
     # ----------------
     @property
@@ -520,11 +576,6 @@ class FilterWidget(QtWidgets.QWidget):
         """Save changes. Must be implemented in subclasses.
         """
         raise NotImplementedError("Subclasses must implement save_change")
-
-    def remove_filter(self):
-        """Remove the filter. Must be implemented in subclasses.
-        """
-        raise NotImplementedError("Subclasses must implement remove_filter")
 
     def clear_filter(self):
         """Clear the filter condition. Must be implemented in subclasses.
@@ -699,6 +750,62 @@ class DateRangeFilterWidget(FilterWidget):
 
         # Set the first item as the current item
         self.relative_date_combo_box.setCurrentIndex(0)
+
+# NOTE: WIP
+class DateTimeRangeFilterWidget(DateRangeFilterWidget):
+    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
+
+        # Additional setup for time range filtering
+        self.__init_datetime_ui()
+        self.__init_datetime_signal_connections()
+
+    def __init_datetime_ui(self):
+        """Initialize UI elements for handling both date and time."""
+        self.setIcon(TablerQIcon.calendar_clock)
+
+        # Extend existing widgets to include time components
+        self.time_edit_start = QtWidgets.QTimeEdit(self)
+        self.time_edit_end = QtWidgets.QTimeEdit(self)
+        self.time_edit_start.setDisplayFormat("HH:mm:ss")
+        self.time_edit_end.setDisplayFormat("HH:mm:ss")
+        
+        # Add the time widgets to the UI layout
+        self.widget_layout.addWidget(QtWidgets.QLabel("Start Time", self))
+        self.widget_layout.addWidget(self.time_edit_start)
+        self.widget_layout.addWidget(QtWidgets.QLabel("End Time", self))
+        self.widget_layout.addWidget(self.time_edit_end)
+
+    def __init_datetime_signal_connections(self):
+        """Initialize signal-slot connections for datetime handling."""
+        # Connect signals related to time selection
+        self.time_edit_start.timeChanged.connect(self.handle_time_change)
+        self.time_edit_end.timeChanged.connect(self.handle_time_change)
+
+    def handle_time_change(self):
+        """Handle changes in the time edits to keep date and time consistent."""
+        # Implement any logic needed to manage changes in time components
+        ...
+
+    def save_change(self):
+        """Save the date and time range."""
+        super().save_change()  # Call the base method to save date-related data
+        
+        # Save time-specific data
+        start_time = self.time_edit_start.time().toString(QtCore.Qt.DateFormat.ISODate)
+        end_time = self.time_edit_end.time().toString(QtCore.Qt.DateFormat.ISODate)
+
+        # Emit signals or store state with combined date and time information
+        self.save_state('start_time', start_time)
+        self.save_state('end_time', end_time)
+        # Combine date and time for emitting
+        self.label_changed.emit(f"{self.start_date.toString(QtCore.Qt.DateFormat.ISODate)} {start_time} - {self.end_date.toString(QtCore.Qt.DateFormat.ISODate)} {end_time}")
+
+    def discard_change(self):
+        """Revert changes for both date and time."""
+        super().discard_change()  # Call the base method to discard date changes
+        self.time_edit_start.setTime(self.load_state('start_time', QtCore.QTime()))
+        self.time_edit_end.setTime(self.load_state('end_time', QtCore.QTime()))
 
 class FilterEntryEdit(QtWidgets.QLineEdit):
     def __init__(self, parent=None):
@@ -1202,9 +1309,18 @@ class FileTypeFilterWidget(FilterWidget):
         custom_input_text = ', '.join(custom_input)
         self.custom_input.setText(custom_input_text)
 
-# NOTE: WIP
-class NumericFilterWidget(widgets.FilterWidget):
+class NumericFilterWidget(FilterWidget):
     """A widget for filtering numeric data with dynamic two-way condition handling.
+
+    UI Wireframe:
+        +----------------------------------+
+        | Condition: [ Equal  v]           |
+        | +------------------------------+ |
+        | |  [ 0.0 ]    ...   [ ... ]    | |
+        | +------------------------------+ |
+        |                                  |
+        | [ Clear ]             [ Apply ]  |
+        +----------------------------------+
     """
 
     CONDITIONS = ['Equal', 'Greater Than', 'Less Than', 'Between']
@@ -1301,10 +1417,25 @@ class NumericFilterWidget(widgets.FilterWidget):
     def update_ui_for_condition(self, index: int):
         """Update UI components based on the selected condition."""
         condition = self.condition_combo_box.itemText(index)
-        if condition in ['Greater Than', 'Equal']:
-            self.upper_value_edit.clear()  # Use only lower value
+        lower_value = self.lower_value_edit.text()
+        upper_value = self.upper_value_edit.text()
+        if condition == 'Greater Than':
+            if lower_value:
+                self.upper_value_edit.clear()
+            elif upper_value:
+                self.lower_value_edit.setText(upper_value)
+                self.upper_value_edit.clear()
         elif condition == 'Less Than':
-            self.lower_value_edit.clear()  # Use only upper value
+            if upper_value:
+                self.lower_value_edit.clear()
+            elif lower_value:
+                self.upper_value_edit.setText(lower_value)
+                self.lower_value_edit.clear()
+        elif condition == 'Equal':
+            if lower_value:
+                self.upper_value_edit.setText(lower_value)
+            elif upper_value:
+                self.lower_value_edit.setText(upper_value)
 
     def handle_input_change(self):
         """Adjust the condition dynamically based on user input."""
@@ -1314,7 +1445,8 @@ class NumericFilterWidget(widgets.FilterWidget):
         if lower_value and upper_value:
             if lower_value == upper_value:
                 self.condition_combo_box.setCurrentText("Equal")
-            self.condition_combo_box.setCurrentText("Between")
+            else:
+                self.condition_combo_box.setCurrentText("Between")
         elif lower_value:
             self.condition_combo_box.setCurrentText("Greater Than")
         elif upper_value:
@@ -1323,6 +1455,8 @@ class NumericFilterWidget(widgets.FilterWidget):
     def format_label(self, lower_value: str, upper_value: str) -> str:
         """Format the display label based on current inputs."""
         if lower_value and upper_value:
+            if lower_value == upper_value:
+                return f"= {lower_value}"  # When both values are equal
             return f"{lower_value} - {upper_value}"
         elif lower_value:
             return f"> {lower_value}"
@@ -1377,11 +1511,6 @@ if __name__ == '__main__':
     main_window = QtWidgets.QMainWindow()
     main_layout = QtWidgets.QHBoxLayout()
 
-    # Date Filter Setup
-    date_filter_widget = DateRangeFilterWidget(filter_name="Date")
-    date_filter_widget.activated.connect(print)
-    # Shot Filter Setup
-    shot_filter_widget = MultiSelectFilterWidget(filter_name="Shot")
     # sequence_to_shot = {
     #     "100": [
     #         "100_010_001", "100_020_050"
@@ -1426,6 +1555,15 @@ if __name__ == '__main__':
     model.appendRow(tropical)
     model.appendRow(berries)
 
+    # Date Filter Setup
+    date_filter_widget = DateRangeFilterWidget(filter_name="Date")
+    date_filter_widget.activated.connect(print)
+    # Date Filter Setup
+    date_time_filter_widget = DateTimeRangeFilterWidget(filter_name="Date Time")
+    date_time_filter_widget.activated.connect(print)
+    # Shot Filter Setup
+    shot_filter_widget = MultiSelectFilterWidget(filter_name="Shot")
+
     # Setting the model for the tree view
     shot_filter_widget.setModel(model)
 
@@ -1441,12 +1579,17 @@ if __name__ == '__main__':
     show_hidden_filter_widget = BooleanFilterWidget(filter_name='Show Hidden')
     show_hidden_filter_widget.activated.connect(print)
 
+    numeric_filter_widget = NumericFilterWidget(filter_name='Value')
+    numeric_filter_widget.activated.connect(print)
+
     # Filter bar
     filter_bar_widget = FilterBarWidget()
     filter_bar_widget.add_filter_widget(date_filter_widget)
+    filter_bar_widget.add_filter_widget(date_time_filter_widget)
     filter_bar_widget.add_filter_widget(shot_filter_widget)
     filter_bar_widget.add_filter_widget(file_type_filter_widget)
     filter_bar_widget.add_filter_widget(show_hidden_filter_widget)
+    filter_bar_widget.add_filter_widget(numeric_filter_widget)
 
     # Adding widgets to the layout
     main_layout.addWidget(filter_bar_widget)
