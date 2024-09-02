@@ -3,6 +3,7 @@ from .filter_widget import (
     DateRangeFilterWidget,
     MultiSelectFilterWidget,
     DateTimeRangeFilterWidget,
+    TextFilterWidget,
     FileTypeFilterWidget,
     BooleanFilterWidget,
     NumericFilterWidget,
@@ -25,6 +26,7 @@ from .label import LabelEmbedderWidget
 __all__ = [
     'FilterBarWidget', 'FilterWidget',
     'DateRangeFilterWidget', 'DateTimeRangeFilterWidget',
+    'TextFilterWidget',
     'MultiSelectFilterWidget',
     'FileTypeFilterWidget',
     'BooleanFilterWidget',

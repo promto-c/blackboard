@@ -26,7 +26,7 @@ from blackboard import widgets
 # -----------------
 class ColumnType(Enum):
     """Enum representing user-friendly column types and their associated filter widgets."""
-    TEXT = ('Text', widgets.MultiSelectFilterWidget)
+    TEXT = ('Text', widgets.TextFilterWidget)
     INT = ('Whole Number', widgets.NumericFilterWidget)
     FLOAT = ('Decimal Number', widgets.NumericFilterWidget)
     DATE = ('Date', widgets.DateRangeFilterWidget)
