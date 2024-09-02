@@ -30,68 +30,52 @@ from blackboard.widgets.menu import ContextMenu
 # Class Definitions
 # -----------------
 class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
-    """A custom `QTreeWidgetItem` that can handle different data formats and store additional data in the user role.
+    """Extend QTreeWidgetItem to handle various data formats and store additional data in the user role.
 
     Attributes:
-        id (int): The ID of the item.
+        id (Any): The ID of the item.
     """
+
     # Initialization and Setup
     # ------------------------
     def __init__(self, parent: Union[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem], 
-                 item_data: Union[Dict[str, Any], List[str]] = None, 
-                 item_id: Any = None):
-        """Initialize the `TreeWidgetItem` with the given parent and item data.
+                 item_data: Union[Dict[str, Any], List[Any]] = None, item_id: Any = None):
+        """Initialize with the given parent and item data.
         
         Args:
-            parent (Union[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]): The parent `QTreeWidget` or QtWidgets.QTreeWidgetItem.
-            item_data (Union[Dict[str, Any], List[str]], optional): The data for the item. Can be a list of strings or a dictionary with keys matching the headers of the parent `QTreeWidget`. Defaults to `None`.
-            item_id (int, optional): The ID of the item. Defaults to `None`.
+            parent (Union[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]): Parent widget or item.
+            item_data (Union[Dict[str, Any], List[str]], optional): Data for the item, as a list of values or a dictionary with keys matching the headers of the parent widget. Defaults to `None`.
+            item_id (Any, optional): The ID of the item. Defaults to `None`.
         """
-        # Set the item's ID
+        # Store the item's ID
         self.id = item_id
 
-        # If the data for the item is in list form
+        # Determine the format of the data (list or dict) and prepare it for the item
         if isinstance(item_data, list):
-            item_data_list = item_data
-
-        # If the data for the item is in dictionary form
-        if isinstance(item_data, dict):
-            # Get the column names from the header item
+            item_values = item_data
+        elif isinstance(item_data, dict):
+            # Retrieve column names from the parent widget
             column_names = TreeUtil.get_column_names(parent)
+            # Match data to columns
+            item_values = [item_data.get(column, '') for column in column_names]
 
-            # Create a list of data for the tree item
-            item_data_list = [item_data.get(column, '') for column in column_names]
-
-        # Call the superclass's constructor to set the item's data
-        super().__init__(parent, map(str, item_data_list))
+        # Call superclass constructor to initialize the item with formatted data
+        super().__init__(parent, map(str, item_values))
 
         # Set the UserRole data for the item.
-        self._set_user_role_data(item_data_list)
+        self._set_user_role_data(item_values)
 
-    # Private Methods
-    # ---------------
-    def _set_user_role_data(self, item_data_list: List[Any]):
-        """Set the UserRole data for the item.
-
-        Args:
-            item_data_list (List[Any]): The list of data to set as the item's data.
-        """
-        # Iterate through each column in the item
-        for column_index, value in enumerate(item_data_list):
-            # Set the value for the column in the UserRole data
-            self.set_value(column_index, value, QtCore.Qt.ItemDataRole.UserRole)
-
-    # Extended Methods
-    # ----------------
+    # Public Methods
+    # --------------
     def get_value(self, column: Union[int, str], data_role: QtCore.Qt.ItemDataRole = QtCore.Qt.ItemDataRole.UserRole) -> Any:
-        """Get the value of the item's data for the given column and role.
+        """Retrieves the value for the specified column and role.
 
         Args:
-            column (Union[int, str]): The column index or name.
-            data_role (QtCore.Qt.ItemDataRole, optional): The role of the data to retrieve. Defaults to UserRole.
+            column (Union[int, str]): Column index or name.
+            data_role (QtCore.Qt.ItemDataRole, optional): Data role to retrieve. Defaults to UserRole.
 
         Returns:
-            Any: The value of the specified role data.
+            Any: The value associated with the column and role.
         """
         # Get the column index from the column name if necessary
         column_index = self.treeWidget().get_column_index(column) if isinstance(column, str) else column
@@ -102,33 +86,45 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         return value
 
     def set_value(self, column: Union[int, str], value: Any, data_role: Optional[QtCore.Qt.ItemDataRole] = None):
-        """Set the value of the item's data for the given column and role.
+        """Set the value for the specified column and role.
 
         Args:
-            column (Union[int, str]): The column index or name.
-            value (Any): The value to set.
-            data_role (QtCore.Qt.ItemDataRole, optional): The role of the data to set. Defaults to UserRole.
+            column (Union[int, str]): Column index or name.
+            value (Any): Value to set.
+            data_role (QtCore.Qt.ItemDataRole, optional): Role under which to set the value. Defaults to UserRole.
         """
         # Get the column index from the column name if necessary
         column_index = self.treeWidget().get_column_index(column) if isinstance(column, str) else column
 
         # Set the value for the specified role and column
         if data_role is None:
+            # Set both UserRole and DisplayRole data
             self.setData(column_index, QtCore.Qt.ItemDataRole.UserRole, value)
             self.setData(column_index, QtCore.Qt.ItemDataRole.DisplayRole, str(value))
 
+            # Special handling for lists and booleans
             if isinstance(value, list):
-                self.set_tag_list_view(column_index, value)
-
+                self._set_tag_list_view(column_index, value)
             elif isinstance(value, bool):
-                # Set a checkbox or display "True"/"False"
                 check_state = QtCore.Qt.CheckState.Checked if value else QtCore.Qt.CheckState.Unchecked
                 self.setData(column_index, QtCore.Qt.ItemDataRole.CheckStateRole, check_state)
-
         else:
+            # Set data for the specified role
             self.setData(column_index, data_role, value)
 
-    def set_tag_list_view(self, column_index: int, values: List[str]):
+    # Private Methods
+    # ---------------
+    def _set_user_role_data(self, item_values: List[Any]):
+        """Set the UserRole data for the item.
+
+        Args:
+            item_values (List[Any]): The list of values to set as the item's data.
+        """
+        # Iterate through each column and set its value in the UserRole data
+        for column_index, value in enumerate(item_values):
+            self.set_value(column_index, value, QtCore.Qt.ItemDataRole.UserRole)
+
+    def _set_tag_list_view(self, column_index: int, values: List[str]):
         """Set up a TagListView with the given list of tags and assign it to the specified column.
 
         Args:
@@ -147,25 +143,24 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
     # Special Methods
     # ---------------
     def __getitem__(self, key: Union[int, str]) -> Any:
-        """Get the value of the item's UserRole data for the given column.
+        """Retrieve the value of the UserRole data for the given column.
 
         Args:
-            key (Union[int, str]): The column index or name.
+            key (Union[int, str]): Column index or name.
 
         Returns:
-            Any: The value of the UserRole data.
+            Any: The value stored under UserRole.
         """
-        # Delegate the retrieval of the value to the `get_value` method
         return self.get_value(key)
 
     def __lt__(self, other_item: 'TreeWidgetItem') -> bool:
         """Compare this item with another item to determine the sort order.
 
         Args:
-            other_item (TreeWidgetItem): The item to compare with.
+            other_item (TreeWidgetItem): Item to compare against.
 
         Returns:
-            bool: Whether this item is less than the other item.
+            bool: True if this item is less than the other item, False otherwise.
         """
         # Get the column that is currently being sorted
         column = self.treeWidget().sortColumn()
@@ -174,22 +169,21 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         self_data = self.get_value(column)
         other_data = other_item.get_value(column)
 
-        # If this item's UserRole data is None, it is considered greater
+        # If this item's UserRole data is None, consider it less; if other data is None, consider it greater
         if self_data is None:
             return True
-
-        # If the other item's UserRole data is None, this item is considered greater
         if other_data is None:
             return False
 
+        # Try to compare data directly. If the comparison fails, compare their string representations
         try:
-            # Try to compare data directly
             return self_data < other_data
         except TypeError:
-            # If the comparison fails, compare their string representations
             return str(self_data) < str(other_data)
 
     def __hash__(self):
+        """Return the hash of the item based on its ID.
+        """
         return hash(self.id)
 
 class ColumnManagementWidget(QtWidgets.QTreeWidget):
@@ -726,7 +720,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             or (None, None) if no valid values are found.
         """
         # Get the items at the specified child level
-        items = TreeUtil.get_items_at_child_level(self, child_level)
+        items = TreeUtil.get_child_items(self, target_depth=child_level)
 
         # Collect the values from the specified column in the items
         try:
@@ -987,7 +981,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             parent_item.child_grouped_dict = {}
             self.group_items(parent_item, column)
         else:
-            lowest_grouped_items = TreeUtil.get_items_at_child_level(self, len(self.grouped_column_names) - 1)
+            lowest_grouped_items = TreeUtil.get_child_items(self, target_depth=len(self.grouped_column_names) - 1)
             for lowest_grouped_item in lowest_grouped_items:
                 self.group_items(lowest_grouped_item, column)
 

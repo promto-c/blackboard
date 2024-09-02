@@ -765,22 +765,26 @@ class DateTimeRangeFilterWidget(DateRangeFilterWidget):
         self.setIcon(TablerQIcon.calendar_clock)
 
         # Extend existing widgets to include time components
-        self.time_edit_start = QtWidgets.QTimeEdit(self)
-        self.time_edit_end = QtWidgets.QTimeEdit(self)
-        self.time_edit_start.setDisplayFormat("HH:mm:ss")
-        self.time_edit_end.setDisplayFormat("HH:mm:ss")
-        
+        self.time_layout = QtWidgets.QHBoxLayout()
+        self.widget_layout.addLayout(self.time_layout)
+
+        self.time_start_edit = QtWidgets.QTimeEdit(self)
+        self.time_end_edit = QtWidgets.QTimeEdit(self)
+        self.time_start_edit.setDisplayFormat("HH:mm:ss")
+        self.time_end_edit.setDisplayFormat("HH:mm:ss")
+
+        self.time_start_label = widgets.LabelEmbedderWidget(self.time_start_edit, 'Start Time', self)
+        self.time_end_label = widgets.LabelEmbedderWidget(self.time_end_edit, 'End Time', self)
+
         # Add the time widgets to the UI layout
-        self.widget_layout.addWidget(QtWidgets.QLabel("Start Time", self))
-        self.widget_layout.addWidget(self.time_edit_start)
-        self.widget_layout.addWidget(QtWidgets.QLabel("End Time", self))
-        self.widget_layout.addWidget(self.time_edit_end)
+        self.time_layout.addWidget(self.time_start_label)
+        self.time_layout.addWidget(self.time_end_label)
 
     def __init_datetime_signal_connections(self):
         """Initialize signal-slot connections for datetime handling."""
         # Connect signals related to time selection
-        self.time_edit_start.timeChanged.connect(self.handle_time_change)
-        self.time_edit_end.timeChanged.connect(self.handle_time_change)
+        self.time_start_edit.timeChanged.connect(self.handle_time_change)
+        self.time_end_edit.timeChanged.connect(self.handle_time_change)
 
     def handle_time_change(self):
         """Handle changes in the time edits to keep date and time consistent."""
@@ -792,8 +796,8 @@ class DateTimeRangeFilterWidget(DateRangeFilterWidget):
         super().save_change()  # Call the base method to save date-related data
         
         # Save time-specific data
-        start_time = self.time_edit_start.time().toString(QtCore.Qt.DateFormat.ISODate)
-        end_time = self.time_edit_end.time().toString(QtCore.Qt.DateFormat.ISODate)
+        start_time = self.time_start_edit.time().toString(QtCore.Qt.DateFormat.ISODate)
+        end_time = self.time_end_edit.time().toString(QtCore.Qt.DateFormat.ISODate)
 
         # Emit signals or store state with combined date and time information
         self.save_state('start_time', start_time)
@@ -804,8 +808,8 @@ class DateTimeRangeFilterWidget(DateRangeFilterWidget):
     def discard_change(self):
         """Revert changes for both date and time."""
         super().discard_change()  # Call the base method to discard date changes
-        self.time_edit_start.setTime(self.load_state('start_time', QtCore.QTime()))
-        self.time_edit_end.setTime(self.load_state('end_time', QtCore.QTime()))
+        self.time_start_edit.setTime(self.load_state('start_time', QtCore.QTime()))
+        self.time_end_edit.setTime(self.load_state('end_time', QtCore.QTime()))
 
 class FilterEntryEdit(QtWidgets.QLineEdit):
     def __init__(self, parent=None):

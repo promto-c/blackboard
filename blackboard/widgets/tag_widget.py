@@ -16,6 +16,7 @@ from blackboard.widgets import MomentumScrollListView
 # -----------------
 class TagListView(MomentumScrollListView):
 
+    # Signal emitted when the tag list changes
     tag_changed = QtCore.Signal()
 
     # Initialization and Setup
@@ -69,18 +70,18 @@ class TagListView(MomentumScrollListView):
 
     # Public Methods
     # --------------
-    def get_tags(self):
+    def get_tags(self) -> List[str]:
         """Retrieve all tags from the model.
         """
         return [self.model().index(row, 0).data() for row in range(self.model().rowCount())]
 
-    def get_tags_count(self):
+    def get_tags_count(self) -> int:
         """Get the count of tags.
         """
         return self.model().rowCount()
 
     def set_read_only(self, read_only: bool):
-        """Set the read-only mode of the widget.
+        """Enable or disable read-only mode for the widget.
 
         Args:
             read_only (bool): Whether the widget should be in read-only mode.
@@ -101,7 +102,7 @@ class TagListView(MomentumScrollListView):
             item.setCheckable(True)
             item.setCheckState(QtCore.Qt.CheckState.Checked)
 
-            # Store the original tag in a custom role (e.g., Qt.UserRole)
+            # Store the original tag in a custom role
             item.setData(tag, QtCore.Qt.UserRole)
 
             model.appendRow(item)
@@ -165,14 +166,16 @@ class TagListView(MomentumScrollListView):
             current_state = index.data(QtCore.Qt.ItemDataRole.CheckStateRole)
             new_state = QtCore.Qt.CheckState.Unchecked if current_state == QtCore.Qt.CheckState.Checked else QtCore.Qt.CheckState.Checked
 
-        # Set the new state
+        # Update the tag's check state and show feedback
         self.model().setData(index, new_state, QtCore.Qt.ItemDataRole.CheckStateRole)
         state_text = "Added" if new_state == QtCore.Qt.CheckState.Checked else "Removed"
         QtWidgets.QToolTip.showText(event.globalPos(), f"'{tag_name}' {state_text}.", self)
 
         self._press_position = None
 
-    def setModel(self, model):
+    def setModel(self, model: QtGui.QStandardItemModel):
+        """Override to set the model with additional configurations.
+        """
         self._proxy_model.setSourceModel(model)
 
 

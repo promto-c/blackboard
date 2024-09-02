@@ -11,17 +11,15 @@ from qtpy import QtCore, QtGui, QtWidgets
 class TreeUtil:
 
     @classmethod
-    def get_child_items(cls, parent_item: Union['QtWidgets.QTreeWidgetItem', 'QtWidgets.QTreeWidget'],
-                        is_only_leaf: bool = False,
-                        is_only_checked: bool = False,
+    def get_child_items(cls, parent_item: Union['QtWidgets.QTreeWidget', 'QtWidgets.QTreeWidgetItem'],
+                        is_only_leaf: bool = False, is_only_checked: bool = False,
                         filter_func: Optional[Callable[['QtWidgets.QTreeWidgetItem'], bool]] = None,
-                        max_depth: Optional[int] = None,
-                        target_depth: Optional[int] = None,  # Alternative name suggestion
+                        max_depth: Optional[int] = None, target_depth: Optional[int] = None,
                         current_depth: int = 0) -> List['QtWidgets.QTreeWidgetItem']:
         """Recursively gathers all child items from a QTreeWidget, performing a depth-first search traversal.
 
         Args:
-            parent_item (Union[QtWidgets.QTreeWidgetItem, QtWidgets.QTreeWidget]): The parent item or the tree widget 
+            parent_item (Union[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]): The parent item or the tree widget 
                 to start traversal from. If a QTreeWidget is provided, it starts from the root.
             is_only_leaf (bool): Whether to include only leaf nodes.
             is_only_checked (bool): Whether to include only checked nodes.
@@ -33,57 +31,57 @@ class TreeUtil:
         Returns:
             List['QtWidgets.QTreeWidgetItem']: A list of QtWidgets.QTreeWidgetItem, including all child items in the tree.
         """
-        # Get the root item of the tree widget if not provided.
+        # Get the root item of the tree widget if not provided
         if isinstance(parent_item, QtWidgets.QTreeWidget):
             parent_item = parent_item.invisibleRootItem()
 
-        # Initialize an empty list to hold the traversed items.
+        # Initialize an empty list to hold the traversed items
         items = []
 
-        # If max_depth is defined and current_depth exceeds it, stop traversal.
+        # If max_depth is defined and current_depth exceeds it, stop traversal
         if max_depth is not None and max_depth >= 0 and current_depth > max_depth:
             return items
 
-        # If target_depth is defined and current_depth does not match it, continue traversal without collecting.
+        # If target_depth is defined and current_depth does not match it, continue traversal without collecting
         if target_depth is not None and current_depth < target_depth:
             for child_index in range(parent_item.childCount()):
-                # Retrieve the child item at the current index.
+                # Retrieve the child item at the current index
                 child_item = parent_item.child(child_index)
 
-                # Recursively add child items, incrementing the current depth.
-                items.extend(cls.get_child_items(child_item, is_only_leaf,
-                                                 is_only_checked, filter_func, max_depth, target_depth, current_depth + 1))
+                # Recursively add child items, incrementing the current depth
+                items.extend(cls.get_child_items(child_item, is_only_leaf, is_only_checked, filter_func, 
+                                                 max_depth, target_depth, current_depth + 1))
             return items
 
-        # Recursively traverse the children of the current item.
+        # Recursively traverse the children of the current item
         for child_index in range(parent_item.childCount()):
-            # Retrieve and store the child item at the current index.
+            # Retrieve and store the child item at the current index
             child_item = parent_item.child(child_index)
 
-            # Optionally filter by check state if only_checked is True.
+            # Optionally filter by check state if only_checked is True
             if is_only_checked and child_item.checkState(0) == QtCore.Qt.CheckState.Unchecked:
                 continue
 
-            # Check if the child item has children.
+            # Check if the child item has children
             if child_item.childCount() > 0:
-                # Recursively add the child items to the list, incrementing the current depth.
-                items.extend(cls.get_child_items(child_item, is_only_leaf,
-                                                 is_only_checked, filter_func, max_depth, target_depth, current_depth + 1))
+                # Recursively add the child items to the list, incrementing the current depth
+                items.extend(cls.get_child_items(child_item, is_only_leaf, is_only_checked, filter_func, 
+                                                 max_depth, target_depth, current_depth + 1))
                 if is_only_leaf:
                     continue
 
-            # Apply the filter function to the child item if provided.
+            # Apply the filter function to the child item if provided
             if filter_func and not filter_func(child_item):
                 continue
 
-            # Add the child item to the list if target_depth is None or current_depth matches target_depth.
+            # Add the child item to the list if target_depth is None or current_depth matches target_depth
             if target_depth is None or current_depth == target_depth:
                 items.append(child_item)
 
         return items
 
-    @classmethod
-    def get_column_values(cls, items: List['QtWidgets.QTreeWidgetItem'], column: int, 
+    @staticmethod
+    def get_column_values(items: List['QtWidgets.QTreeWidgetItem'], column: int, 
                           role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> List[Optional[str]]:
         """Retrieve values from a specific column across a list of QTreeWidgetItem, using a specified data role.
 
@@ -265,6 +263,7 @@ class TreeUtil:
         """
         return [column_index for column_index in range(tree_widget.columnCount()) if not tree_widget.isColumnHidden(column_index)]
 
+    # NOTE: May not use
     @staticmethod
     def get_child_level(item: 'QtWidgets.QTreeWidgetItem') -> int:
         """Get the child level of TreeWidgetItem
@@ -284,27 +283,6 @@ class TreeUtil:
 
         # Return the final child level
         return child_level
-
-    @classmethod
-    def get_items_at_child_level(cls, tree_widget: 'QtWidgets.QTreeWidget', child_level: int = 0) -> List['QtWidgets.QTreeWidgetItem']:
-        """Retrieve all items at a specific child level in the tree widget.
-
-        Args:
-            child_level (int): The child level to retrieve items from. Defaults to 0 (top-level items).
-
-        Returns:
-            List[TreeWidgetItem]: List of `QTreeWidgetItem` objects at the specified child level.
-        """
-        # If child level is 0, return top-level items
-        if not child_level:
-            # return top-level items
-            return [tree_widget.topLevelItem(row) for row in range(tree_widget.topLevelItemCount())]
-
-        # Get all items in the tree widget
-        all_items = cls.get_child_items(tree_widget)
-
-        # Filter items to only those at the specified child level
-        return [item for item in all_items if cls.get_child_level(item) == child_level]
 
     @classmethod
     def fit_column_in_view(cls, tree_widget: 'QtWidgets.QTreeWidget'):
@@ -390,8 +368,7 @@ class TreeUtil:
 
     @staticmethod
     def get_column_names(tree_item: Union[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]) -> List[str]:
-        """
-        Retrieve column names from a QTreeWidget or QTreeWidgetItem.
+        """Retrieve column names from a QTreeWidget or QTreeWidgetItem.
 
         Args:
             tree_item: The QTreeWidget or QTreeWidgetItem to extract column names from.
