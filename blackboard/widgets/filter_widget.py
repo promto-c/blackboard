@@ -811,6 +811,152 @@ class DateTimeRangeFilterWidget(DateRangeFilterWidget):
         self.time_start_edit.setTime(self.load_state('start_time', QtCore.QTime()))
         self.time_end_edit.setTime(self.load_state('end_time', QtCore.QTime()))
 
+# NOTE: WIP
+class TextFilterWidget(FilterWidget):
+    """A widget for filtering text data with various SQL-like operators.
+
+    UI Wireframe:
+        +----------------------------------+
+        | Condition: [ Contains  v]        |
+        | +------------------------------+ |
+        | |  [ Enter text to filter... ] | |
+        | +------------------------------+ |
+        |                                  |
+        | [ Clear ]             [ Apply ]  |
+        +----------------------------------+
+    """
+
+    # Define supported conditions and their mappings to SQL operators
+    CONDITIONS = {
+        'Contains': 'LIKE',          # SQL 'LIKE' operator with '%term%'
+        'Does Not Contain': 'NOT LIKE',  # SQL 'NOT LIKE' operator with '%term%'
+        'Equals': '=',               # SQL '=' operator
+        'Not Equals': '!=',          # SQL '!=' operator
+        'Starts With': 'LIKE',       # SQL 'LIKE' operator with 'term%'
+        'Ends With': 'LIKE',         # SQL 'LIKE' operator with '%term'
+        'Is Null': 'IS NULL',        # SQL 'IS NULL' operator
+        'Is Not Null': 'IS NOT NULL' # SQL 'IS NOT NULL' operator
+    }
+
+    def __init__(self, filter_name: str = "Text Filter", parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
+
+        # Initialize setup specific to TextFilterWidget
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI elements specific to the TextFilterWidget.
+        """
+        self.setIcon(TablerQIcon.letter_case)  # Set an appropriate icon for text filter
+
+        # Update the condition combo box to include text conditions
+        self.condition_combo_box.clear()
+        self.condition_combo_box.addItems(self.CONDITIONS.keys())
+
+        # Add a line edit for entering the text to filter
+        self.text_edit = QtWidgets.QLineEdit(self)
+        self.text_edit.setPlaceholderText("Enter text to filter...")
+        self.text_edit.setProperty('has-placeholder', True)
+        self.text_edit.textChanged.connect(self.update_style)
+        # Create a clear action for the line edit
+        clear_action = QtWidgets.QAction(self)
+        clear_action.setIcon(TablerQIcon.x)  # Icon for the clear button
+        clear_action.setToolTip("Clear")
+        clear_action.triggered.connect(self.text_edit.clear)
+        self.text_edit.addAction(clear_action, QtWidgets.QLineEdit.TrailingPosition)
+
+        # Add the line edit to the specific content area of the widget
+        self.widget_layout.addWidget(self.text_edit)
+
+        # Set the initial focus widget to the condition combo box
+        self.set_initial_focus_widget(self.condition_combo_box)
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections for TextFilterWidget.
+        """
+        self.condition_combo_box.currentIndexChanged.connect(self.update_ui_for_condition)
+
+    # Slot Implementations
+    # --------------------
+    def discard_change(self):
+        """Revert the widget to its previously saved state.
+        """
+        saved_condition = self.load_state('condition', 'Contains')
+        self.condition_combo_box.setCurrentText(saved_condition)
+
+        self.text_edit.setText(self.load_state('text', ""))
+
+    def save_change(self):
+        """Save the current state of the filter settings.
+        """
+        self.save_state('condition', self.condition_combo_box.currentText())
+        self.save_state('text', self.text_edit.text())
+
+        # Emit signals with appropriate data
+        text_value = self.text_edit.text()
+
+        label_text = self.format_label(text_value)
+        self.label_changed.emit(label_text)
+        self.activated.emit([text_value])
+
+    def clear_filter(self):
+        """Clear all filter settings and reset to the default state.
+        """
+        self.condition_combo_box.setCurrentIndex(0)
+        self.text_edit.clear()
+
+    def update_ui_for_condition(self, index: int):
+        """Update UI components based on the selected condition.
+        """
+        condition = self.condition_combo_box.itemText(index)
+
+        # If the condition is 'Is Null' or 'Is Not Null', hide the text input
+        if condition in ['Is Null', 'Is Not Null']:
+            self.text_edit.hide()
+        else:
+            self.text_edit.show()
+
+    def format_label(self, text_value: str) -> str:
+        """Format the display label based on current inputs.
+        """
+        condition = self.condition_combo_box.currentText()
+        if condition in ['Is Null', 'Is Not Null']:
+            return condition
+        elif text_value:
+            return f"{condition}: {text_value}"
+        return condition
+
+    # Class Properties
+    # ----------------
+    @property
+    def is_active(self):
+        """Check if the filter is active based on current values.
+        """
+        condition = self.condition_combo_box.currentText()
+        return condition in ['Is Null', 'Is Not Null'] or bool(self.text_edit.text())
+
+    def get_sql_filter_expression(self) -> str:
+        """Generate the SQL filter expression for the current filter settings.
+        """
+        condition = self.condition_combo_box.currentText()
+        operator = self.CONDITIONS.get(condition)
+        text_value = self.text_edit.text()
+
+        if operator in ['IS NULL', 'IS NOT NULL']:
+            return f"{self.filter_name} {operator}"
+        elif operator == 'LIKE':
+            if condition == 'Contains':
+                return f"{self.filter_name} LIKE '%{text_value}%'"
+            elif condition == 'Starts With':
+                return f"{self.filter_name} LIKE '{text_value}%'"
+            elif condition == 'Ends With':
+                return f"{self.filter_name} LIKE '%{text_value}'"
+        elif operator:
+            return f"{self.filter_name} {operator} '{text_value}'"
+
+        return ""
+
 class FilterEntryEdit(QtWidgets.QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
