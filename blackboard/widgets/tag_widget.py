@@ -53,18 +53,7 @@ class TagListView(MomentumScrollListView):
 
         self.setStyleSheet('''
             QListView::item {
-                background-color: #355;
-                border-radius: 4px;
-                border: transparent;
                 padding: 2px 5px;
-                color: #DDD;
-                margin: 2px;
-            }
-            QListView::item:hover {
-                background-color: #466;
-            }
-            QListView::item:pressed {
-                background-color: #244;
             }
         ''')
 

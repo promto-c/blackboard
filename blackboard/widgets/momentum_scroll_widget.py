@@ -37,7 +37,6 @@ class MomentumScrollListView(QtWidgets.QListView):
         
         super().mouseMoveEvent(event)
 
-
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
         """Handle mouse release event."""
         # Check if middle mouse button is released

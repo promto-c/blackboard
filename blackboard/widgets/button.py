@@ -325,16 +325,6 @@ class InlineConfirmButton(QtWidgets.QWidget):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setStyleSheet('''
-            QPushButton {
-                background-color: #222;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #444;
-            }
-        ''')
-
         # Create Layouts
         # --------------
         layout = QtWidgets.QHBoxLayout(self)
@@ -344,9 +334,9 @@ class InlineConfirmButton(QtWidgets.QWidget):
 
         # Create Widgets
         # --------------
-        self.x_button = QtWidgets.QPushButton(self.button_text)
-        self.confirm_button = QtWidgets.QPushButton(self.confirm_button_text)
-        self.cancel_button = QtWidgets.QPushButton(self.cancel_button_text)
+        self.x_button = QtWidgets.QPushButton(self.button_text, self)
+        self.confirm_button = QtWidgets.QPushButton(self.confirm_button_text, self)
+        self.cancel_button = QtWidgets.QPushButton(self.cancel_button_text, self)
 
         self.confirm_button.setStyleSheet('''
             QPushButton {

@@ -32,6 +32,8 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
     DEFAULT_HIGHLIGHT_COLOR = QtGui.QColor(165, 165, 144, 65)
     DEFAULT_SELECTION_COLOR = QtGui.QColor(102, 119, 119, 51)
 
+    highlight_changed = QtCore.Signal()
+
     # Initialization and Setup
     # ------------------------
     def __init__(self, parent=None, highlight_color: QtGui.QColor = DEFAULT_HIGHLIGHT_COLOR, 
@@ -62,6 +64,7 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
         """
         self._target_model_indexes.clear()
         self._target_focused_model_indexes.clear()
+        self.highlight_changed.emit()
 
     def set_selected_items(self, tree_items: List[QtWidgets.QTreeWidgetItem]):
         """Updates the list of selected model indexes based on the provided tree items.
@@ -71,15 +74,21 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
                 whose model indexes will be extracted and set as the target selected model indexes.
         """
         self._target_selected_model_indexes = TreeItemUtil.get_model_indexes(tree_items)
+        self.highlight_changed.emit()
 
     def add_highlight_items(self, tree_items: List['QtWidgets.QTreeWidgetItem'], focused_column_index: int = None):
         """Highlight the specified `tree_items` in the tree widget.
         """
+        if not tree_items:
+            return
+
         # Add the model indexes of the current tree item to the target properties
         self._target_model_indexes.extend(TreeItemUtil.get_model_indexes(tree_items))
 
         if focused_column_index is not None:
             self._target_focused_model_indexes.extend(TreeItemUtil.get_model_indexes(tree_items, column_index=focused_column_index))
+
+        self.highlight_changed.emit()
 
     # Overridden Methods
     # ------------------

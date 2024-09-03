@@ -41,7 +41,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
     def __init__(self, parent: Union[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem], 
                  item_data: Union[Dict[str, Any], List[Any]] = None, item_id: Any = None):
         """Initialize with the given parent and item data.
-        
+
         Args:
             parent (Union[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem]): Parent widget or item.
             item_data (Union[Dict[str, Any], List[str]], optional): Data for the item, as a list of values or a dictionary with keys matching the headers of the parent widget. Defaults to `None`.
@@ -60,10 +60,24 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
             item_values = [item_data.get(column, '') for column in column_names]
 
         # Call superclass constructor to initialize the item with formatted data
-        super().__init__(parent, map(str, item_values))
+        super().__init__(parent, map(self._convert_to_str, item_values))
 
         # Set the UserRole data for the item.
         self._set_user_role_data(item_values)
+
+    def _convert_to_str(self, value: Any) -> str:
+        """Convert a given value to a string, decoding bytes if necessary.
+
+        Args:
+            value (Any): The value to convert to a string.
+
+        Returns:
+            str: The string representation of the value.
+        """
+        if isinstance(value, bytes):
+            return value.hex()
+
+        return str(value)
 
     # Public Methods
     # --------------
@@ -100,7 +114,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         if data_role is None:
             # Set both UserRole and DisplayRole data
             self.setData(column_index, QtCore.Qt.ItemDataRole.UserRole, value)
-            self.setData(column_index, QtCore.Qt.ItemDataRole.DisplayRole, str(value))
+            self.setData(column_index, QtCore.Qt.ItemDataRole.DisplayRole, self._convert_to_str(value))
 
             # Special handling for lists and booleans
             if isinstance(value, list):
@@ -430,9 +444,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Attributes
         # ----------
         # Store the current grouped column name
-        self.column_names = []
-        self.color_adaptive_columns = []
-        self.grouped_column_names: List[int] = []
+        self.column_names: List[str] = []
+        self.color_adaptive_columns: List[int] = []
+        self.grouped_column_names: List[str] = []
 
         # Initialize the HighlightItemDelegate object to highlight items in the tree widget
         self.highlight_item_delegate = widgets.HighlightItemDelegate()
@@ -506,6 +520,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.itemCollapsed.connect(self.toggle_expansion_for_selected)
         self.itemSelectionChanged.connect(self._highlight_selected_items)
 
+        self.highlight_item_delegate.highlight_changed.connect(self.update)
+
         # NOTE: Fetch more data
         self.fetch_more_button.clicked.connect(self.fetch_more)
         self.fetch_all_button.clicked.connect(self.fetch_all)
@@ -549,7 +565,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         visualization_section_action = self.header_menu.addSection('Visualization')
         apply_color_adaptive_action = visualization_section_action.addAction('Set Color Adaptive')
         reset_all_color_adaptive_action = visualization_section_action.addAction('Reset All Color Adaptive')
-        fit_column_in_view_action = self.header_menu.addAction('Fit in View')
+        visualization_section_action.addSeparator()
+        fit_column_in_view_action = visualization_section_action.addAction('Fit in View')
         # [2] - Add 'Manage Columns' section with actions for column management
         manage_columns_section_action = self.header_menu.addSection('Manage Columns')
         show_hide_column_menu = manage_columns_section_action.addMenu('Show/Hide Columns')
@@ -611,7 +628,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """Highlight the specified `tree_items` in the tree widget.
         """
         self.highlight_item_delegate.set_selected_items(self.selectedItems())
-        self.update()
 
     # Public Methods
     # --------------
@@ -643,17 +659,12 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             tree_items (Iterable[TreeWidgetItem]): The tree items to highlight.
             focused_column_index (Optional[int]): The focused column index. Defaults to None.
         """
-        if not tree_items:
-            return
-        # Add the model indexes of the current tree item to the target properties
         self.highlight_item_delegate.add_highlight_items(tree_items, focused_column_index)
-        self.update()
 
     def clear_highlight(self):
         """Reset the highlight for all items.
         """
         self.highlight_item_delegate.clear_highlight_items()
-        self.update()
 
     def set_row_height(self, height: Optional[int] = None):
         """Set the row height for all items in the tree widget.
@@ -958,7 +969,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
                 continue
             tree_item.set_value(key, value)
 
-        # Refresh the display if necessary
+        # Refresh the display
         self.update()
 
         return tree_item
@@ -989,12 +1000,11 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         grouped_column_name = self.headerItem().text(column)
         self.grouped_column_names.append(grouped_column_name)
 
-        # Rename the first column
-        grouped_column_names_str = ' / '.join(self.grouped_column_names)
+        # Store original and rename the first column
         first_column_name = self.column_names[0]
-        # Store original first column name
         self.headerItem().setData(0, QtCore.Qt.ItemDataRole.UserRole, first_column_name)
-        self.setHeaderLabel(f'{grouped_column_names_str} / {first_column_name}')
+        grouped_column_names_str = ' / '.join(self.grouped_column_names + [first_column_name])
+        self.setHeaderLabel(grouped_column_names_str)
 
         # Expand all items
         self.expandAll()
@@ -1031,7 +1041,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         TreeUtil.fit_column_in_view(self)
 
-    # TODO: Add support multi grouping
     def ungroup_all(self):
         """Ungroup all the items in the tree widget.
         """
@@ -1055,7 +1064,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.clear()
         self.addTopLevelItems(target_items)
 
-        # Clear the grouped column label
+        # Clear the grouped columns
         self.grouped_column_names.clear()
 
         # Resize first columns to fit their contents
@@ -1164,8 +1173,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """
         settings.beginGroup(group_name)
         header_state = settings.value('header_state', QtCore.QByteArray)
-        color_adaptive_columns = settings.value('color_adaptive_columns', list())
-        grouped_column_names = settings.value('grouped_column_names', str())
+        color_adaptive_columns = settings.value('color_adaptive_columns', type=list)
+        grouped_column_names = settings.value('grouped_column_names', type=list)
         uniform_row_height = int(settings.value('uniform_row_height', -1))
         settings.endGroup()
 
