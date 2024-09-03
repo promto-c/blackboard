@@ -143,7 +143,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
 
         Args:
             column_index (int): The column index where the TagListView will be set.
-            value (List[str]): The list of tags to populate the TagListView.
+            values (List[str]): The list of tags to populate the TagListView.
         """
         # Create the TagListView widget
         tag_list_view = widgets.TagListView(self.treeWidget(), read_only=True)
@@ -420,6 +420,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         column_names (List[str]): The list of column names to be displayed in the tree widget.
         groups (Dict[str, TreeWidgetItem]): A dictionary mapping group names to their tree widget items.
     """
+    # Default value
+    DEFAULT_ROW_HEIGHT = 24
 
     # Signals emitted by the GroupableTreeWidget
     ungrouped_all = QtCore.Signal()
@@ -455,18 +457,20 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         # Private Attributes
         # ------------------
         self._primary_key = None
-        self._row_height = 24
+        self._row_height = self.DEFAULT_ROW_HEIGHT
         self._current_column_index = 0
 
         self._id_to_tree_item: Dict[Any, QtWidgets.QTreeWidgetItem] = {}
         self._item_widgets: List[QtWidgets.QWidget] = []
 
+        # TODO: Separate class to handle this
         self.generator = None
         self._current_task = None
 
         self.batch_size = 50
         self.threshold_to_fetch_more = 50
         self.has_more_items_to_fetch = False
+        # ---
 
         self.scroll_handler = bb.utils.MomentumScrollHandler(self)
 
@@ -689,6 +693,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             size_hint = self.sizeHintForColumn(column_index)
             top_level_item.setSizeHint(column_index, QtCore.QSize(size_hint, self._row_height))
 
+       # Apply the workaround to force a visual update
+        self._force_update_visual()
+
     def reset_row_height(self):
         """Reset the row height to default.
         """
@@ -701,6 +708,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for column_index in range(self.columnCount()):
             size_hint = self.sizeHintForColumn(column_index)
             top_level_item.setSizeHint(column_index, QtCore.QSize(size_hint, -1))
+
+       # Apply the workaround to force a visual update
+        self._force_update_visual()
 
     def toggle_expansion_for_selected(self, reference_item: QtWidgets.QTreeWidgetItem):
         """Toggle the expansion state of selected items.
@@ -1282,6 +1292,16 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
 
         for column in columns:
             self.apply_column_color_adaptive(column)
+
+    def _force_update_visual(self):
+        """Force a visual update of the QTreeWidget by slightly adjusting the column width.
+
+        NOTE: This method is necessary when there are item widgets (e.g., custom widgets like TagListView) 
+        in the QTreeWidget. Adjusting the column width slightly forces the QTreeWidget to recalculate its layout 
+        and redraw itself, ensuring that item widgets are updated correctly to reflect the new row height.
+        """
+        self.setColumnWidth(0, self.columnWidth(0) + 1)
+        self.setColumnWidth(0, self.columnWidth(0) - 1)
 
     def _fetch_more_data(self, batch_size: Optional[int] = None):
         """Fetch more data using the generator.
