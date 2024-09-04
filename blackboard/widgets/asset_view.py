@@ -252,6 +252,44 @@ class AssetViewWidget(widgets.DataViewWidget):
         drag.setPixmap(drag_pixmap)
         drag.exec_(supported_actions)
 
+    def save_state(self, settings: QtCore.QSettings, group_name: str = 'asset_view'):
+        """Save the state of the widget.
+
+        Args:
+            settings (QtCore.QSettings): The settings object to save the state.
+            group_name (str): The group name for the settings. Defaults to 'asset_view'.
+        """
+        # Save state of custom actions
+        settings.beginGroup(group_name)
+        settings.setValue('include_text_plain', self.include_text_plain_action.isChecked())
+        settings.setValue('include_uri_list', self.include_uri_list_action.isChecked())
+        settings.endGroup()
+
+        # Call the parent class's save state
+        super().save_state(settings, group_name)
+
+    def load_state(self, settings: QtCore.QSettings, group_name: str = 'asset_view'):
+        """Load the state of the widget.
+
+        Args:
+            settings (QtCore.QSettings): The settings object to load the state.
+            group_name (str): The group name for the settings. Defaults to 'asset_view'.
+        """
+        # Load state of custom actions
+        settings.beginGroup(group_name)
+        include_text_plain = settings.value('include_text_plain')
+        include_uri_list = settings.value('include_uri_list')
+        settings.endGroup()
+
+        # Only update actions if the saved state exists
+        if include_text_plain is not None:
+            self.include_text_plain_action.setChecked(include_text_plain == 'true')
+        if include_uri_list is not None:
+            self.include_uri_list_action.setChecked(include_uri_list == 'true')
+
+        # Call the parent class's load state
+        super().load_state(settings, group_name)
+
 
 # Main Function
 # -------------

@@ -106,9 +106,10 @@ class ColumnType(Enum):
             raise ValueError(f"Unsupported SQL type: {sql_type}")
 
 class DataViewWidget(QtWidgets.QWidget):
+    """A widget for displaying and interacting with a data view.
     """
-    """
-    LABEL: str = 'Database View'
+
+    LABEL: str = 'Data View'
 
     # Initialization and Setup
     # ------------------------
@@ -209,10 +210,10 @@ class DataViewWidget(QtWidgets.QWidget):
         self.filter_bar_widget.add_filter_widget(filter_widget)
         filter_widget.activated.connect(self.activate_filter)
 
-    def save_state(self, settings: QtCore.QSettings, group_name: str = 'database_view'):
+    def save_state(self, settings: QtCore.QSettings, group_name: str = 'data_view'):
         self.tree_widget.save_state(settings, group_name)
     
-    def load_state(self, settings: QtCore.QSettings, group_name: str = 'database_view'):
+    def load_state(self, settings: QtCore.QSettings, group_name: str = 'data_view'):
         self.tree_widget.load_state(settings, group_name)
 
     def activate_filter(self):
@@ -554,6 +555,9 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         return widget
 
 class DatabaseViewWidget(DataViewWidget):
+
+    LABEL: str = 'Database View'
+
     def __init__(self, db_manager: 'DatabaseManager' = None, parent: QtWidgets.QWidget = None, identifier: Optional[str] = None):
         super().__init__(parent, identifier)
 
