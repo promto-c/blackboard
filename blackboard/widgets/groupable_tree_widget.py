@@ -339,7 +339,7 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         """
         # Attributes
         # ----------
-        self.tabler_icon = TablerQIcon()
+        self.tabler_icon = TablerQIcon(opacity=0.8)
 
         # Private Attributes
         # ------------------

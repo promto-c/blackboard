@@ -20,6 +20,28 @@ from blackboard import widgets
 
 # Class Definitions
 # -----------------
+class PopupMenu(widgets.ContextMenu):
+
+    def __init__(self, button: Optional[QtWidgets.QPushButton] = None):
+        """Initialize the popup menu and set up drag-resize functionality.
+
+        Args:
+            button (Optional[QtWidgets.QPushButton]): Optional button to position the menu relative to.
+        """
+        super().__init__()
+
+        # Store the arguments
+        self.button = button
+
+    def showEvent(self, event: QtGui.QShowEvent):
+        """Override show event to modify the position of the menu popup.
+        """
+        if self.button:
+            # Adjust the position
+            pos = self.button.mapToGlobal(QtCore.QPoint(0, self.button.height()))
+            self.move(pos)
+        super().showEvent(event)
+
 class AssetViewWidget(widgets.DataViewWidget):
 
     LABEL = 'Asset View'
@@ -31,6 +53,38 @@ class AssetViewWidget(widgets.DataViewWidget):
         # Initialize setup
         self.__init_ui()
         self.__init_signal_connections()
+        self.__init_toolbar_buttons()
+
+    def __init_toolbar_buttons(self):
+        """Initialize the toolbar buttons.
+        """
+        # Initialize the 'Drag Options' button
+        self.drag_options_button = QtWidgets.QPushButton(self)
+        self.drag_options_button.setToolTip("Drag Options")
+        self.drag_options_button.setIcon(TablerQIcon(opacity=0.8).drag_drop)
+        self.drag_options_button.setProperty('widget-style', 'round')
+
+        # Create a menu for the 'Drag Options' button
+        drag_menu = PopupMenu(self.drag_options_button)
+        drag_section_action = drag_menu.addSection("Drag Options")
+
+        # Create checkable actions for drag options
+        self.include_text_plain_action = QtWidgets.QAction("Include text/plain", self)
+        self.include_text_plain_action.setCheckable(True)
+        self.include_text_plain_action.setChecked(True)
+
+        self.include_uri_list_action = QtWidgets.QAction("Include text/uri-list", self)
+        self.include_uri_list_action.setCheckable(True)
+        self.include_uri_list_action.setChecked(False)
+
+        # Add actions to the menu
+        drag_section_action.addAction(self.include_text_plain_action)
+        drag_section_action.addAction(self.include_uri_list_action)
+
+        self.drag_options_button.setMenu(drag_menu)
+
+        # Add 'Drag Options' button to the toolbar
+        self.general_tool_bar.addWidget(self.drag_options_button)
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -167,20 +221,27 @@ class AssetViewWidget(widgets.DataViewWidget):
             supported_actions (QtCore.Qt.DropActions): The supported actions for the drag event.
         """
         items = self.tree_widget.selectedItems()
-
         if not items:
             return
-        
+
+        # Check state of checkboxes to decide which MIME types to include
+        include_text_plain = self.include_text_plain_action.isChecked()
+        include_uri_list = self.include_uri_list_action.isChecked()
+
         mime_data = QtCore.QMimeData()
 
-        # Set mime data in format 'text/plain'
+        # Retrieve column values
         texts = bb.utils.TreeUtil.get_column_values(items, self.tree_widget.get_column_index(self.FILE_PATH_COLUMN_NAME))
-        text = '\n'.join(texts)
-        mime_data.setText(text)
 
-        # Set mime data in format 'text/uri-list'
-        urls = [QtCore.QUrl.fromLocalFile(text) for text in texts]
-        mime_data.setUrls(urls)
+        # Include 'text/plain' MIME data if enabled in configuration
+        if include_text_plain:
+            text = '\n'.join(texts)
+            mime_data.setText(text)
+
+        # Include 'text/uri-list' MIME data if enabled in configuration
+        if include_uri_list:
+            urls = [QtCore.QUrl.fromLocalFile(text) for text in texts]
+            mime_data.setUrls(urls)
 
         # Create drag icon pixmap with badge
         drag_pixmap = widgets.DragPixmap(len(items))

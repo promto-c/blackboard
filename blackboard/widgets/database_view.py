@@ -160,8 +160,6 @@ class DataViewWidget(QtWidgets.QWidget):
         # [L3]: Add main tree layout
         self.main_view_layout = QtWidgets.QVBoxLayout()
         self.main_layout.addLayout(self.main_view_layout)
-        self.main_layout.setSpacing(0)
-        self.main_view_layout.setSpacing(0)
 
         # Create Widgets
         # --------------

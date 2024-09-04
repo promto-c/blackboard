@@ -281,7 +281,6 @@ class FilterPopupButton(QtWidgets.QPushButton):
         self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.setMinimumSize(self.MINIMUM_WIDTH, self.MINIMUM_HEIGHT)
         self.setFixedHeight(self.MINIMUM_HEIGHT)
-        self.setProperty('widget-style', 'round')
 
     def __init_accessibility(self):
         """Initialize accessibility features like keyboard navigation and screen reader support.
