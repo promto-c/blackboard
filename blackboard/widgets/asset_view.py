@@ -53,7 +53,49 @@ class AssetViewWidget(widgets.DataViewWidget):
         # Initialize setup
         self.__init_ui()
         self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        self.__init_context_menu()
         self.__init_toolbar_buttons()
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
+        self.tree_widget.customContextMenuRequested.connect(self._show_context_menu)
+        self.tree_widget.drag_started.connect(self._drag_data)
+
+        # Key Binds
+        # ---------
+        # Create a shortcut for the copy action and connect its activated signal
+        bb.utils.KeyBinder.bind_key("Ctrl+Shift+C", self.tree_widget, self.copy_path)
+
+    def __init_context_menu(self):
+        self.menu = widgets.ContextMenu()
+
+        open_section = self.menu.addSection('Open')
+        open_action = open_section.addAction("Open")
+        open_with_action = open_section.addAction("Open with...")
+        open_containing_folder_action = open_section.addAction("Open Containing Folder")
+        open_in_terminal_action = open_section.addAction("Open in Terminal")
+        copy_section = self.menu.addSection('Copy')
+        copy_selected_cell_action = copy_section.addAction("Copy Cell")
+        copy_selected_cell_action.setShortcut("Ctrl+C")
+        copy_section.addSeparator()
+        copy_path_action = copy_section.addAction("Copy Path")
+        copy_path_action.setShortcut("Ctrl+Shift+C")
+        copy_relative_path_action = copy_section.addAction("Copy Relative Path")
+        copy_relative_path_action.setToolTip("This feature is not supported yet.")
+        copy_relative_path_action.setEnabled(False)
+
+        open_action.triggered.connect(self.open)
+        open_with_action.triggered.connect(self.open_with)
+        open_containing_folder_action.triggered.connect(self.open_containing_folder)
+        open_in_terminal_action.triggered.connect(self.open_in_terminal)
+        copy_path_action.triggered.connect(self.copy_path)
+        copy_relative_path_action.triggered.connect(self.copy_relative_path)
+        copy_selected_cell_action.triggered.connect(self.tree_widget.copy_selected_cells)
 
     def __init_toolbar_buttons(self):
         """Initialize the toolbar buttons.
@@ -86,66 +128,18 @@ class AssetViewWidget(widgets.DataViewWidget):
         # Add 'Drag Options' button to the toolbar
         self.general_tool_bar.addWidget(self.drag_options_button)
 
-    def __init_ui(self):
-        """Initialize the UI of the widget.
-        """
-        self.__init_context_menu()
-
-    def __init_signal_connections(self):
-        """Initialize signal-slot connections.
-        """
-        self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
-        self.tree_widget.drag_started.connect(self._drag_data)
-
-        # Key Binds
-        # ---------
-        # Create a shortcut for the copy action and connect its activated signal
-        bb.utils.KeyBinder.bind_key("Ctrl+Shift+C", self.tree_widget, self.copy_path)
-
-    def __init_context_menu(self):
-        self.menu = widgets.ContextMenu()
-        self.menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-
-        open_section = self.menu.addSection('Open')
-        open_action = open_section.addAction("Open")
-        open_with_action = open_section.addAction("Open with...")
-        open_containing_folder_action = open_section.addAction("Open Containing Folder")
-        open_in_terminal_action = open_section.addAction("Open in Terminal")
-        copy_section = self.menu.addSection('Copy')
-        copy_selected_cell_action = copy_section.addAction("Copy Cell")
-        copy_selected_cell_action.setShortcut("Ctrl+C")
-        copy_section.addSeparator()
-        copy_path_action = copy_section.addAction("Copy Path")
-        copy_path_action.setShortcut("Ctrl+Shift+C")
-        copy_relative_path_action = copy_section.addAction("Copy Relative Path")
-        copy_relative_path_action.setToolTip("This feature is not supported yet.")
-        copy_relative_path_action.setEnabled(False)
-
-        open_action.triggered.connect(self.open)
-        open_with_action.triggered.connect(self.open_with)
-        open_containing_folder_action.triggered.connect(self.open_containing_folder)
-        open_in_terminal_action.triggered.connect(self.open_in_terminal)
-        copy_path_action.triggered.connect(self.copy_path)
-        copy_relative_path_action.triggered.connect(self.copy_relative_path)
-        copy_selected_cell_action.triggered.connect(self.tree_widget.copy_selected_cells)
-
     # Public Methods
     # --------------
-    def show_context_menu(self, _position: QtCore.QPoint = None):
-        self.menu.exec_(QtGui.QCursor.pos())
-
     def get_selected_file_paths(self) -> List[str]:
         selected_items = self.tree_widget.selectedItems()
         if not selected_items:
-            return
+            return []
 
         column_index = self.tree_widget.get_column_index(self.FILE_PATH_COLUMN_NAME)
         if not column_index:
-            return
+            return []
 
-        selected_file_paths = [item.text(column_index) for item in selected_items]
-
-        return selected_file_paths
+        return [item.text(column_index) for item in selected_items]
 
     @property
     def selected_file_paths(self) -> List[str]:
@@ -177,9 +171,7 @@ class AssetViewWidget(widgets.DataViewWidget):
         if not file_paths:
             return
 
-        folders = {os.path.dirname(file_path) if os.path.isfile(file_path) else file_path for file_path in file_paths}
-        for folder in folders:
-            ApplicationUtil.open_containing_folder(folder)
+        ApplicationUtil.open_containing_folder(file_paths)
 
     def open_in_terminal(self, file_paths: List[str] = []):
         file_paths = file_paths or self.selected_file_paths
@@ -252,6 +244,11 @@ class AssetViewWidget(widgets.DataViewWidget):
         drag.setPixmap(drag_pixmap)
         drag.exec_(supported_actions)
 
+    def _show_context_menu(self, _position: QtCore.QPoint = None):
+        self.menu.exec_(QtGui.QCursor.pos())
+
+    # Override Methods
+    # ----------------
     def save_state(self, settings: QtCore.QSettings, group_name: str = 'asset_view'):
         """Save the state of the widget.
 
