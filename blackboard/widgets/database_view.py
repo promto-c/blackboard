@@ -1,9 +1,10 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, List, Type
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, List, Type, Tuple
 if TYPE_CHECKING:
     from blackboard.utils.database_manager import DatabaseManager, ManyToManyField, FieldInfo
     from blackboard.widgets.groupable_tree_widget import TreeWidgetItem
+    from blackboard.widgets.filter_widget import FilterCondition
 
 # Standard Library Imports
 # ------------------------
@@ -594,6 +595,20 @@ class DatabaseViewWidget(DataViewWidget):
         self.delete_record_button.clicked.connect(self.delete_record)
         self.tree_widget.itemDoubleClicked.connect(self.edit_record)
 
+    def generate_sql_query(column_name: str, filter_condition: 'FilterCondition', values: Tuple) -> str:
+        """Generate an SQL query string for a given column and filter condition.
+
+        Args:
+            column_name (str): The name of the column to filter.
+            filter_condition (FilterCondition): The filter condition to apply.
+            values (Tuple): The values to use in the filter.
+
+        Returns:
+            str: An SQL query string.
+        """
+        sql_query = filter_condition.query_format.format(column=column_name)
+        return sql_query
+
     def set_database_manager(self, db_manager: 'DatabaseManager'):
         self.db_manager = db_manager
 
@@ -637,22 +652,29 @@ class DatabaseViewWidget(DataViewWidget):
 
     # TODO: Add support composite pks
     def delete_record(self):
+        """Delete the selected record from the database, supporting composite primary keys."""
         if not self._current_table:
             return
 
-        if not (current_item:= self.tree_widget.currentItem()):
+        if not (current_item := self.tree_widget.currentItem()):
             return
 
-        # Get the primary key field name and its value
-        pk_field = self.db_manager.get_primary_keys(self._current_table)[0]
-        pk_value = current_item[pk_field]
+        # Get the primary key fields and their values
+        pk_fields = self.db_manager.get_primary_keys(self._current_table)
+        pk_values = {pk_field: current_item[pk_field] for pk_field in pk_fields}
 
+        # Construct a human-readable representation of the primary key(s) for the confirmation dialog
+        pk_display = ", ".join(f"{field}: '{value}'" for field, value in pk_values.items())
+
+        # Show confirmation dialog
         confirm = QtWidgets.QMessageBox.question(
-            self, "Confirm Delete", f"Are you sure you want to delete the record with {pk_field} '{pk_value}'?",
+            self, "Confirm Delete",
+            f"Are you sure you want to delete the record with {pk_display}?",
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
+
         if confirm == QtWidgets.QMessageBox.Yes:
-            self.db_manager.delete_record(self._current_table, pk_value, pk_field)
+            self.db_manager.delete_record(self._current_table, pk_values)
             self.load_table_data()
 
     def show_column_selection_menu(self):
@@ -667,21 +689,39 @@ class DatabaseViewWidget(DataViewWidget):
 
         menu.exec_(QtGui.QCursor.pos())
 
-    # TODO: Handle relation column
+    # TODO: Handle Many-to-Many field
     def create_filter_widget(self, column_name: str):
-        """Create a filter widget based on the selected column and its data type."""
-        # Example: Query the database or model to get the SQL type of the column
-        field_type = self.db_manager.get_field_type(self._current_table, column_name)
-        print(field_type)
+        """Create a filter widget based on the selected column and its data type.
+        """
+        # Get field information for the column
+        field_info = self.db_manager.get_field_info(self._current_table, column_name)
 
-        # Use ColumnType enum to map SQL type to appropriate filter widget
-        column_type = ColumnType.from_sql(field_type)
+        # TODO: Store relation path in header item to be extract from item directly instead of extract from split '.'
+        # Check if the column is a foreign key
+        if '.' in column_name or field_info.is_foreign_key:
+            if '.' in column_name:
+                # TODO: Handle the column based on its type if it is not TEXT
+                # The column represents a relation, split to get the table name
+                related_table, display_field = column_name.split('.')
+            else:
+                related_table = field_info.fk.table
+                display_field = None
 
-        # Get the filter widget class associated with the column type
-        filter_widget_cls = column_type.filter_widget
+            # Handle foreign key column as ENUM type
+            possible_values = self.db_manager.get_possible_values(related_table, display_field=display_field)
 
-        # Instantiate the filter widget
-        filter_widget = filter_widget_cls(filter_name=column_name)
+            # Create a MultiSelectFilterWidget with the possible values
+            filter_widget = widgets.MultiSelectFilterWidget(filter_name=column_name)
+            filter_widget.add_items(possible_values)
+        else:
+            # Use ColumnType enum to map SQL type to appropriate filter widget
+            column_type = ColumnType.from_sql(field_info.type)
+
+            # Get the filter widget class associated with the column type
+            filter_widget_cls = column_type.filter_widget
+
+            # Instantiate the filter widget
+            filter_widget = filter_widget_cls(filter_name=column_name)
 
         if filter_widget:
             self.add_filter_widget(filter_widget)
@@ -689,15 +729,7 @@ class DatabaseViewWidget(DataViewWidget):
 
     def activate_filter(self):
         """Logic to filter data based on active filters and populate the tree widget."""
-        filters = {}
-        for filter_widget in self.filter_bar_widget.get_active_filters():
-            filters[filter_widget.filter_name] = filter_widget.filtered_list
-        filtered_data = self.apply_filters(filters)
-        self.populate(filtered_data)
-
-    def apply_filters(self, filters: Dict[str, Any]) -> Dict[Iterable, Dict[str, Any]]:
-        """Apply filters to the data and return the filtered result."""
-        return {}  # Replace with actual filtering logic
+        ...
 
 # Main Function
 # -------------

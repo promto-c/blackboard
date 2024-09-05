@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Generator, List, Tuple, Union, Optional, Dict
+from typing import Generator, List, Tuple, Union, Optional, Dict, Any
 
 # Standard Library Imports
 # ------------------------
@@ -313,6 +313,33 @@ class DatabaseManager:
 
         return name_to_field_info
 
+    def get_field_info(self, table_name: str, column_name: str) -> FieldInfo:
+        """Get field information for a given column in a table."""
+        # Example implementation; replace with actual logic to fetch field info
+        fields = self.get_table_info(table_name)
+        return fields.get(column_name)
+
+    def get_possible_values(self, table_name: str, display_field: Optional[str] = None) -> List[str]:
+        """Get possible values from a related table using a display field.
+
+        Args:
+            table_name (str): The name of the related table.
+            display_field (Optional[str]): The field to display. Defaults to the primary key.
+
+        Returns:
+            List[str]: A list of possible values from the specified display field.
+        """
+        # Determine the display field: use the provided display field or default to the primary key
+        display_field = display_field or self.get_primary_keys(table_name)[0]
+
+        # Ensure the display field exists in the table
+        if display_field not in self.get_field_names(table_name):
+            raise ValueError(f"Field '{display_field}' does not exist in table '{table_name}'")
+
+        # Execute query to get the unique values for the display field
+        self.cursor.execute(f"SELECT DISTINCT {display_field} FROM {table_name} ORDER BY {display_field}")
+        return [row[0] for row in self.cursor.fetchall()]
+
     def get_field_names(self, table_name: str) -> List[str]:
         """Retrieve the names of the fields (columns) in a specified table.
 
@@ -547,22 +574,43 @@ class DatabaseManager:
         self.cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
         self.connection.commit()
 
-    # TODO: Handle composite pks
-    def delete_record(self, table_name: str, pk_value: Union[int, str, float], pk_field: str = 'rowid'):
+    def delete_record(self, table_name: str, pk_values: Union[Dict[str, Any], Any], pk_field: Optional[str] = None):
         """Delete a specific record from a table by primary key, including related data in many-to-many junction tables.
 
         Args:
             table_name (str): The name of the table to delete the record from.
-            pk_field (str): The name of the primary key field.
-            pk_value (Union[int, str, float]): The value of the primary key for the record to delete.
+            pk_values (Union[Dict[str, Any], Any]): The primary key value(s) for the record to delete.
+                Can be a single value or a dictionary of field-value pairs for composite keys.
+            pk_field (Optional[str]): The name of the primary key field, required only for single-key deletions.
 
         Raises:
-            ValueError: If the table name or pk_field is not a valid Python identifier.
+            ValueError: If the table name or primary key field is not a valid Python identifier.
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        if not table_name.isidentifier() or not pk_field.isidentifier():
-            raise ValueError("Invalid table name or primary key field")
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
 
+        # Determine if the deletion is for a single key or composite keys
+        if isinstance(pk_values, dict):
+            # Composite key handling
+            if not all(isinstance(k, str) and k.isidentifier() for k in pk_values.keys()):
+                raise ValueError("Invalid primary key fields")
+
+            # Create a dynamic WHERE clause for composite keys
+            where_clause = " AND ".join(f"{field} = ?" for field in pk_values.keys())
+            where_values = list(pk_values.values())
+
+        elif pk_field and pk_field.isidentifier():
+            # Single key handling
+            if not pk_field.isidentifier():
+                raise ValueError("Invalid primary key field")
+
+            where_clause = f"{pk_field} = ?"
+            where_values = [pk_values]
+        else:
+            raise ValueError("Primary key field is required for single-key deletions")
+
+        # TODO: Handle composite pks
         # First, delete related data in the many-to-many junction tables
         m2m_fields = self.get_many_to_many_fields(table_name)
         for m2m_field in m2m_fields:
@@ -578,11 +626,11 @@ class DatabaseManager:
             self.cursor.execute(f'''
                 DELETE FROM {junction_table}
                 WHERE {from_table_fk.from_field} = ?
-            ''', (pk_value,))
+            ''', (list(pk_values.values())[0],))
 
         # Then, delete the main record from the table
-        query = f"DELETE FROM {table_name} WHERE {pk_field} = ?"
-        self.cursor.execute(query, (pk_value,))
+        query = f"DELETE FROM {table_name} WHERE {where_clause}"
+        self.cursor.execute(query, where_values)
         self.connection.commit()
 
     # TODO: Handle composite pks

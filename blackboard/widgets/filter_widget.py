@@ -1,7 +1,7 @@
 
 # Type Checking Imports
 # ---------------------
-from typing import Any, Optional, List, Union, Dict
+from typing import Any, Optional, List, Union, Dict, Tuple, Type
 
 # Standard Library Imports
 # ------------------------
@@ -22,6 +22,55 @@ from blackboard import widgets
 
 # Class Definitions
 # -----------------
+class FilterCondition(Enum):
+    """Enum representing supported filter conditions for different data types.
+    """
+    
+    # Text Conditions
+    CONTAINS = ("Contains", "{column} LIKE '%' || ? || '%'")  # SQL LIKE with '%term%'
+    DOES_NOT_CONTAIN = ("Does Not Contain", "{column} NOT LIKE '%' || ? || '%'")  # SQL NOT LIKE with '%term%'
+    EQUALS = ("Equals", "{column} = ?")  # SQL '='
+    NOT_EQUALS = ("Not Equals", "{column} != ?")  # SQL '!='
+    STARTS_WITH = ("Starts With", "{column} LIKE ? || '%'")  # SQL LIKE 'term%'
+    ENDS_WITH = ("Ends With", "{column} LIKE '%' || ?")  # SQL LIKE '%term'
+    IS_NULL = ("Is Null", "{column} IS NULL")  # SQL IS NULL
+    IS_NOT_NULL = ("Is Not Null", "{column} IS NOT NULL")  # SQL IS NOT NULL
+
+    # Numeric Conditions
+    GREATER_THAN = ("Greater Than", "{column} > ?")  # SQL '>'
+    LESS_THAN = ("Less Than", "{column} < ?")  # SQL '<'
+    BETWEEN = ("Between", "{column} BETWEEN ? AND ?")  # SQL BETWEEN
+    NOT_BETWEEN = ("Not Between", "{column} NOT BETWEEN ? AND ?")  # SQL NOT BETWEEN
+
+    # Date Conditions
+    BEFORE = ("Before", "{column} < ?")  # SQL '<'
+    AFTER = ("After", "{column} > ?")  # SQL '>'
+    IN_RANGE = ("In Range", "{column} BETWEEN ? AND ?")  # SQL BETWEEN
+    NOT_IN_RANGE = ("Not In Range", "{column} NOT BETWEEN ? AND ?")  # SQL NOT BETWEEN
+
+    # Boolean Conditions
+    IS_TRUE = ("Is True", "{column} = 1")  # SQL '1' or 'TRUE'
+    IS_FALSE = ("Is False", "{column} = 0")  # SQL '0' or 'FALSE'
+
+    def __init__(self, title: str, sql_format: str):
+        """Initialize the FilterCondition enum with a title and SQL format."""
+        self.title = title
+        self.sql_format = sql_format
+
+    @property
+    def display_name(self) -> str:
+        """Return the display name of the filter condition."""
+        return self.title
+
+    @property
+    def query_format(self) -> str:
+        """Return the SQL query format for the filter condition."""
+        return self.sql_format
+
+    def __str__(self):
+        """Return the string representation of the filter condition."""
+        return self.title
+
 # TODO: Add support to set column name mapping to filter widget
 class FilterBarWidget(QtWidgets.QWidget):
 
@@ -302,6 +351,8 @@ class FilterPopupButton(QtWidgets.QPushButton):
 
 class FilterWidget(QtWidgets.QWidget):
 
+    CONDITIONS: List[FilterCondition] = []
+
     label_changed = QtCore.Signal(str)
     activated = QtCore.Signal(list)
     removed = QtCore.Signal()
@@ -380,7 +431,10 @@ class FilterWidget(QtWidgets.QWidget):
 
         self.condition_combo_box = QtWidgets.QComboBox()
         self.condition_combo_box.setProperty('widget-style', 'clean')
-        self.condition_combo_box.addItems(['Condition1', 'Condition2'])
+
+        # Update the condition combo box
+        for condition in self.CONDITIONS:
+            self.condition_combo_box.addItem(condition.display_name, condition)
 
         self.clear_button = QtWidgets.QToolButton(self)
         self.clear_button.setIcon(self.tabler_icon.clear_all)
@@ -563,6 +617,10 @@ class FilterWidget(QtWidgets.QWidget):
         """Check if the filter is active. Must be implemented in subclasses.
         """
         raise NotImplementedError('')
+    
+    @property
+    def selected_condition(self):
+        return self.condition_combo_box.currentData(QtCore.Qt.ItemDataRole.UserRole)
 
     # Slot Implementations
     # --------------------
@@ -621,6 +679,15 @@ class DateRange(Enum):
         return self.value
 
 class DateRangeFilterWidget(FilterWidget):
+
+    CONDITIONS = [
+        FilterCondition.BEFORE,
+        FilterCondition.AFTER,
+        FilterCondition.IN_RANGE,
+        FilterCondition.NOT_IN_RANGE,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL
+    ]
 
     TODAY = QtCore.QDate.currentDate()
     DATE_RANGES = {
@@ -825,17 +892,17 @@ class TextFilterWidget(FilterWidget):
         +----------------------------------+
     """
 
-    # Define supported conditions and their mappings to SQL operators
-    CONDITIONS = {
-        'Contains': 'LIKE',          # SQL 'LIKE' operator with '%term%'
-        'Does Not Contain': 'NOT LIKE',  # SQL 'NOT LIKE' operator with '%term%'
-        'Equals': '=',               # SQL '=' operator
-        'Not Equals': '!=',          # SQL '!=' operator
-        'Starts With': 'LIKE',       # SQL 'LIKE' operator with 'term%'
-        'Ends With': 'LIKE',         # SQL 'LIKE' operator with '%term'
-        'Is Null': 'IS NULL',        # SQL 'IS NULL' operator
-        'Is Not Null': 'IS NOT NULL' # SQL 'IS NOT NULL' operator
-    }
+    # Define supported conditions
+    CONDITIONS: List[FilterCondition] = [
+        FilterCondition.CONTAINS, 
+        FilterCondition.DOES_NOT_CONTAIN,
+        FilterCondition.EQUALS,
+        FilterCondition.NOT_EQUALS,
+        FilterCondition.STARTS_WITH,
+        FilterCondition.ENDS_WITH,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL,
+    ]
 
     def __init__(self, filter_name: str = "Text Filter", parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
@@ -847,11 +914,7 @@ class TextFilterWidget(FilterWidget):
     def __init_ui(self):
         """Initialize the UI elements specific to the TextFilterWidget.
         """
-        self.setIcon(TablerQIcon.letter_case)  # Set an appropriate icon for text filter
-
-        # Update the condition combo box to include text conditions
-        self.condition_combo_box.clear()
-        self.condition_combo_box.addItems(self.CONDITIONS.keys())
+        self.setIcon(TablerQIcon.letter_case)
 
         # Add a line edit for entering the text to filter
         self.text_edit = QtWidgets.QLineEdit(self)
@@ -935,27 +998,6 @@ class TextFilterWidget(FilterWidget):
         condition = self.condition_combo_box.currentText()
         return condition in ['Is Null', 'Is Not Null'] or bool(self.text_edit.text())
 
-    def get_sql_filter_expression(self) -> str:
-        """Generate the SQL filter expression for the current filter settings.
-        """
-        condition = self.condition_combo_box.currentText()
-        operator = self.CONDITIONS.get(condition)
-        text_value = self.text_edit.text()
-
-        if operator in ['IS NULL', 'IS NOT NULL']:
-            return f"{self.filter_name} {operator}"
-        elif operator == 'LIKE':
-            if condition == 'Contains':
-                return f"{self.filter_name} LIKE '%{text_value}%'"
-            elif condition == 'Starts With':
-                return f"{self.filter_name} LIKE '{text_value}%'"
-            elif condition == 'Ends With':
-                return f"{self.filter_name} LIKE '%{text_value}'"
-        elif operator:
-            return f"{self.filter_name} {operator} '{text_value}'"
-
-        return ""
-
 class FilterEntryEdit(QtWidgets.QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1012,6 +1054,15 @@ class FilterEntryEdit(QtWidgets.QLineEdit):
 class MultiSelectFilterWidget(FilterWidget):
     """A widget representing a filter with a checkable tree.
     """
+
+    CONDITIONS = [
+        FilterCondition.EQUALS,
+        FilterCondition.NOT_EQUALS,
+        FilterCondition.CONTAINS, 
+        FilterCondition.DOES_NOT_CONTAIN,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL,
+    ]
 
     def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
@@ -1267,7 +1318,7 @@ class MultiSelectFilterWidget(FilterWidget):
         """ 
         # Add items to the model
         parent_item = parent_item or self.tree_view_model
-        item = QtGui.QStandardItem(item_label)
+        item = QtGui.QStandardItem(str(item_label))
         item.setCheckable(True)
         item.setEditable(False)
         parent_item.appendRow(item)
@@ -1320,6 +1371,14 @@ class MultiSelectFilterWidget(FilterWidget):
         self.activated.emit(tags)
 
 class FileTypeFilterWidget(FilterWidget):
+
+    CONDITIONS = [
+        FilterCondition.EQUALS,
+        FilterCondition.NOT_EQUALS,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL
+    ]
+
     def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
 
@@ -1472,7 +1531,16 @@ class NumericFilterWidget(FilterWidget):
         +----------------------------------+
     """
 
-    CONDITIONS = ['Equal', 'Greater Than', 'Less Than', 'Between']
+    CONDITIONS = [
+        FilterCondition.EQUALS,
+        FilterCondition.NOT_EQUALS,
+        FilterCondition.GREATER_THAN,
+        FilterCondition.LESS_THAN,
+        FilterCondition.BETWEEN,
+        FilterCondition.NOT_BETWEEN,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL
+    ]
 
     def __init__(self, filter_name: str = "Numeric Filter", parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
@@ -1484,10 +1552,6 @@ class NumericFilterWidget(FilterWidget):
     def __init_ui(self):
         """Initialize the UI elements specific to the NumericFilterWidget."""
         self.setIcon(TablerQIcon.filter)  # Set an appropriate icon for numeric filter
-
-        # Update the condition combo box to include numeric conditions
-        self.condition_combo_box.clear()
-        self.condition_combo_box.addItems(self.CONDITIONS)
 
         # Add line edits for entering numeric values with placeholders
         self.lower_value_edit = QtWidgets.QLineEdit(self)
@@ -1621,6 +1685,79 @@ class NumericFilterWidget(FilterWidget):
         return bool(self.lower_value_edit.text() or self.upper_value_edit.text())
 
 class BooleanFilterWidget(FilterWidget):
+    """A widget for filtering boolean data with options for True, False, NULL, and NOT NULL.
+
+    UI Wireframe:
+        +----------------------------------+
+        | Condition: [ Is True   v]        |
+        |                                  |
+        | [ Clear ]             [ Apply ]  |
+        +----------------------------------+
+    """
+
+    CONDITIONS = [
+        FilterCondition.IS_TRUE,
+        FilterCondition.IS_FALSE,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL
+    ]
+
+    def __init__(self, filter_name: str = "Boolean Filter", parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
+
+        # Initialize setup specific to BooleanFilterWidget
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI elements specific to the BooleanFilterWidget."""
+        self.setIcon(TablerQIcon.checkbox)  # Set an appropriate icon for boolean filter
+
+        # Create condition combo box and add available conditions
+        self.condition_combo_box.clear()
+        self.condition_combo_box.addItems([condition.title for condition in self.CONDITIONS])
+
+        # Set the initial focus widget to the condition combo box
+        self.set_initial_focus_widget(self.condition_combo_box)
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections for BooleanFilterWidget."""
+        self.condition_combo_box.currentIndexChanged.connect(self.handle_condition_change)
+
+    # Slot Implementations
+    # --------------------
+    def handle_condition_change(self):
+        """Handle changes to the condition selection."""
+        self.save_change()
+
+    def discard_change(self):
+        """Revert the widget to its previously saved state."""
+        saved_condition = self.load_state('condition', FilterCondition.IS_TRUE.title)
+        self.condition_combo_box.setCurrentText(saved_condition)
+
+    def save_change(self):
+        """Save the current state of the filter settings."""
+        selected_condition = self.condition_combo_box.currentText()
+        self.save_state('condition', selected_condition)
+
+        # Emit signals with appropriate data
+        condition = FilterCondition[selected_condition.replace(" ", "_").upper()]
+        self.label_changed.emit(selected_condition)
+        self.activated.emit([condition])
+
+    def clear_filter(self):
+        """Clear the filter settings and reset to the default state."""
+        self.condition_combo_box.setCurrentIndex(0)
+
+    # Class Properties
+    # ----------------
+    @property
+    def is_active(self):
+        """Check if the filter is active based on the current condition."""
+        # If the current condition is anything other than 'IS_TRUE' or its equivalent, the filter is active.
+        return self.condition_combo_box.currentText() not in [FilterCondition.IS_TRUE.title, '']
+
+class ToggleFilterWidget(FilterWidget):
     def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
 
@@ -1631,7 +1768,7 @@ class BooleanFilterWidget(FilterWidget):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setIcon(TablerQIcon.checkbox)
+        self.setIcon(TablerQIcon.toggle_left)
         self.unset_popup()
         self.button.clicked.connect(self.toggle_active)
 
@@ -1644,6 +1781,8 @@ class BooleanFilterWidget(FilterWidget):
         """Set the active state of the filter.
         """
         self._is_active = state
+        icon = TablerQIcon.toggle_right if state else TablerQIcon.toggle_left
+        self.setIcon(icon)
         self.activated.emit([self._is_active])
 
     @property
@@ -1725,11 +1864,17 @@ if __name__ == '__main__':
     file_type_filter_widget = FileTypeFilterWidget(filter_name="File Type")
     file_type_filter_widget.activated.connect(print)
 
-    show_hidden_filter_widget = BooleanFilterWidget(filter_name='Show Hidden')
+    is_active_filter_widget = BooleanFilterWidget(filter_name='Is Active')
+    is_active_filter_widget.activated.connect(print)
+
+    show_hidden_filter_widget = ToggleFilterWidget(filter_name='Show Hidden')
     show_hidden_filter_widget.activated.connect(print)
 
     numeric_filter_widget = NumericFilterWidget(filter_name='Value')
     numeric_filter_widget.activated.connect(print)
+
+    text_filter_widget = TextFilterWidget(filter_name='Name')
+    text_filter_widget.activated.connect(print)
 
     # Filter bar
     filter_bar_widget = FilterBarWidget()
@@ -1737,8 +1882,10 @@ if __name__ == '__main__':
     filter_bar_widget.add_filter_widget(date_time_filter_widget)
     filter_bar_widget.add_filter_widget(shot_filter_widget)
     filter_bar_widget.add_filter_widget(file_type_filter_widget)
+    filter_bar_widget.add_filter_widget(is_active_filter_widget)
     filter_bar_widget.add_filter_widget(show_hidden_filter_widget)
     filter_bar_widget.add_filter_widget(numeric_filter_widget)
+    filter_bar_widget.add_filter_widget(text_filter_widget)
 
     # Adding widgets to the layout
     main_layout.addWidget(filter_bar_widget)

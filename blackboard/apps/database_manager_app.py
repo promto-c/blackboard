@@ -135,7 +135,7 @@ class AddFieldDialog(QtWidgets.QDialog):
     | [ ] NOT NULL                         |
     |                                      |
     | Select Enum Table:                   |
-    | [enum_table_dropdown]             |
+    | [enum_table_dropdown]                |
     |                                      |
     | Enum Values:                         |
     | +----------------------------+       |
@@ -462,13 +462,13 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
     |                                      |
     | From Key Field: [id             v]   |
     |                                      |
-    | From Display Field: [name            v]   |
+    | From Display Field: [name       v]   |
     |                                      |
     | To Table: [Table2               v]   |
     |                                      |
     | To Key Field: [id               v]   |
     |                                      |
-    | To Display Field: [name            v]   |
+    | To Display Field: [name         v]   |
     |                                      |
     | Track Vice Versa: [ ]                |
     |                                      |
@@ -884,6 +884,7 @@ class DBWidget(QtWidgets.QWidget):
         # Determine the current table based on the selected column's header
         tree_column_name = self.tree_data_widget.column_names[column_index]
 
+        # TODO: Store relation path in header item to be extract from item directly
         # Check if the column header includes a related table
         if '.' in tree_column_name:
             # The column represents a relation, split to get the table name
