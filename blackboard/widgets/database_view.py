@@ -340,11 +340,11 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             layout.addWidget(label)
             self.field_name_to_input_widgets[field_name] = input_widget
 
-        for many_to_many_field in self.many_to_many_fields:
+        for track_field_name, many_to_many_field in self.many_to_many_fields.items():
             m2m_widget = self.create_many_to_many_widget(many_to_many_field)
-            label = widgets.LabelEmbedderWidget(m2m_widget, many_to_many_field.track_field_name)
+            label = widgets.LabelEmbedderWidget(m2m_widget, track_field_name)
             layout.addWidget(label)
-            self.field_name_to_input_widgets[many_to_many_field.track_field_name] = m2m_widget
+            self.field_name_to_input_widgets[track_field_name] = m2m_widget
 
         if self.data_dict:
             for field, value in self.data_dict.items():
@@ -403,11 +403,10 @@ class AddEditRecordDialog(QtWidgets.QDialog):
                 if not (field_info.type == 'INTEGER' and field_info.is_primary_key)
             }
 
-            for many_to_many_field in self.many_to_many_fields:
-                field_name = many_to_many_field.track_field_name
-                if field_name not in new_values:
+            for track_field_name in self.many_to_many_fields.keys():
+                if track_field_name not in new_values:
                     continue
-                data_filtered[field_name] = new_values[field_name]
+                data_filtered[track_field_name] = new_values[track_field_name]
 
             # Insert the record using the updated insert_record method
             self.db_manager.insert_record(self.table_name, data_filtered, handle_m2m=bool(self.many_to_many_fields))

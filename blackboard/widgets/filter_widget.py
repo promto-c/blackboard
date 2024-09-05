@@ -1047,7 +1047,7 @@ class FilterEntryEdit(QtWidgets.QLineEdit):
     def setModel(self, model):
         """Set the model for the completer."""
         self.model = model
-        self.proxy_model = bb.utils.FlatProxyModel(self.model)
+        self.proxy_model = bb.utils.FlatProxyModel(self.model, self)
         # Set the model for the completer
         self.completer().setModel(self.proxy_model)
 

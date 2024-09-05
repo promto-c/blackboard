@@ -904,10 +904,9 @@ class DBWidget(QtWidgets.QWidget):
         if not related_fk:
             # TODO: Handle m2m > relation > relation
             many_to_many_fields = self.db_manager.get_many_to_many_fields(from_table)
-            m2m_field_map = {m2m.track_field_name: m2m for m2m in many_to_many_fields}
 
-            if from_field in m2m_field_map:
-                m2m_field = m2m_field_map[from_field]
+            if from_field in many_to_many_fields:
+                m2m_field = many_to_many_fields[from_field]
                 junction_table = m2m_field.junction_table
 
                 # Retrieve foreign keys from the junction table
@@ -1088,8 +1087,7 @@ class DBWidget(QtWidgets.QWidget):
 
         # TODO: Add Many-to-Many track fields to fields_list_widget
         many_to_many_fields = self.db_manager.get_many_to_many_fields(self.current_table)
-        for m2m in many_to_many_fields:
-            field_name = m2m.track_field_name
+        for field_name, m2m in many_to_many_fields.items():
             column_definition = f"{field_name} ({m2m.junction_table})"
             self.fields_list_widget.addItem(column_definition)
         # ---

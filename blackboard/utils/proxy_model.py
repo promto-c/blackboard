@@ -13,12 +13,18 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, source_model: QtCore.QAbstractItemModel = None, parent=None, show_only_checked: bool = False, show_only_leaves: bool = False):
+    def __init__(self, source_model: QtCore.QAbstractItemModel = None, parent: QtWidgets.QWidget = None, show_only_checked: bool = False, show_only_leaves: bool = False):
         super().__init__(parent)
         self.show_only_checked = show_only_checked
         self.show_only_leaves = show_only_leaves
         self._flat_map = list()
         self._is_show_checkbox = True
+
+        self.parent_widget = parent
+
+        # Connect visibility change signal if parent is a QWidget
+        if isinstance(parent, QtWidgets.QWidget) and hasattr(parent, 'visibilityChanged'):
+            parent.visibilityChanged.connect(self._on_parent_visibility_changed)
 
         if source_model is not None:
             self.setSourceModel(source_model)
@@ -65,7 +71,10 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
         # Insert the new indices at the found position
         self._flat_map[insert_position:insert_position] = new_indices
-        self._sort()
+
+        if self.parent_widget and not self.parent_widget.isHidden():
+            self._sort()
+
         self.layoutChanged.emit()
 
     def _on_rows_removed(self, parent, first, last):
@@ -88,8 +97,16 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
         self._flat_map = new_flat_map
 
-        self._sort()
+        if self.parent_widget and not self.parent_widget.isHidden():
+            self._sort()
+
         self.layoutChanged.emit()
+
+    def _on_parent_visibility_changed(self, visible: bool):
+        """Handle visibility changes of the parent widget."""
+        if visible:
+            # Sort or perform any required actions when the parent becomes visible
+            self._sort()
 
     def _update_flat_map(self, top_left: QtCore.QModelIndex, bottom_right: QtCore.QModelIndex, roles: List[QtCore.Qt.ItemDataRole]):
         """Update only the changed items in the flat map, considering different parents."""

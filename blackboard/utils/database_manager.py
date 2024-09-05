@@ -287,7 +287,8 @@ class DatabaseManager:
             table_name (str): The name of the table to retrieve information from.
 
         Returns:
-            List[FieldInfo]: A list of FieldInfo dataclass instances, each representing a field in the table.
+            Dict[str, FieldInfo]: A dictionary where keys are field names and values are FieldInfo dataclass instances, 
+                representing the fields in the table and their properties.
 
         Raises:
             ValueError: If the table name is not a valid Python identifier.
@@ -398,21 +399,22 @@ class DatabaseManager:
             for fk in foreign_keys
         ]
 
-    def get_many_to_many_fields(self, table_name: str) -> List['ManyToManyField']:
+    def get_many_to_many_fields(self, table_name: str) -> Dict[str, 'ManyToManyField']:
         """Retrieve many-to-many relationships for a specified table.
 
         Args:
             table_name (str): The name of the table to retrieve many-to-many relationships for.
 
         Returns:
-            List[ManyToManyField]: A list of ManyToManyField dataclass instances representing the relationships.
+            Dict[str, ManyToManyField]: A dictionary where keys are `track_field_name` and values are ManyToManyField 
+                dataclass instances representing the relationships.
         """
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
 
-        # Return an empty list if the _meta_many_to_many table does not exist
+        # Return an empty dictionary if the _meta_many_to_many table does not exist
         if not self.is_table_exists('_meta_many_to_many'):
-            return []
+            return {}
 
         # Proceed with fetching the many-to-many relationships
         cursor = self.connection.cursor()
@@ -425,14 +427,15 @@ class DatabaseManager:
         records = cursor.fetchall()
         cursor.close()
 
-        return [
-            ManyToManyField(
+        # Create a dictionary with track_field_name as keys and ManyToManyField instances as values
+        return {
+            record[0]: ManyToManyField(
                 from_table=table_name,
                 track_field_name=record[0],
                 junction_table=record[1],
             )
             for record in records
-        ]
+        }
 
     def get_many_to_many_field_names(self, table_name: str) -> List[str]:
         """Retrieve the track field names of all many-to-many relationships for the current table.
@@ -443,7 +446,7 @@ class DatabaseManager:
         Returns:
             List[str]: A list of track field names representing many-to-many relationships in the current table.
         """
-        return [m2m.track_field_name for m2m in self.get_many_to_many_fields(table_name)]
+        return list(self.get_many_to_many_fields(table_name).keys())
 
     def add_field(self, table_name: str, field_name: str, field_definition: str, foreign_key: Optional[str] = None, enum_values: Optional[List[str]] = None, enum_table_name: Optional[str] = None):
         """Add a new field to an existing table, optionally with a foreign key or enum constraint.
@@ -613,7 +616,7 @@ class DatabaseManager:
         # TODO: Handle composite pks
         # First, delete related data in the many-to-many junction tables
         m2m_fields = self.get_many_to_many_fields(table_name)
-        for m2m_field in m2m_fields:
+        for m2m_field in m2m_fields.values():
             junction_table = m2m_field.junction_table
             fks = self.get_foreign_keys(junction_table)
 
@@ -887,10 +890,10 @@ class DatabaseManager:
         # Separate M2M data from the main data if handling M2M relationships
         m2m_data = {}
         if handle_m2m:
-            for m2m_field in self.get_many_to_many_fields(table_name):
-                if m2m_field.track_field_name not in data_dict:
+            for track_field_name in self.get_many_to_many_field_names(table_name):
+                if track_field_name not in data_dict:
                     continue
-                m2m_data[m2m_field.track_field_name] = data_dict.pop(m2m_field.track_field_name)
+                m2m_data[track_field_name] = data_dict.pop(track_field_name)
 
         # Insert the main record
         field_names = ', '.join(data_dict.keys())
@@ -934,10 +937,10 @@ class DatabaseManager:
         # Separate M2M data from the main data if handling M2M relationships
         m2m_data = {}
         if handle_m2m:
-            for m2m_field in self.get_many_to_many_fields(table_name):
-                if m2m_field.track_field_name not in data_dict:
+            for track_field_name in self.get_many_to_many_field_names(table_name):
+                if track_field_name not in data_dict:
                     continue
-                m2m_data[m2m_field.track_field_name] = data_dict.pop(m2m_field.track_field_name)
+                m2m_data[track_field_name] = data_dict.pop(track_field_name)
 
         if data_dict:
             # Update the main record

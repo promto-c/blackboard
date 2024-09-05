@@ -35,7 +35,7 @@ class TagListView(MomentumScrollListView):
     def __init_attributes(self):
         """Initialize the attributes.
         """
-        self._proxy_model = FlatProxyModel(show_only_checked=self.show_only_checked, show_only_leaves=True)
+        self._proxy_model = FlatProxyModel(parent=self, show_only_checked=self.show_only_checked, show_only_leaves=True)
         self._proxy_model.set_show_checkbox(False)
 
         self._press_position = None
@@ -177,8 +177,12 @@ if __name__ == "__main__":
 
     model = QtGui.QStandardItemModel()
     # Add initial tags
-    tag_list_view.add_items(["Tag 1", "Tag 2", "Tag 3"])
+    tag_list_view.add_items(["Tag 1", "Tag 3", "Tag 2"])
 
     main_window.setCentralWidget(tag_list_view)
     main_window.show()
+
+    # Testt sorting
+    tag_list_view.add_items(["Tag 7", "Tag 5", "Tag 6"])
+
     sys.exit(app.exec_())
