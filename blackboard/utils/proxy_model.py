@@ -22,9 +22,9 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
         self.parent_widget = parent
 
-        # Connect visibility change signal if parent is a QWidget
-        if isinstance(parent, QtWidgets.QWidget) and hasattr(parent, 'visibilityChanged'):
-            parent.visibilityChanged.connect(self._on_parent_visibility_changed)
+        # Install event filter on the parent widget if it exists
+        if isinstance(parent, QtWidgets.QWidget):
+            parent.installEventFilter(self)
 
         if source_model is not None:
             self.setSourceModel(source_model)
@@ -101,12 +101,6 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
             self._sort()
 
         self.layoutChanged.emit()
-
-    def _on_parent_visibility_changed(self, visible: bool):
-        """Handle visibility changes of the parent widget."""
-        if visible:
-            # Sort or perform any required actions when the parent becomes visible
-            self._sort()
 
     def _update_flat_map(self, top_left: QtCore.QModelIndex, bottom_right: QtCore.QModelIndex, roles: List[QtCore.Qt.ItemDataRole]):
         """Update only the changed items in the flat map, considering different parents."""
@@ -256,6 +250,16 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
         # Sort the flat map using the defined key function and the specified order
         self._flat_map.sort(key=sort_key, reverse=(self.sortOrder() == QtCore.Qt.DescendingOrder))
+
+    def eventFilter(self, source, event):
+        """Override the eventFilter method to handle events from the parent widget."""
+        # Check if the event is a show event
+        if event.type() == QtCore.QEvent.Show and source == self.parent_widget:
+            self._sort()
+            return True  # Event is handled
+
+        # Call the base class method for default event handling
+        return super().eventFilter(source, event)
 
 class CheckableProxyModel(QtCore.QSortFilterProxyModel):
 

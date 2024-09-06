@@ -214,7 +214,7 @@ class ApplicationUtil:
             file_paths = [file_paths]
 
         # Extract folders
-        folders = {os.path.dirname(file_path) if os.path.isfile(file_path) else file_path for file_path in file_paths}
+        folders = {(os.path.isfile(file_path) and os.path.dirname(file_path)) or file_path for file_path in file_paths}
 
         # Open each folder
         for folder in folders:
