@@ -29,15 +29,23 @@ class ForeignKey:
                 f"ON UPDATE {self.on_update} ON DELETE {self.on_delete}")
 
 @dataclass
+class ManyToManyField:
+    """Represents a many-to-many relationship field."""
+    from_table: str                         # The name of the originating table
+    track_field_name: str                   # The field name in the originating table
+    junction_table: str                     # The name of the junction table
+
+@dataclass
 class FieldInfo:
-    cid: int
-    name: str
-    type: str
-    notnull: int
-    dflt_value: str
-    pk: int
+    cid: int = -1
+    name: str = ''
+    type: str = 'NULL'
+    notnull: int = 0
+    dflt_value: Optional[str] = None
+    pk: int = 0
     unique: bool = False
     fk: Optional[ForeignKey] = None
+    m2m: Optional[ManyToManyField] = None
 
     def get_field_definition(self) -> str:
         """Generate the SQL definition string for this field."""
@@ -54,7 +62,7 @@ class FieldInfo:
 
     @property
     def is_not_null(self) -> bool:
-        return self.notnull == 1
+        return bool(self.notnull)
 
     @property
     def is_primary_key(self) -> bool:
@@ -68,12 +76,11 @@ class FieldInfo:
     def is_unique(self) -> bool:
         return self.unique
 
-@dataclass
-class ManyToManyField:
-    """Represents a many-to-many relationship field."""
-    from_table: str                         # The name of the originating table
-    track_field_name: str                   # The field name in the originating table
-    junction_table: str                     # The name of the junction table
+    @property
+    def is_many_to_many(self) -> bool:
+        """Check if the field is part of a many-to-many relationship.
+        """
+        return self.m2m is not None
 
 class DatabaseManager:
 
@@ -280,11 +287,12 @@ class DatabaseManager:
 
         return unique_fields
 
-    def get_table_info(self, table_name: str) -> Dict[str, 'FieldInfo']:
-        """Retrieve information about the fields of a specified table, including whether they have UNIQUE constraints.
+    def get_fields(self, table_name: str, include_many_to_many: bool = False) -> Dict[str, 'FieldInfo']:
+        """Retrieve all fields of the specified table, including unique constraints and many-to-many relationships.
 
         Args:
-            table_name (str): The name of the table to retrieve information from.
+            table_name (str): The name of the table to retrieve fields from.
+            include_many_to_many (bool): Whether to include many-to-many relationship fields. Defaults to False.
 
         Returns:
             Dict[str, FieldInfo]: A dictionary where keys are field names and values are FieldInfo dataclass instances, 
@@ -306,19 +314,39 @@ class DatabaseManager:
         # Get unique fields using the new method
         unique_fields = self.get_unique_fields(table_name)
 
+        # Create a dictionary mapping field names to FieldInfo objects
         name_to_field_info = {field[1]: FieldInfo(*field, unique=(field[1] in unique_fields)) for field in fields}
-        
+
+        # Add foreign key information to the FieldInfo objects
         foreign_keys = self.get_foreign_keys(table_name)
         for foreign_key in foreign_keys:
             name_to_field_info[foreign_key.from_field].fk = foreign_key
 
+        # Include many-to-many fields if requested
+        if include_many_to_many:
+            many_to_many_fields = self.get_many_to_many_fields(table_name)
+            for field_name, m2m_field in many_to_many_fields.items():
+                # Add the many-to-many field with a reference to the junction table
+                name_to_field_info[field_name] = FieldInfo(
+                    name=field_name,
+                    type='MANY_TO_MANY',  # Use a custom type for many-to-many fields
+                    m2m=m2m_field  # Store the many-to-many relationship info
+                )
+
         return name_to_field_info
 
-    def get_field_info(self, table_name: str, column_name: str) -> FieldInfo:
-        """Get field information for a given column in a table."""
-        # Example implementation; replace with actual logic to fetch field info
-        fields = self.get_table_info(table_name)
-        return fields.get(column_name)
+    def get_field(self, table_name: str, field_name: str) -> FieldInfo:
+        """Get information for a specific field (column) in a table.
+
+        Args:
+            table_name (str): The name of the table.
+            field_name (str): The name of the field to get information for.
+
+        Returns:
+            FieldInfo: The FieldInfo instance representing the field's information.
+        """
+        fields = self.get_fields(table_name, include_many_to_many=True)
+        return fields.get(field_name)
 
     def get_possible_values(self, table_name: str, display_field: Optional[str] = None) -> List[str]:
         """Get possible values from a related table using a display field.
@@ -477,7 +505,7 @@ class DatabaseManager:
             self.add_enum_metadata(table_name, field_name, enum_table_name)
 
         # Fetch existing fields and foreign keys
-        fields = self.get_table_info(table_name)
+        fields = self.get_fields(table_name)
         foreign_keys = self.get_foreign_keys(table_name)
 
         # Create a new table schema with the new field
@@ -523,7 +551,7 @@ class DatabaseManager:
             raise ValueError("Invalid table name or field name")
 
         # Retrieve the table information
-        fields = self.get_table_info(table_name)
+        fields = self.get_fields(table_name)
 
         # Disable foreign key constraints temporarily
         self.cursor.execute("PRAGMA foreign_keys=off;")

@@ -16,7 +16,7 @@ def test_create_table(db_manager: DatabaseManager):
     fields = {"id": "INTEGER PRIMARY KEY", "name": "TEXT NOT NULL"}
     db_manager.create_table(table_name, fields)
 
-    table_info = list(db_manager.get_table_info(table_name).values())
+    table_info = list(db_manager.get_fields(table_name).values())
     assert len(table_info) == 2
     assert table_info[0].name == "id"
     assert table_info[1].name == "name"

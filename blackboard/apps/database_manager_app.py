@@ -1072,7 +1072,7 @@ class DBWidget(QtWidgets.QWidget):
         table_name = current_item.text()
         self.current_table = table_name
         self.data_view.set_table(self.current_table)
-        self.field_name_to_info = self.db_manager.get_table_info(table_name)
+        self.field_name_to_info = self.db_manager.get_fields(table_name)
 
         self.fields_list_widget.clear()
 

@@ -316,7 +316,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         """Initialize the attributes.
         """
         self.field_name_to_input_widgets: Dict[str, QtWidgets.QWidget] = {}
-        self.field_name_to_info = self.db_manager.get_table_info(self.table_name)
+        self.field_name_to_info = self.db_manager.get_fields(self.table_name)
         self.many_to_many_fields = self.db_manager.get_many_to_many_fields(self.table_name)
 
     def __init_ui(self):
@@ -573,7 +573,7 @@ class DatabaseViewWidget(DataViewWidget):
         """Initialize the attributes.
         """
         self._current_table = ''
-        self.active_filter_columns = set()  # Keep track of columns that have active filters
+        self.active_filter_columns = set()  # Keep track of columns with active filters
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -594,6 +594,7 @@ class DatabaseViewWidget(DataViewWidget):
         self.delete_record_button.clicked.connect(self.delete_record)
         self.tree_widget.itemDoubleClicked.connect(self.edit_record)
 
+    @staticmethod
     def generate_sql_query(column_name: str, filter_condition: 'FilterCondition', values: Tuple) -> str:
         """Generate an SQL query string for a given column and filter condition.
 
@@ -605,17 +606,22 @@ class DatabaseViewWidget(DataViewWidget):
         Returns:
             str: An SQL query string.
         """
-        sql_query = filter_condition.query_format.format(column=column_name)
-        return sql_query
+        return filter_condition.query_format.format(column=column_name)
 
     def set_database_manager(self, db_manager: 'DatabaseManager'):
+        """Set the database manager for handling database operations.
+        """
         self.db_manager = db_manager
 
     def set_table(self, table_name: str):
+        """Set the current table and load its data.
+        """
         self._current_table = table_name
         self.load_table_data()
 
     def load_table_data(self):
+        """Load the data for the current table into the tree widget.
+        """
         if not self.db_manager or not self._current_table:
             return
 
@@ -630,10 +636,17 @@ class DatabaseViewWidget(DataViewWidget):
         self.tree_widget.clear()
         self.tree_widget.set_primary_key(primary_key)
         self.tree_widget.setHeaderLabels(fields + many_to_many_field_names)
-        generator = self.db_manager.query_table_data(self._current_table, fields + many_to_many_field_names, as_dict=True, handle_m2m=True)
+        generator = self.db_manager.query_table_data(
+            self._current_table, 
+            fields + many_to_many_field_names, 
+            as_dict=True, 
+            handle_m2m=True
+        )
         self.tree_widget.set_generator(generator)
 
     def show_add_record_dialog(self):
+        """Show the dialog to add a new record to the current table.
+        """
         if not self._current_table:
             return
 
@@ -642,7 +655,8 @@ class DatabaseViewWidget(DataViewWidget):
             self.load_table_data()
 
     def edit_record(self, item: 'TreeWidgetItem', column):
-        # Fetching row data and mapping it to column names
+        """Edit the selected record from the tree widget.
+        """
         row_data = {self.tree_widget.headerItem().text(col): item.get_value(col) for col in range(self.tree_widget.columnCount())}
         dialog = AddEditRecordDialog(self.db_manager, self._current_table, row_data, self)
 
@@ -677,7 +691,8 @@ class DatabaseViewWidget(DataViewWidget):
             self.load_table_data()
 
     def show_column_selection_menu(self):
-        """Show a context menu with available columns for creating filters."""
+        """Show a context menu with available columns for creating filters.
+        """
         menu = QtWidgets.QMenu(self)
 
         for column in self.tree_widget.column_names:
@@ -688,25 +703,34 @@ class DatabaseViewWidget(DataViewWidget):
 
         menu.exec_(QtGui.QCursor.pos())
 
-    # TODO: Handle Many-to-Many field
     def create_filter_widget(self, column_name: str):
         """Create a filter widget based on the selected column and its data type.
         """
         # Get field information for the column
-        field_info = self.db_manager.get_field_info(self._current_table, column_name)
+        field_info = self.db_manager.get_field(self._current_table, column_name)
 
         # TODO: Store relation path in header item to be extract from item directly instead of extract from split '.'
-        # Check if the column is a foreign key
-        if '.' in column_name or field_info.is_foreign_key:
+        # Check if the column is a foreign key or a many-to-many field
+        if '.' in column_name or field_info.is_foreign_key or field_info.is_many_to_many:
+            # Handle relation columns
             if '.' in column_name:
                 # TODO: Handle the column based on its type if it is not TEXT
-                # The column represents a relation, split to get the table name
+                # The column represents a relation, split to get the table and field names
                 related_table, display_field = column_name.split('.')
-            else:
+            elif field_info.is_foreign_key:
                 related_table = field_info.fk.table
                 display_field = None
+            elif field_info.is_many_to_many:
+                # Handle many-to-many relationship fields
+                fks = self.db_manager.get_foreign_keys(field_info.m2m.junction_table)
+                for fk in fks:
+                    if fk.table != self._current_table:
+                        to_table_fk = fk
+                        break
+                related_table = to_table_fk.table
+                display_field = to_table_fk.to_field
 
-            # Handle foreign key column as ENUM type
+            # Fetch possible values from the related table
             possible_values = self.db_manager.get_possible_values(related_table, display_field=display_field)
 
             # Create a MultiSelectFilterWidget with the possible values

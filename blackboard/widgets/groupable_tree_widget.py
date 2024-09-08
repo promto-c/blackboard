@@ -25,6 +25,7 @@ from blackboard.utils.thread_pool import ThreadPoolManager, GeneratorWorker
 from blackboard.utils.tree_utils import TreeUtil, TreeItemUtil
 from blackboard.widgets.button import DataFetchingButtons
 from blackboard.widgets.menu import ContextMenu
+from blackboard.widgets.momentum_scroll_widget import MomentumScrollTreeWidget
 
 
 # Class Definitions
@@ -154,8 +155,6 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         # Set the TagListView as the widget for the specified item and column
         self.treeWidget().setItemWidget(self, column_index, tag_list_view)
 
-    # Special Methods
-    # ---------------
     def __getitem__(self, key: Union[int, str]) -> Any:
         """Retrieve the value of the UserRole data for the given column.
 
@@ -413,7 +412,7 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         height = self.uniform_row_height_spin_box.value() if state else -1
         self.tree_widget.set_row_height(height)
 
-class GroupableTreeWidget(QtWidgets.QTreeWidget):
+class GroupableTreeWidget(MomentumScrollTreeWidget):
     """A QTreeWidget subclass that displays data in a tree structure with the ability to group data by a specific column.
 
     Attributes:
@@ -459,9 +458,9 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self._primary_key = None
         self._row_height = self.DEFAULT_ROW_HEIGHT
         self._current_column_index = 0
+        self._item_widget_connections: List[QtWidgets.QWidget] = []
 
         self._id_to_tree_item: Dict[Any, QtWidgets.QTreeWidgetItem] = {}
-        self._item_widgets: List[QtWidgets.QWidget] = []
 
         # TODO: Separate class to handle this
         self.generator = None
@@ -470,18 +469,13 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.batch_size = 50
         self.threshold_to_fetch_more = 50
         self.has_more_items_to_fetch = False
+        self._vertical_scroll_connection = None
         # ---
-
-        self.scroll_handler = bb.utils.MomentumScrollHandler(self)
 
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
         self.sortByColumn(1, QtCore.Qt.SortOrder.AscendingOrder)
-
-        # Initializes scroll modes for the widget
-        self.setVerticalScrollMode(QtWidgets.QTreeWidget.ScrollMode.ScrollPerPixel)
-        self.setHorizontalScrollMode(QtWidgets.QTreeWidget.ScrollMode.ScrollPerPixel)
 
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragOnly)
 
@@ -693,8 +687,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             size_hint = self.sizeHintForColumn(column_index)
             top_level_item.setSizeHint(column_index, QtCore.QSize(size_hint, self._row_height))
 
-       # Apply the workaround to force a visual update
-        self._force_update_visual()
+        # Force a visual update
+        self.model().layoutChanged.emit()
 
     def reset_row_height(self):
         """Reset the row height to default.
@@ -709,8 +703,8 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             size_hint = self.sizeHintForColumn(column_index)
             top_level_item.setSizeHint(column_index, QtCore.QSize(size_hint, -1))
 
-       # Apply the workaround to force a visual update
-        self._force_update_visual()
+        # Force a visual update
+        self.model().layoutChanged.emit()
 
     def toggle_expansion_for_selected(self, reference_item: QtWidgets.QTreeWidgetItem):
         """Toggle the expansion state of selected items.
@@ -935,7 +929,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         """Set the primary key for the tree widget.
 
         Args:
-            primary_key (Union[str, List[str]]): The primary key, either as a single string or a tuple of strings for composite keys.
+            primary_key (Union[str, List[str]]): The primary key, either as a single string or a list of strings for composite keys.
         """
         self._primary_key = primary_key
 
@@ -1215,7 +1209,7 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
             return
 
         self.has_more_items_to_fetch = True
-        self.verticalScrollBar().valueChanged.connect(self._check_scroll_position)
+        self._vertical_scroll_connection = self.verticalScrollBar().valueChanged.connect(self._check_scroll_position)
 
         first_batch_size = self.calculate_dynamic_batch_size()
 
@@ -1293,16 +1287,6 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         for column in columns:
             self.apply_column_color_adaptive(column)
 
-    def _force_update_visual(self):
-        """Force a visual update of the QTreeWidget by slightly adjusting the column width.
-
-        NOTE: This method is necessary when there are item widgets (e.g., custom widgets like TagListView) 
-        in the QTreeWidget. Adjusting the column width slightly forces the QTreeWidget to recalculate its layout 
-        and redraw itself, ensuring that item widgets are updated correctly to reflect the new row height.
-        """
-        self.setColumnWidth(0, self.columnWidth(0) + 1)
-        self.setColumnWidth(0, self.columnWidth(0) - 1)
-
     def _fetch_more_data(self, batch_size: Optional[int] = None):
         """Fetch more data using the generator.
 
@@ -1333,11 +1317,13 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.show_tool_tip("All items have been fetched.", 5000)
 
     def _disconnect_check_scroll_position(self):
-        """Disconnect the scroll position check."""
-        try:
-            self.verticalScrollBar().valueChanged.disconnect(self._check_scroll_position)
-        except TypeError:
-            pass
+        """Disconnect the scroll position check.
+        """
+        if not self._vertical_scroll_connection:
+            return
+
+        self.verticalScrollBar().valueChanged.disconnect(self._vertical_scroll_connection)
+        self._vertical_scroll_connection = None
 
     def _check_scroll_position(self, value: int):
         """Check the scroll position and fetch more data if the threshold is reached.
@@ -1382,88 +1368,38 @@ class GroupableTreeWidget(QtWidgets.QTreeWidget):
         self.drag_started.emit(supported_actions)
 
     def clear(self):
-        """Clear the tree widget and stop any current tasks."""
+        """Clear the tree widget and stop any current tasks.
+        """
         if self._current_task is not None:
             self._current_task.stop()
             self._current_task = None
 
         self._id_to_tree_item.clear()
-        self._item_widgets.clear()
+
+        # NOTE: Disconnect all stored signal connections
+        for  connection in self._item_widget_connections:
+            self.header().sectionResized.disconnect(connection)
+        self._item_widget_connections.clear()
 
         super().clear()
-
-    def mousePressEvent(self, event: QtGui.QMouseEvent):
-        """Handle mouse press event.
-
-        Args:
-            event (QtGui.QMouseEvent): The mouse event.
-        """
-        # Check if middle mouse button is pressed
-        if event.button() == QtCore.Qt.MouseButton.MiddleButton:
-            self.scroll_handler.handle_mouse_press(event)
-        else:
-            # If not middle button, call the parent class method to handle the event
-            super().mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
-        """Handle mouse release event.
-
-        Args:
-            event (QtGui.QMouseEvent): The mouse event.
-        """
-        # Check if middle mouse button is released
-        if event.button() == QtCore.Qt.MouseButton.MiddleButton:
-            self.scroll_handler.handle_mouse_release(event)
-        else:
-            # If not middle button, call the parent class method to handle the event
-            super().mouseReleaseEvent(event)
-
-    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
-        """Handle mouse move event.
-
-        Args:
-            event (QtGui.QMouseEvent): The mouse event.
-        """
-        is_success = self.scroll_handler.handle_mouse_move(event)
-
-        if is_success:
-            event.ignore()
-            return
-
-        super().mouseMoveEvent(event)
 
     def scrollContentsBy(self, dx: int, dy: int):
         """Update positions of visible item widgets during scrolling.
         """
         super().scrollContentsBy(dx, dy)
 
-        if not widgets.ScalableView.is_scalable(self):
-            return
-
-        for widget in self._item_widgets:
-            if widget.isHidden():
-                continue
-
-            # Update the position of the widget
-            widget.move(widget.pos() + QtCore.QPoint(dx, dy))
+        if widgets.ScalableView.is_scalable(self):
+            self.model().layoutChanged.emit()
 
     def setItemWidget(self, item: QtWidgets.QTreeWidgetItem, column: int, widget: QtWidgets.QWidget):
-        """Add a widget to an item, replacing any existing widget and tracking the new one for position updates.
+        """Add a widget to an item and tracking the new one for position updates.
         """
-        old_widget = self.itemWidget(item, column)
-        if old_widget is not None:
-            self._item_widgets.remove(old_widget)
+        # NOTE: This ensures that the layout of the `TagListView` is updated dynamically when the section is resized
+        if isinstance(widget, widgets.TagListView):
+            connection = self.header().sectionResized.connect(widget.model().layoutChanged.emit)
+            self._item_widget_connections.append(connection)
 
         super().setItemWidget(item, column, widget)
-        self._item_widgets.append(widget)
-
-    def removeItemWidget(self, item: QtWidgets.QTreeWidgetItem, column: int):
-        """Remove a widget from an item, stopping position tracking.
-        """
-        widget = self.itemWidget(item, column)
-        self._item_widgets.remove(widget)
-
-        super().removeItemWidget(item, column)
 
 
 # Main Function
