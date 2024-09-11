@@ -77,6 +77,8 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         """
         if isinstance(value, bytes):
             return value.hex()
+        elif isinstance(value, list):
+            return ''
 
         return str(value)
 
@@ -148,6 +150,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         """
         # Create the TagListView widget
         tag_list_view = widgets.TagListView(self.treeWidget(), read_only=True)
+        tag_list_view.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         tag_list_view.add_items(values)
 
         # NOTE: Workaround
@@ -1396,10 +1399,38 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         # NOTE: This ensures that the layout of the `TagListView` is updated dynamically when the section is resized
         if isinstance(widget, widgets.TagListView):
+            widget.viewport().installEventFilter(self)
             connection = self.header().sectionResized.connect(widget.model().layoutChanged.emit)
             self._item_widget_connections.append(connection)
 
         super().setItemWidget(item, column, widget)
+
+    # NOTE: This implementation includes a workaround to manually forward mouse events from the TagListView
+    #       to the QTreeWidget's viewport. This is necessary because the QTreeWidgetItem does not inherently
+    #       receive mouse events from embedded widgets like TagListView. Without this workaround, interactions
+    #       such as selection or item editing would not function correctly when the TagListView is clicked.
+    def eventFilter(self, source: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        """Filter events from the source widget, specifically handling mouse events from a TagListView.
+
+        Args:
+            source (QtCore.QObject): The source of the event, typically a widget like TagListView.
+            event (QtCore.QEvent): The event to be filtered, such as a mouse event.
+
+        Returns:
+            bool: True if the event is handled and forwarded; otherwise, False.
+        """
+        if isinstance(source.parentWidget(), widgets.TagListView) and isinstance(event, QtGui.QMouseEvent):
+            # Forward mouse events to the viewport of the QTreeWidget
+            mapped_event = QtGui.QMouseEvent(
+                event.type(),
+                self.viewport().mapFromGlobal(event.globalPos()),
+                event.button(),
+                event.buttons(),
+                event.modifiers(),
+            )
+            # Forward the event to the tree widget
+            return QtWidgets.QApplication.sendEvent(self.viewport(), mapped_event)
+        return super().eventFilter(source, event)
 
 
 # Main Function
