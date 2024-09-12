@@ -397,6 +397,9 @@ class SequenceFileUtil(FileUtil):
         extension = sequence_data['extension']
         padding = SequenceFileUtil.get_padding(sequence_data, format_style=format_style)
 
+        if not isinstance(frame, int):
+            frame = int(frame)
+
         # Construct the file path
         return f"{base_name}.{frame:0{padding}}.{extension}"
 

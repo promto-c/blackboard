@@ -266,9 +266,16 @@ class ResizablePopupMenu(QtWidgets.QMenu):
     def mousePressEvent(self, event: QtGui.QMouseEvent):
         """Handle the mouse press event for resizing the menu.
         """
-        if (event.pos().x() >= (self.width() - self.RESIZE_HANDLE_SIZE) and
-            event.pos().y() >= (self.height() - self.RESIZE_HANDLE_SIZE)
-           ):
+        # Calculate the rectangle representing the resize handle area
+        handle_rect = QtCore.QRect(
+            self.width() - self.RESIZE_HANDLE_SIZE,
+            self.height() - self.RESIZE_HANDLE_SIZE,
+            self.RESIZE_HANDLE_SIZE,
+            self.RESIZE_HANDLE_SIZE
+        )
+
+        if handle_rect.contains(event.pos()):
+            # Only start dragging if the mouse is within the handle area
             self._is_dragging = True
             self._drag_start_point = event.pos()
             self._initial_size = self.size()
@@ -279,6 +286,7 @@ class ResizablePopupMenu(QtWidgets.QMenu):
     def mouseMoveEvent(self, event: QtGui.QMouseEvent):
         """Handle the mouse move event to resize the menu.
         """
+        # If dragging, resize the widget
         if self._is_dragging:
             delta = event.pos() - self._drag_start_point
             new_size = QtCore.QSize(
@@ -287,6 +295,22 @@ class ResizablePopupMenu(QtWidgets.QMenu):
             )
             self.resize(new_size)
         else:
+            # TODO: Test
+            # Only change the cursor if the mouse is in the resize handle area
+            handle_rect = QtCore.QRect(
+                self.width() - self.RESIZE_HANDLE_SIZE,
+                self.height() - self.RESIZE_HANDLE_SIZE,
+                self.RESIZE_HANDLE_SIZE,
+                self.RESIZE_HANDLE_SIZE
+            )
+            if handle_rect.contains(event.pos()):
+                # Change to a diagonal resize cursor
+                self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.SizeFDiagCursor))
+            else:
+                # Reset to default cursor
+                self.unsetCursor()
+
+            # Call base implementation for default behavior
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent):

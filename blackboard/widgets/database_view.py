@@ -418,13 +418,18 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             # Handle foreign keys by offering a dropdown of related records
             fk = field_info.fk
             display_field = self.db_manager.get_display_field(self.table_name, field_info.name)
+            display_field_info = self.db_manager.get_field(fk.table, display_field)
 
             if display_field:
                 related_records = list(self.db_manager.query_table_data(fk.table, fields=[fk.to_field, display_field], as_dict=True))
 
                 widget = QtWidgets.QComboBox()
                 for record in related_records:
-                    display_value = self.format_combined_display(record[display_field], record[fk.to_field], fk.to_field)
+                    if not display_field_info.is_unique:
+                        display_value = self.format_combined_display(record[display_field], record[fk.to_field], fk.to_field)
+                    else:
+                        display_value = record[display_field]
+
                     key_value = record[fk.to_field]
                     widget.addItem(display_value, key_value)
 
@@ -467,11 +472,13 @@ class AddEditRecordDialog(QtWidgets.QDialog):
                 # If the field is a foreign key, find the corresponding display value
                 fk = field_info.fk
                 display_field = self.db_manager.get_display_field(self.table_name, field_info.name)
+                display_field_info = self.db_manager.get_field(fk.table, display_field)
 
                 if display_field:
                     display_text = self.db_manager.fetch_related_value(fk.table, display_field, fk.to_field, value)
-                    formatted_display_text = self.format_combined_display(display_text, value, fk.to_field)
-                    input_widget.setCurrentText(formatted_display_text)
+                    display_text = self.format_combined_display(display_text, value, fk.to_field) if display_field_info.is_unique else display_text
+
+                    input_widget.setCurrentText(display_text)
                     return
 
             # Fallback to using the value directly if no display field is set
