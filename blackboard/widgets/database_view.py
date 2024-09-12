@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, List, Type, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, List, Type, Tuple, Union
 if TYPE_CHECKING:
     from blackboard.utils.database_manager import DatabaseManager, ManyToManyField, FieldInfo
     from blackboard.widgets.groupable_tree_widget import TreeWidgetItem
@@ -424,7 +424,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
 
                 widget = QtWidgets.QComboBox()
                 for record in related_records:
-                    display_value = record[display_field]
+                    display_value = self.format_combined_display(record[display_field], record[fk.to_field], fk.to_field)
                     key_value = record[fk.to_field]
                     widget.addItem(display_value, key_value)
 
@@ -438,12 +438,12 @@ class AddEditRecordDialog(QtWidgets.QDialog):
 
         if field_info.type == "INTEGER":
             widget = QtWidgets.QSpinBox()
-            widget.setRange(-2147483648, 2147483647)  # Set the range for typical 32-bit integers
-            widget.setSpecialValueText("")  # Allow clearing the value
+            widget.setRange(-2147483648, 2147483647)
+            widget.setSpecialValueText("")
             return widget
         elif field_info.type == "REAL":
             widget = QtWidgets.QDoubleSpinBox()
-            widget.setSpecialValueText("")  # Allow clearing the value
+            widget.setSpecialValueText("")
             return widget
         elif field_info.type == "TEXT":
             return QtWidgets.QLineEdit()
@@ -454,10 +454,9 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         else:
             return QtWidgets.QLineEdit()
 
-    def browse_file(self, line_edit):
-        file_name, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select File")
-        if file_name:
-            line_edit.setText(file_name)
+    def format_combined_display(self, display_value: str, key_value: Union[int, str], key_name: str) -> str:
+        """Format the display field combined with the key value and key name."""
+        return f"{display_value} ({key_name}: {key_value})"
 
     def set_input_value(self, field_name, value):
         input_widget = self.field_name_to_input_widgets.get(field_name)
@@ -471,7 +470,8 @@ class AddEditRecordDialog(QtWidgets.QDialog):
 
                 if display_field:
                     display_text = self.db_manager.fetch_related_value(fk.table, display_field, fk.to_field, value)
-                    input_widget.setCurrentText(display_text)
+                    formatted_display_text = self.format_combined_display(display_text, value, fk.to_field)
+                    input_widget.setCurrentText(formatted_display_text)
                     return
 
             # Fallback to using the value directly if no display field is set

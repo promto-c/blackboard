@@ -369,11 +369,15 @@ class DatabaseManager:
         self.cursor.execute(f"SELECT DISTINCT {display_field} FROM {table_name} ORDER BY {display_field}")
         return [row[0] for row in self.cursor.fetchall()]
 
-    def get_field_names(self, table_name: str) -> List[str]:
-        """Retrieve the names of the fields (columns) in a specified table.
+    def get_field_names(self, table_name: str, include_fk: bool = True,include_m2m: bool = False,
+                        exclude_regular: bool = False) -> List[str]:
+        """Retrieve the names of the fields (columns) in a specified table, with options to include or exclude foreign keys (FK) and many-to-many (M2M) fields.
 
         Args:
             table_name (str): The name of the table to retrieve field names from.
+            include_fk (bool): Whether to include foreign key fields. Default is True.
+            include_m2m (bool): Whether to include many-to-many fields. Default is False.
+            exclude_regular (bool): Whether to exclude regular (non-FK, non-M2M) fields. Default is False.
 
         Returns:
             List[str]: A list of field names in the specified table.
@@ -385,9 +389,29 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
 
-        self.cursor.execute(f"PRAGMA table_info({table_name})")
-        fields = self.cursor.fetchall()
-        return [field[1] for field in fields]
+        # Retrieve all fields
+        fields_info = self.get_fields(table_name)
+        
+        # Get many-to-many fields if needed
+        m2m_fields = self.get_many_to_many_fields(table_name) if include_m2m else {}
+
+        # Filter fields based on options
+        field_names = []
+        for field_name, field_info in fields_info.items():
+            is_fk = field_info.is_foreign_key
+            is_m2m = field_name in m2m_fields
+
+            # Include/exclude based on provided options
+            if exclude_regular and not is_fk and not is_m2m:
+                continue
+            if (include_fk and is_fk) or (include_m2m and is_m2m) or (not is_fk and not is_m2m):
+                field_names.append(field_name)
+
+        # Add M2M fields if included
+        if include_m2m:
+            field_names.extend(m2m_fields.keys())
+
+        return field_names
 
     def get_foreign_keys(self, table_name: str) -> List['ForeignKey']:
         """Retrieve the foreign keys of a specified table.

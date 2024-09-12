@@ -69,19 +69,19 @@ class TextExtraction:
                 unquoted_terms (List[str]): List of terms extracted outside quotes and split by delimiters.
 
         Examples:
-        >>> TextExtraction.extract_terms('''
-        ... "apple", 'banana', orange, som'e'word | 'mango, tree', cat' house\\n another word
-        ... ''')
-        (['apple', 'banana', 'mango, tree'], ['orange', "som'e'word", "cat' house", 'another word'])
+            >>> TextExtraction.extract_terms('''
+            ... "apple", 'banana', orange, som'e'word | 'mango, tree', cat' house\\n another word
+            ... ''')
+            (['apple', 'banana', 'mango, tree'], ['orange', "som'e'word", "cat' house", 'another word'])
 
-        >>> TextExtraction.extract_terms('"apple" | "banana" | "orange"')
-        (['apple', 'banana', 'orange'], [])
+            >>> TextExtraction.extract_terms('"apple" | "banana" | "orange"')
+            (['apple', 'banana', 'orange'], [])
 
-        >>> TextExtraction.extract_terms("'apple' 'banana' 'orange'")
-        (['apple', 'banana', 'orange'], [])
+            >>> TextExtraction.extract_terms("'apple' 'banana' 'orange'")
+            (['apple', 'banana', 'orange'], [])
 
-        >>> TextExtraction.extract_terms("'apple', 'banana', orange, 'mango, tree'")
-        (['apple', 'banana', 'mango, tree'], ['orange'])
+            >>> TextExtraction.extract_terms("'apple', 'banana', orange, 'mango, tree'")
+            (['apple', 'banana', 'mango, tree'], ['orange'])
         """
         if not input_text:
             return [], []
@@ -104,12 +104,12 @@ class TextExtraction:
         matches: List[Tuple[str, str, str]] = pattern.findall(input_text)
 
         # Initialize lists for different captured groups
-        double_quoted, single_quoted, unquoted_terms = [
+        double_quoted_terms, single_quoted_terms, unquoted_terms = [
             [stripped_term for term in group if (stripped_term := term.strip())] 
             for group in zip(*matches)
         ]
 
-        return double_quoted + single_quoted, unquoted_terms
+        return double_quoted_terms + single_quoted_terms, unquoted_terms
 
     @staticmethod
     def split_keywords(text: str) -> List[str]:

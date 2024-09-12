@@ -305,6 +305,8 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
     +--------------------------------------+
     """
 
+    DEFAULT_DISPLAY_NAME = 'name'
+
     def __init__(self, db_manager: DatabaseManager, table_name: str, parent=None):
         super().__init__(parent)
 
@@ -437,12 +439,14 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
 
         # Combine unique fields and primary keys
         reference_fields = primary_keys + unique_fields
+        reference_display_fields = self.db_manager.get_field_names(table_name, include_fk=False, include_m2m=False)
 
         # Clear and populate the dropdowns
         self.key_field_dropdown.clear()
         self.key_field_dropdown.addItems(reference_fields)
         self.display_field_dropdown.clear()
-        self.display_field_dropdown.addItems(reference_fields)
+        self.display_field_dropdown.addItems(reference_display_fields)
+        self.display_field_dropdown.setCurrentText(self.DEFAULT_DISPLAY_NAME if self.DEFAULT_DISPLAY_NAME in reference_display_fields else reference_display_fields[0])
 
     def _update_field_name(self, field_name: str):
         if not field_name:
@@ -450,7 +454,8 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
         self.field_name_input.setText(f"{self.table_dropdown.currentText()}_{field_name}")
 
 class AddManyToManyFieldDialog(QtWidgets.QDialog):
-    """
+    """Dialog for adding a Many-to-Many field between two tables.
+
     UI Design:
     
     +--------------------------------------+
@@ -477,6 +482,8 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
     +--------------------------------------+
     """
 
+    DEFAULT_DISPLAY_NAME = 'name'
+
     def __init__(self, db_manager: DatabaseManager, from_table: str, parent=None):
         super().__init__(parent)
 
@@ -489,7 +496,8 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
         self.__init_signal_connections()
 
     def __init_ui(self):
-        """Initialize the UI of the widget."""
+        """Initialize the UI of the widget.
+        """
         self.setWindowTitle("Add Many-to-Many Field")
 
         # Create Layouts
@@ -535,17 +543,21 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
         self._init_from_table_fields()
 
     def __init_signal_connections(self):
-        """Initialize signal-slot connections."""
+        """Initialize signal-slot connections.
+        """
         self.to_table_dropdown.currentTextChanged.connect(self._update_to_table_fields)
+        self.to_table_dropdown.currentTextChanged.connect(self._update_junction_table_name)
         self.add_button.clicked.connect(self.add_many_to_many_field)
 
     def _init_from_table_fields(self):
-        """Initialize the 'from' table's key and display fields."""
+        """Initialize the 'from' table's key and display fields.
+        """
         primary_keys = self.db_manager.get_primary_keys(self.from_table)
         unique_fields = self.db_manager.get_unique_fields(self.from_table)
 
         # Combine unique fields and primary keys
         reference_fields = primary_keys + unique_fields
+        display_fields = self.db_manager.get_field_names(self.from_table, include_fk=False, include_m2m=False)
 
         # Set default key and display fields for the "from" table
         self.from_key_field_dropdown.clear()
@@ -553,8 +565,8 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
         self.from_key_field_dropdown.setCurrentText('id' if 'id' in reference_fields else primary_keys[0] if primary_keys else reference_fields[0])
 
         self.from_display_field_dropdown.clear()
-        self.from_display_field_dropdown.addItems(reference_fields)
-        self.from_display_field_dropdown.setCurrentText('name' if 'name' in reference_fields else reference_fields[0])
+        self.from_display_field_dropdown.addItems(display_fields)
+        self.from_display_field_dropdown.setCurrentText(self.DEFAULT_DISPLAY_NAME if self.DEFAULT_DISPLAY_NAME in display_fields else display_fields[0])
 
     def _update_to_table_fields(self):
         """Update the 'to' table's key and display fields based on the selected table."""
@@ -567,6 +579,7 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
 
         # Combine unique fields and primary keys
         reference_fields = primary_keys + unique_fields
+        display_fields = self.db_manager.get_field_names(table_name, include_fk=False, include_m2m=False)
 
         # Update the key and display fields for the "to" table
         self.to_key_field_dropdown.clear()
@@ -574,11 +587,23 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
         self.to_key_field_dropdown.setCurrentText('id' if 'id' in reference_fields else primary_keys[0] if primary_keys else reference_fields[0])
 
         self.to_display_field_dropdown.clear()
-        self.to_display_field_dropdown.addItems(reference_fields)
-        self.to_display_field_dropdown.setCurrentText('name' if 'name' in reference_fields else reference_fields[0])
+        self.to_display_field_dropdown.addItems(display_fields)
+        self.to_display_field_dropdown.setCurrentText(self.DEFAULT_DISPLAY_NAME if self.DEFAULT_DISPLAY_NAME in display_fields else display_fields[0])
+
+    def _update_junction_table_name(self):
+        """Automatically set the junction table name based on selected tables.
+        """
+        from_table = self.from_table
+        to_table = self.to_table_dropdown.currentText()
+        if to_table:
+            # Sort table names alphabetically and join them with an underscore
+            sorted_tables = sorted([from_table, to_table])
+            junction_name = "_".join(sorted_tables)
+            self.junction_table_input.setText(junction_name)
 
     def add_many_to_many_field(self):
-        """Handle adding the many-to-many relationship field."""
+        """Handle adding the many-to-many relationship field.
+        """
         junction_table_name = self.junction_table_input.text()
         to_table = self.to_table_dropdown.currentText()
         from_key_field = self.from_key_field_dropdown.currentText()

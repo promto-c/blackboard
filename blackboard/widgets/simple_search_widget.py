@@ -299,8 +299,15 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
         return False
 
-    def _is_match_unquoted_term(self, item_text, term):
+    def _is_match_unquoted_term(self, item_text: str, term: str) -> bool:
         """Helper method to check if item_text matches the unquoted term.
+
+        Args:
+            item_text (str): The text of the item to check.
+            term (str): The term to match against.
+
+        Returns:
+            bool: True if the item_text matches the unquoted term, False otherwise.
         """
         if TextExtraction.is_contains_wildcard(term):
             return fnmatch.fnmatch(item_text, term)
@@ -315,7 +322,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     def _clear_highlights(self):
         """Clear the highlight and matched items.
         """
-        # Reset the highlight for all items
+        # Clear the highlight for all items
         self.tree_widget.clear_highlight()
         # Clear any previously matched items
         self._all_match_items.clear()
@@ -324,17 +331,14 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     def _highlight_matching_items(self):
         """Highlight the items in the tree widget that match the search criteria.
         """
-        # Reset the highlight for all items
+        # Clear the highlight for all items
         self._clear_highlights()
 
-        # Get the selected column, condition, and keyword
-        keyword = self.text().strip()
-
         # Return if the keyword is empty
-        if not keyword:
+        if not (keyword := self.text().strip()):
             return
 
-        # Match terms enclosed in either double or single quotes for fixed string match
+        # Extract terms from the keyword for search filtering
         self.quoted_terms, self.unquoted_terms = TextExtraction.extract_terms(keyword)
 
         for column_index in range(self.tree_widget.columnCount()):
