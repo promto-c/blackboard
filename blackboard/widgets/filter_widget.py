@@ -52,6 +52,10 @@ class FilterCondition(Enum):
     IS_TRUE = ("Is True", "{column} = 1")  # SQL '1' or 'TRUE'
     IS_FALSE = ("Is False", "{column} = 0")  # SQL '0' or 'FALSE'
 
+    # Multi-value Conditions
+    IN = ("In", "{column} IN ({placeholders})")
+    NOT_IN = ("Not In", "{column} NOT IN ({placeholders})")
+
     def __init__(self, title: str, sql_format: str):
         """Initialize the FilterCondition enum with a title and SQL format."""
         self.title = title
@@ -158,9 +162,6 @@ class FilterBarWidget(QtWidgets.QWidget):
         """
         return [filter_widget for filter_widget in self._filter_widgets if filter_widget.is_active]
 
-    def get_filter_widgets(self) -> List['FilterWidget']:
-        return self._filter_widgets
-
     def filter_exists(self, filter_name: str) -> bool:
         """Check if a filter already exists by its name.
         """
@@ -170,6 +171,10 @@ class FilterBarWidget(QtWidgets.QWidget):
         """Return the number of active filters.
         """
         return len(self._filter_widgets)
+
+    @property
+    def filter_widgets(self) -> List['FilterWidget']:
+        return self._filter_widgets
 
 class MoreOptionsButton(QtWidgets.QToolButton):
     def __init__(self, parent=None):
@@ -668,6 +673,14 @@ class FilterWidget(QtWidgets.QWidget):
         """
         raise NotImplementedError("Subclasses must implement set_filter")
 
+    def get_filter_condition(self) -> 'FilterCondition':
+        return self.condition_combo_box.currentData(QtCore.Qt.ItemDataRole.UserRole)
+
+    def get_filter_values(self) -> Optional[Tuple[Any, ...]]:
+        """Get the filter values. Must be implemented in subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement get_filter_values")
+
     # Override Methods
     # ----------------
     def showEvent(self, event):
@@ -980,11 +993,17 @@ class TextFilterWidget(FilterWidget):
         self.save_state('text', self.text_edit.text())
 
         # Emit signals with appropriate data
-        text_value = self.text_edit.text()
+        condition = self.get_filter_condition()
+        if condition in (FilterCondition.IS_NULL, FilterCondition.IS_NOT_NULL):
+            text_value = ''
+            values = []
+        else:
+            text_value = self.text_edit.text()
+            values = [text_value]
 
         label_text = self.format_label(text_value)
         self.label_changed.emit(label_text)
-        self.activated.emit([text_value])
+        self.activated.emit(values)
 
     def clear_filter(self):
         """Clear all filter settings and reset to the default state.
@@ -1080,8 +1099,8 @@ class MultiSelectFilterWidget(FilterWidget):
     """
 
     CONDITIONS = [
-        FilterCondition.EQUALS,
-        FilterCondition.NOT_EQUALS,
+        FilterCondition.IN,
+        FilterCondition.NOT_IN,
         FilterCondition.CONTAINS, 
         FilterCondition.DOES_NOT_CONTAIN,
         FilterCondition.IS_NULL,
@@ -1397,8 +1416,8 @@ class MultiSelectFilterWidget(FilterWidget):
 class FileTypeFilterWidget(FilterWidget):
 
     CONDITIONS = [
-        FilterCondition.EQUALS,
-        FilterCondition.NOT_EQUALS,
+        FilterCondition.IN,
+        FilterCondition.NOT_IN,
         FilterCondition.IS_NULL,
         FilterCondition.IS_NOT_NULL
     ]
@@ -1642,8 +1661,26 @@ class NumericFilterWidget(FilterWidget):
 
         label_text = self.format_label(lower_value, upper_value)
         self.label_changed.emit(label_text)
-        self.activated.emit([float(lower_value) if lower_value else None, 
-                             float(upper_value) if upper_value else None])
+        self.activated.emit(self.get_filter_values())
+
+    def get_filter_values(self) -> Optional[Tuple[float, ...]]:
+        condition = self.get_filter_condition()
+        if condition in (FilterCondition.IS_NULL, FilterCondition.IS_NOT_NULL):
+            return []
+        lower_value = self.lower_value_edit.text()
+        upper_value = self.upper_value_edit.text()
+
+        if condition in (FilterCondition.BETWEEN, FilterCondition.NOT_BETWEEN):
+            if lower_value and upper_value:
+                return sorted([float(lower_value), float(upper_value)])
+            else:
+                return []  # Cannot apply BETWEEN without both values
+        else:
+            value = lower_value or upper_value
+            if value:
+                return [float(value)]
+            else:
+                return []
 
     def clear_filter(self):
         """Clear all filter settings and reset to the default state."""

@@ -262,6 +262,8 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
         return super().eventFilter(source, event)
 
 class CheckableProxyModel(QtCore.QSortFilterProxyModel):
+    """A proxy model to support checkable items and additional rows.
+    """
 
     # Initialization and Setup
     # ------------------------
@@ -367,6 +369,8 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
     #         return self.createIndex(row, column, self._additional_rows[row - source_row_count])
 
     def appendRow(self, item: Union[str, List[str]]):
+        """Append an additional row to the model.
+        """
         if isinstance(item, str):
             self._additional_rows.append([item])
         elif isinstance(item, list):

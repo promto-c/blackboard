@@ -21,6 +21,7 @@ from tablerqicon import TablerQIcon
 # -------------
 import blackboard as bb
 from blackboard import widgets
+from blackboard.widgets.filter_widget import FilterCondition
 
 
 # Class Definitions
@@ -603,7 +604,7 @@ class DatabaseViewWidget(DataViewWidget):
 
     @staticmethod
     def generate_sql_query(column_name: str, filter_condition: 'FilterCondition', values: Tuple) -> str:
-        """Generate an SQL query string for a given column and filter condition.
+        """Generate an SQL condition string for a given column and filter condition.
 
         Args:
             column_name (str): The name of the column to filter.
@@ -611,9 +612,14 @@ class DatabaseViewWidget(DataViewWidget):
             values (Tuple): The values to use in the filter.
 
         Returns:
-            str: An SQL query string.
+            str: An SQL condition string.
         """
-        return filter_condition.query_format.format(column=column_name)
+        if filter_condition in (FilterCondition.IN, FilterCondition.NOT_IN):
+            placeholders = ', '.join('?' for _ in values)
+            sql_condition = filter_condition.sql_format.format(column=column_name, placeholders=placeholders)
+        else:
+            sql_condition = filter_condition.sql_format.format(column=column_name)
+        return sql_condition
 
     def set_database_manager(self, db_manager: 'DatabaseManager'):
         """Set the database manager for handling database operations.
@@ -758,8 +764,62 @@ class DatabaseViewWidget(DataViewWidget):
             self.active_filter_columns.add(column_name)  # Mark this column as having an active filter
 
     def activate_filter(self):
-        """Logic to filter data based on active filters and populate the tree widget."""
-        ...
+        """Apply the active filters to the database query and update the tree widget.
+        """
+        if not self._current_table or not self.db_manager:
+            return
+
+        # Start building the WHERE clause
+        where_clauses = []
+        parameters = []
+
+        # Iterate over all active filter widgets
+        for filter_widget in self.filter_bar_widget.get_active_filters():
+            column_name = filter_widget.filter_name
+
+            # Get field information for the column
+            field_info = self.db_manager.get_field(self._current_table, column_name)
+            if not field_info:
+                continue  # Skip if field info is not available
+
+            # Get the filter condition and values from the filter widget
+            filter_condition = filter_widget.get_filter_condition()
+            values = filter_widget.filtered_list
+
+            if not filter_condition or values is None:
+                continue  # Skip if there's no condition or values
+
+            # Generate the SQL condition for this filter
+            sql_condition = self.generate_sql_query(column_name, filter_condition, values)
+
+            # Add to the WHERE clauses
+            where_clauses.append(sql_condition)
+
+            # Add the values to the parameters list
+            parameters.extend(values)
+
+        # Build the final WHERE clause
+        where_clause = " AND ".join(where_clauses) if where_clauses else ""
+
+        # Get the fields to select
+        fields = self.db_manager.get_field_names(self._current_table)
+        many_to_many_field_names = self.db_manager.get_many_to_many_field_names(self._current_table)
+        all_fields = fields + many_to_many_field_names
+
+        # Execute the query
+        results = self.db_manager.query_table_data(
+            self._current_table,
+            fields=all_fields,
+            where_clause=where_clause,
+            parameters=parameters,
+            as_dict=True,
+            handle_m2m=True
+        )
+
+        # Clear the tree widget and populate with new data
+        self.tree_widget.clear()
+        self.tree_widget.setHeaderLabels(all_fields)
+        self.tree_widget.set_generator(results)
 
 # Main Function
 # -------------

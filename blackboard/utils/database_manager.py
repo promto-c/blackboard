@@ -96,14 +96,14 @@ class DatabaseManager:
         Raises:
             sqlite3.Error: If there is an error connecting to the database.
         """
-        self.db_name = db_name
-        self.connection = sqlite3.connect(self.db_name, check_same_thread=False)
-        self.cursor = self.connection.cursor()
+        self._db_name = db_name
+        self._connection = sqlite3.connect(self._db_name, check_same_thread=False)
+        self._cursor = self._connection.cursor()
 
     def _create_meta_display_field_table(self):
         """Create the meta table to store display field information.
         """
-        self.cursor.execute('''
+        self._cursor.execute('''
             CREATE TABLE IF NOT EXISTS _meta_display_field (
                 table_name TEXT,
                 field_name TEXT,
@@ -112,12 +112,12 @@ class DatabaseManager:
                 PRIMARY KEY (table_name, field_name)
             );
         ''')
-        self.connection.commit()
+        self._connection.commit()
 
     def _create_meta_enum_field_table(self):
         """Create the meta table to store enum field information.
         """
-        self.cursor.execute('''
+        self._cursor.execute('''
             CREATE TABLE IF NOT EXISTS _meta_enum_field (
                 table_name TEXT,
                 field_name TEXT,
@@ -126,12 +126,12 @@ class DatabaseManager:
                 PRIMARY KEY (table_name, field_name)
             );
         ''')
-        self.connection.commit()
+        self._connection.commit()
 
     def _create_meta_many_to_many_table(self):
         """Create the meta table to store many-to-many relationship information, including display field names.
         """
-        self.cursor.execute('''
+        self._cursor.execute('''
             CREATE TABLE IF NOT EXISTS _meta_many_to_many (
                 from_table TEXT NOT NULL,
                 track_field_name TEXT NOT NULL,
@@ -139,7 +139,7 @@ class DatabaseManager:
                 PRIMARY KEY (from_table, track_field_name)
             );
         ''')
-        self.connection.commit()
+        self._connection.commit()
 
     def is_table_exists(self, table_name: str) -> bool:
         """Check if a table exists in the current database.
@@ -153,7 +153,7 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
 
-        cursor = self.connection.cursor()
+        cursor = self._connection.cursor()
         cursor.execute('''
             SELECT name
             FROM sqlite_master
@@ -167,11 +167,11 @@ class DatabaseManager:
 
     def add_enum_metadata(self, table_name: str, field_name: str, enum_table_name: str, description: str = ""):
         self._create_meta_enum_field_table()
-        self.cursor.execute('''
+        self._cursor.execute('''
             INSERT INTO _meta_enum_field (table_name, field_name, enum_table_name, description)
             VALUES (?, ?, ?, ?);
         ''', (table_name, field_name, enum_table_name, description))
-        self.connection.commit()
+        self._connection.commit()
 
     def get_existing_enum_tables(self) -> List[str]:
         """Get a list of existing enum tables.
@@ -179,21 +179,21 @@ class DatabaseManager:
         Returns:
             List[str]: A list of table names that match the 'enum_%' pattern.
         """
-        self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'enum_%'")
-        return [row[0] for row in self.cursor.fetchall()]
+        self._cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'enum_%'")
+        return [row[0] for row in self._cursor.fetchall()]
 
     def get_enum_table_name(self, table_name: str, field_name: str) -> Optional[str]:
         """Retrieve the name of the enum table associated with a given field.
         """
         try:
-            self.cursor.execute('''
+            self._cursor.execute('''
                 SELECT enum_table_name FROM _meta_enum_field
                 WHERE table_name = ? AND field_name = ?;
             ''', (table_name, field_name))
         except sqlite3.OperationalError:
             pass
 
-        if not (results := self.cursor.fetchone()):
+        if not (results := self._cursor.fetchone()):
             return
 
         return results[0]
@@ -210,8 +210,8 @@ class DatabaseManager:
         Raises:
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        self.cursor.execute(f"SELECT value FROM {enum_table_name}")
-        return [row[0] for row in self.cursor.fetchall()]
+        self._cursor.execute(f"SELECT value FROM {enum_table_name}")
+        return [row[0] for row in self._cursor.fetchall()]
 
     def create_enum_table(self, table_name: str, values: List[str]):
         """Create a table to store enum values.
@@ -226,13 +226,13 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid enum name")
 
-        self.cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT UNIQUE)")
+        self._cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT UNIQUE)")
 
         # Insert enum values
         for value in values:
-            self.cursor.execute(f"INSERT OR IGNORE INTO {table_name} (value) VALUES (?)", (value,))
+            self._cursor.execute(f"INSERT OR IGNORE INTO {table_name} (value) VALUES (?)", (value,))
 
-        self.connection.commit()
+        self._connection.commit()
 
     def create_table(self, table_name: str, fields: Dict[str, str]):
         """Create a new table in the database with specified fields.
@@ -249,8 +249,8 @@ class DatabaseManager:
             raise ValueError("Invalid table name")
 
         fields_str = ', '.join([f"{name} {type_}" for name, type_ in fields.items()])
-        self.cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({fields_str})")
-        self.connection.commit()
+        self._cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({fields_str})")
+        self._connection.commit()
 
     def get_unique_fields(self, table_name: str) -> List[str]:
         """Retrieve the names of fields with unique constraints in a specified table.
@@ -269,7 +269,7 @@ class DatabaseManager:
             raise ValueError("Invalid table name")
 
         # Retrieve the list of indexes for the table
-        cursor = self.connection.cursor()
+        cursor = self._connection.cursor()
         cursor.execute(f"PRAGMA index_list({table_name})")
         indexes = cursor.fetchall()
 
@@ -306,7 +306,7 @@ class DatabaseManager:
             raise ValueError("Invalid table name")
 
         # Retrieve field information
-        cursor = self.connection.cursor()
+        cursor = self._connection.cursor()
         cursor.execute(f"PRAGMA table_info({table_name})")
         fields = cursor.fetchall()
         cursor.close()
@@ -366,8 +366,8 @@ class DatabaseManager:
             raise ValueError(f"Field '{display_field}' does not exist in table '{table_name}'")
 
         # Execute query to get the unique values for the display field
-        self.cursor.execute(f"SELECT DISTINCT {display_field} FROM {table_name} ORDER BY {display_field}")
-        return [row[0] for row in self.cursor.fetchall()]
+        self._cursor.execute(f"SELECT DISTINCT {display_field} FROM {table_name} ORDER BY {display_field}")
+        return [row[0] for row in self._cursor.fetchall()]
 
     def get_field_names(self, table_name: str, include_fk: bool = True,include_m2m: bool = False,
                         exclude_regular: bool = False) -> List[str]:
@@ -435,7 +435,7 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
 
-        cursor = self.connection.cursor()
+        cursor = self._connection.cursor()
         cursor.execute(f"PRAGMA foreign_key_list({table_name})")
         foreign_keys = cursor.fetchall()
         cursor.close()
@@ -469,7 +469,7 @@ class DatabaseManager:
             return {}
 
         # Proceed with fetching the many-to-many relationships
-        cursor = self.connection.cursor()
+        cursor = self._connection.cursor()
         cursor.execute('''
             SELECT track_field_name, junction_table
             FROM _meta_many_to_many
@@ -548,17 +548,17 @@ class DatabaseManager:
         new_fields_str = ', '.join(new_fields)
 
         temp_table_name = f"{table_name}_temp"
-        self.cursor.execute(f"CREATE TABLE {temp_table_name} ({new_fields_str})")
+        self._cursor.execute(f"CREATE TABLE {temp_table_name} ({new_fields_str})")
 
         # Copy data from the old table to the new table
         old_fields_str = ', '.join(fields.keys())
-        self.cursor.execute(f"INSERT INTO {temp_table_name} ({old_fields_str}) SELECT {old_fields_str} FROM {table_name}")
+        self._cursor.execute(f"INSERT INTO {temp_table_name} ({old_fields_str}) SELECT {old_fields_str} FROM {table_name}")
 
         # Drop the old table and rename the new table
-        self.cursor.execute(f"DROP TABLE {table_name}")
-        self.cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {table_name}")
+        self._cursor.execute(f"DROP TABLE {table_name}")
+        self._cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {table_name}")
 
-        self.connection.commit()
+        self._connection.commit()
 
     def delete_field(self, table_name: str, field_name: str):
         """Delete a field from a table by recreating the table without that field.
@@ -578,7 +578,7 @@ class DatabaseManager:
         fields = self.get_fields(table_name)
 
         # Disable foreign key constraints temporarily
-        self.cursor.execute("PRAGMA foreign_keys=off;")
+        self._cursor.execute("PRAGMA foreign_keys=off;")
         try:
             # Filter out the field to be deleted
             new_fields = [field for field in fields.values() if field.name != field_name]
@@ -592,26 +592,26 @@ class DatabaseManager:
 
             # Create a temporary table with the new schema
             temp_table_name = f"{table_name}_temp"
-            self.cursor.execute(f"CREATE TABLE {temp_table_name} ({field_definitions_str})")
-            self.cursor.execute(f"INSERT INTO {temp_table_name} ({field_names_str}) SELECT {field_names_str} FROM {table_name}")
+            self._cursor.execute(f"CREATE TABLE {temp_table_name} ({field_definitions_str})")
+            self._cursor.execute(f"INSERT INTO {temp_table_name} ({field_names_str}) SELECT {field_names_str} FROM {table_name}")
             # Replace the old table with the new one
-            self.cursor.execute(f"DROP TABLE {table_name}")
-            self.cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {table_name}")
+            self._cursor.execute(f"DROP TABLE {table_name}")
+            self._cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {table_name}")
 
             # Remove the display field metadata
             self._remove_display_field(table_name, field_name)
 
             # Commit the transaction
-            self.connection.commit()
+            self._connection.commit()
 
         except sqlite3.Error as e:
             logging.error(f"Error deleting field '{field_name}' from table '{table_name}': {e}")
-            self.connection.rollback()
+            self._connection.rollback()
             raise
 
         finally:
             # Re-enable foreign key constraints
-            self.cursor.execute("PRAGMA foreign_keys=on;")
+            self._cursor.execute("PRAGMA foreign_keys=on;")
 
     def delete_table(self, table_name: str):
         """Delete an entire table from the database.
@@ -626,8 +626,8 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
 
-        self.cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
-        self.connection.commit()
+        self._cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+        self._connection.commit()
 
     def delete_record(self, table_name: str, pk_values: Union[Dict[str, Any], Any], pk_field: Optional[str] = None):
         """Delete a specific record from a table by primary key, including related data in many-to-many junction tables.
@@ -678,15 +678,15 @@ class DatabaseManager:
                     break
 
             # Delete related entries in the junction table
-            self.cursor.execute(f'''
+            self._cursor.execute(f'''
                 DELETE FROM {junction_table}
                 WHERE {from_table_fk.from_field} = ?
             ''', (list(pk_values.values())[0],))
 
         # Then, delete the main record from the table
         query = f"DELETE FROM {table_name} WHERE {where_clause}"
-        self.cursor.execute(query, where_values)
-        self.connection.commit()
+        self._cursor.execute(query, where_values)
+        self._connection.commit()
 
     # TODO: Handle composite pks
     def delete_records(self, table_name: str, pk_values: List[Union[int, str, float]], pk_field: str = 'rowid'):
@@ -710,8 +710,8 @@ class DatabaseManager:
         placeholders = ', '.join('?' * len(pk_values))
         query = f"DELETE FROM {table_name} WHERE {pk_field} IN ({placeholders})"
 
-        self.cursor.execute(query, pk_values)
-        self.connection.commit()
+        self._cursor.execute(query, pk_values)
+        self._connection.commit()
 
     def get_table_names(self) -> List[str]:
         """Retrieve the names of all tables in the database.
@@ -722,8 +722,8 @@ class DatabaseManager:
         Raises:
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        return [row[0] for row in self.cursor.fetchall()]
+        self._cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        return [row[0] for row in self._cursor.fetchall()]
 
     def get_view_names(self) -> List[str]:
         """Retrieve the names of all views in the database.
@@ -734,8 +734,8 @@ class DatabaseManager:
         Raises:
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        self.cursor.execute("SELECT name FROM sqlite_master WHERE type='view'")
-        return [row[0] for row in self.cursor.fetchall()]
+        self._cursor.execute("SELECT name FROM sqlite_master WHERE type='view'")
+        return [row[0] for row in self._cursor.fetchall()]
 
     def get_many_to_many_data(self, table_name: str, track_field: str, from_values: Optional[List[Union[int, str, float]]] = None,
                               display_field: str = '', display_field_label: str = '') -> List[Dict[str, Union[int, str, float]]]:
@@ -750,7 +750,7 @@ class DatabaseManager:
         Returns:
             List[Dict[str, Union[int, str, float]]]: A list of dictionaries, each containing the 'id' from the original table and the corresponding list of related tags or other display fields.
         """
-        cursor = self.connection.cursor()
+        cursor = self._connection.cursor()
         # Retrieve the junction table associated with the many-to-many field
         cursor.execute('''
             SELECT junction_table
@@ -816,30 +816,31 @@ class DatabaseManager:
         ]
 
     def query_table_data(self, table_name: str, fields: Optional[List[str]] = None, where_clause: Optional[str] = None,
-                         as_dict: bool = False, handle_m2m: bool = False
+                        parameters: Optional[List[Any]] = None, as_dict: bool = False, handle_m2m: bool = False
                         ) -> Union[Generator[Tuple, None, None], Generator[Dict[str, Union[int, str, float, None]], None, None]]:
         """Retrieve data from a specified table as a generator.
 
         Args:
             table_name (str): The name of the table to query data from.
             fields (Optional[List[str]]): Specific fields to retrieve. Defaults to all fields.
-            where_clause (Optional[str]): Optional SQL WHERE clause to filter results.
-            as_dict (bool): If True, yield rows as dictionaries.
-            handle_m2m (bool): Whether to retrieve many-to-many related data as well.
+            where_clause (Optional[str]): Optional SQL WHERE clause to filter results. Defaults to None.
+            parameters (Optional[List[Any]]): Parameters to substitute into the SQL query, preventing SQL injection. Defaults to None.
+            as_dict (bool): If True, yield rows as dictionaries. Defaults to False.
+            handle_m2m (bool): Whether to retrieve many-to-many related data as well. Defaults to False.
 
         Yields:
-            Union[Generator[Tuple, None, None], Generator[Dict[str, Union[int, str, float, None]], None, None]]:
-            Yields each row, either as a tuple of field values or a dictionary.
+            Union[Tuple[Any, ...], Dict[str, Any]]: Each row from the query result.
+                - If `as_dict` is False (default), yields a tuple of field values.
+                - If `as_dict` is True, yields a dictionary mapping field names to their values.
 
         Raises:
-            ValueError: If the table name is not a valid Python identifier.
+            ValueError: If the table name or any of the field names are not valid Python identifiers.
             sqlite3.Error: If there is an error executing the SQL command.
         """
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
 
         fields = fields or self.get_field_names(table_name)
-
         # Ensure all fields are valid identifiers
         if not all(field.isidentifier() for field in fields):
             raise ValueError("Invalid field name")
@@ -852,9 +853,12 @@ class DatabaseManager:
         if where_clause:
             query += f" WHERE {where_clause}"
 
-        cursor = self.connection.cursor()
+        cursor = self._connection.cursor()
         try:
-            cursor.execute(query)
+            if parameters:
+                cursor.execute(query, parameters)
+            else:
+                cursor.execute(query)
 
             if handle_m2m:
                 for row in cursor:
@@ -902,9 +906,9 @@ class DatabaseManager:
 
         # Use the fetch_one method to retrieve the related row
         query = f"SELECT {target_field_name} FROM {related_table_name} WHERE {reference_field_name} = ?"
-        self.cursor.execute(query, (foreign_key_value,))
+        self._cursor.execute(query, (foreign_key_value,))
 
-        if not (results := self.cursor.fetchone()):
+        if not (results := self._cursor.fetchone()):
             return
 
         return results[0]
@@ -918,7 +922,7 @@ class DatabaseManager:
         Raises:
             OSError: If there is an error accessing the file system.
         """
-        return os.path.getsize(self.db_name)
+        return os.path.getsize(self._db_name)
 
     def insert_record(self, table_name: str, data_dict: Dict[str, Union[int, str, float, None]],
                       handle_m2m: bool = False) -> int:
@@ -951,11 +955,11 @@ class DatabaseManager:
         field_names = ', '.join(data_dict.keys())
         placeholders = ', '.join(['?'] * len(data_dict))
         sql = f"INSERT INTO {table_name} ({field_names}) VALUES ({placeholders})"
-        self.cursor.execute(sql, list(data_dict.values()))
-        self.connection.commit()
+        self._cursor.execute(sql, list(data_dict.values()))
+        self._connection.commit()
 
         # Get the primary key of the newly inserted record
-        rowid = self.cursor.lastrowid
+        rowid = self._cursor.lastrowid
 
         # Insert M2M data into the junction table(s) if handling M2M relationships
         if handle_m2m:
@@ -998,8 +1002,8 @@ class DatabaseManager:
             # Update the main record
             set_clause = ', '.join([f"{field} = ?" for field in data_dict.keys()])
             sql = f"UPDATE {table_name} SET {set_clause} WHERE {pk_field} = ?"
-            self.cursor.execute(sql, list(data_dict.values()) + [pk_value])
-            self.connection.commit()
+            self._cursor.execute(sql, list(data_dict.values()) + [pk_value])
+            self._connection.commit()
 
         # Update M2M data in the junction table(s) if handling M2M relationships
         if handle_m2m:
@@ -1023,8 +1027,8 @@ class DatabaseManager:
         if not table_name.isidentifier() or not field_name.isidentifier():
             raise ValueError("Invalid table name or field name")
 
-        self.cursor.execute(f"PRAGMA table_info({table_name})")
-        fields = self.cursor.fetchall()
+        self._cursor.execute(f"PRAGMA table_info({table_name})")
+        fields = self._cursor.fetchall()
         for field in fields:
             if field[1] == field_name:
                 return field[2]  # Return the data type
@@ -1043,7 +1047,7 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
 
-        cursor = self.connection.cursor()
+        cursor = self._connection.cursor()
         cursor.execute(f"PRAGMA table_info({table_name})")
         fields = cursor.fetchall()
         cursor.close()
@@ -1092,13 +1096,13 @@ class DatabaseManager:
         """
 
         # Execute the SQL command
-        self.cursor.execute(sql)
-        self.connection.commit()
+        self._cursor.execute(sql)
+        self._connection.commit()
 
         self._create_meta_many_to_many_table()
 
         # Track the many-to-many relationship in the metadata table
-        self.cursor.execute('''
+        self._cursor.execute('''
             INSERT OR REPLACE INTO _meta_many_to_many (
                 from_table, track_field_name, junction_table
             ) VALUES (?, ?, ?);
@@ -1111,7 +1115,7 @@ class DatabaseManager:
 
         # Optionally track the relationship in the reverse direction
         if track_vice_versa:
-            self.cursor.execute('''
+            self._cursor.execute('''
                 INSERT OR REPLACE INTO _meta_many_to_many (
                     from_table, track_field_name, junction_table
                 ) VALUES (?, ?, ?);
@@ -1122,7 +1126,7 @@ class DatabaseManager:
                 self.add_display_field(junction_table_name, from_table_key, from_display_field)
                 self.add_display_field(to_table, track_field_vice_versa_name, from_display_field)
 
-        self.connection.commit()
+        self._connection.commit()
 
     def update_junction_table(self, from_table: str, track_field_name: str, from_value: Union[int, str, float], 
                             selected_values: List[Union[int, str, float]], is_rowid: bool = False):
@@ -1135,13 +1139,13 @@ class DatabaseManager:
             selected_values (List[Union[int, str, float]]): The list of values to insert into the junction table.
             is_rowid (bool): Indicates if `from_value` is a rowid that needs to be translated into the corresponding foreign key value.
         """
-        self.cursor.execute('''
+        self._cursor.execute('''
             SELECT junction_table
             FROM _meta_many_to_many
             WHERE from_table = ? AND track_field_name = ?
         ''', (from_table, track_field_name))
         
-        junction_table = self.cursor.fetchone()[0]
+        junction_table = self._cursor.fetchone()[0]
         fks = self.get_foreign_keys(junction_table)
         for fk in fks:
             if fk.table == from_table:
@@ -1151,43 +1155,43 @@ class DatabaseManager:
 
         if is_rowid:
             # Translate the rowid into the corresponding foreign key value
-            self.cursor.execute(f'''
+            self._cursor.execute(f'''
                 SELECT {from_table_fk.to_field}
                 FROM {from_table}
                 WHERE rowid = ?
             ''', (from_value,))
-            from_value = self.cursor.fetchone()[0]
+            from_value = self._cursor.fetchone()[0]
 
         # Clear existing junction table entries for this record
-        self.cursor.execute(f'''
+        self._cursor.execute(f'''
             DELETE FROM {junction_table}
             WHERE {from_table_fk.from_field} = ?
         ''', (from_value,))
 
         # Insert new entries into the junction table
         for value in selected_values:
-            self.cursor.execute(f'''
+            self._cursor.execute(f'''
                 INSERT INTO {junction_table} ({from_table_fk.from_field}, {to_table_fk.from_field})
                 VALUES (?, ?)
             ''', (from_value, value))
         
-        self.connection.commit()
+        self._connection.commit()
 
     def add_display_field(self, table_name: str, field_name: str, display_field_name: str, display_format: str = None):
         """Add a display field entry to the meta table.
         """
         self._create_meta_display_field_table()
-        self.cursor.execute('''
+        self._cursor.execute('''
             INSERT OR REPLACE INTO _meta_display_field (table_name, field_name, display_foreign_field_name, display_format)
             VALUES (?, ?, ?, ?);
         ''', (table_name, field_name, display_field_name, display_format))
-        self.connection.commit()
+        self._connection.commit()
 
     def get_display_field(self, table_name: str, field_name: str) -> Optional[Tuple[str, str]]:
         """Retrieve the display field name and format for a specific field.
         """
         try:
-            self.cursor.execute('''
+            self._cursor.execute('''
                 SELECT display_foreign_field_name, display_format
                 FROM _meta_display_field
                 WHERE table_name = ? AND field_name = ?;
@@ -1195,7 +1199,7 @@ class DatabaseManager:
         except sqlite3.OperationalError:
             pass
 
-        if not (results := self.cursor.fetchone()):
+        if not (results := self._cursor.fetchone()):
             return
 
         return results[0]
@@ -1204,10 +1208,10 @@ class DatabaseManager:
         """Remove a display field entry from the meta table.
         """
         try:
-            self.cursor.execute('''
+            self._cursor.execute('''
                 DELETE FROM _meta_display_field
                 WHERE table_name = ? AND field_name = ?;
             ''', (table_name, field_name))
-            self.connection.commit()
+            self._connection.commit()
         except sqlite3.OperationalError:
             pass
