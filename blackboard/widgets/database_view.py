@@ -11,6 +11,9 @@ if TYPE_CHECKING:
 import uuid
 from enum import Enum
 from functools import partial
+import ast
+import operator
+import re
 
 # Third Party Imports
 # -------------------
@@ -419,19 +422,19 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             # Handle foreign keys by offering a dropdown of related records
             fk = field_info.fk
             display_field = self.db_manager.get_display_field(self.table_name, field_info.name)
-            display_field_info = self.db_manager.get_field(fk.table, display_field)
+            display_field_info = self.db_manager.get_field(fk.referenced_table, display_field)
 
             if display_field:
-                related_records = list(self.db_manager.query_table_data(fk.table, fields=[fk.to_field, display_field], as_dict=True))
+                related_records = list(self.db_manager.query_table_data(fk.referenced_table, fields=[fk.referenced_field, display_field], as_dict=True))
 
                 widget = QtWidgets.QComboBox()
                 for record in related_records:
                     if not display_field_info.is_unique:
-                        display_value = self.format_combined_display(record[display_field], record[fk.to_field], fk.to_field)
+                        display_value = self.format_combined_display(record[display_field], record[fk.referenced_field], fk.referenced_field)
                     else:
                         display_value = record[display_field]
 
-                    key_value = record[fk.to_field]
+                    key_value = record[fk.referenced_field]
                     widget.addItem(display_value, key_value)
 
                 return widget
@@ -461,7 +464,8 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             return QtWidgets.QLineEdit()
 
     def format_combined_display(self, display_value: str, key_value: Union[int, str], key_name: str) -> str:
-        """Format the display field combined with the key value and key name."""
+        """Format the display field combined with the key value and key name.
+        """
         return f"{display_value} ({key_name}: {key_value})"
 
     def set_input_value(self, field_name, value):
@@ -473,11 +477,11 @@ class AddEditRecordDialog(QtWidgets.QDialog):
                 # If the field is a foreign key, find the corresponding display value
                 fk = field_info.fk
                 display_field = self.db_manager.get_display_field(self.table_name, field_info.name)
-                display_field_info = self.db_manager.get_field(fk.table, display_field)
+                display_field_info = self.db_manager.get_field(fk.referenced_table, display_field)
 
                 if display_field:
-                    display_text = self.db_manager.fetch_related_value(fk.table, display_field, fk.to_field, value)
-                    display_text = self.format_combined_display(display_text, value, fk.to_field) if display_field_info.is_unique else display_text
+                    display_text = self.db_manager.fetch_related_value(fk.referenced_table, display_field, fk.referenced_field, value)
+                    display_text = self.format_combined_display(display_text, value, fk.referenced_field) if display_field_info.is_unique else display_text
 
                     input_widget.setCurrentText(display_text)
                     return
@@ -534,33 +538,146 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         return None
 
     def create_many_to_many_widget(self, many_to_many_field: 'ManyToManyField'):
-        """Create a QListWidget with checkable items for a many-to-many relationship."""
+        """Create a QListWidget with checkable items for a many-to-many relationship.
+        """
         widget = QtWidgets.QListWidget()
-
-        fks = self.db_manager.get_foreign_keys(many_to_many_field.junction_table)
-        for fk in fks:
-            if fk.table == self.table_name:
-                from_table_fk = fk
-            else:
-                to_table_fk = fk
 
         # Get all possible related records
         display_field = self.db_manager.get_display_field(self.table_name, many_to_many_field.track_field_name)
         related_records = self.db_manager.query_table_data(
-            to_table_fk.table,
-            fields=[from_table_fk.to_field, display_field],
+            many_to_many_field.remote_fk.referenced_table,
+            fields=[many_to_many_field.local_fk.referenced_field, display_field],
             as_dict=True
         )
 
         # Add items to the list widget
         for record in related_records:
             item = QtWidgets.QListWidgetItem(record[display_field])
-            item.setData(QtCore.Qt.UserRole, record[from_table_fk.to_field])
+            item.setData(QtCore.Qt.UserRole, record[many_to_many_field.local_fk.referenced_field])
             item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
             item.setCheckState(QtCore.Qt.Unchecked)
             widget.addItem(item)
 
         return widget
+
+# NOTE: WIP
+SAFE_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+}
+
+class FunctionalColumnDialog(QtWidgets.QDialog):
+    def __init__(self, db_manager, table_name, sample_data, parent=None):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.table_name = table_name
+        self.sample_data = sample_data
+        self.init_ui()
+
+    def init_ui(self):
+        """Initialize the UI components."""
+        self.setWindowTitle("Create Functional Column")
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Column Selector
+        self.column_selector = QtWidgets.QListWidget()
+        self.column_selector.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.column_selector.addItems(self.db_manager.get_field_names(self.table_name))
+        layout.addWidget(QtWidgets.QLabel("Select Columns:"))
+        layout.addWidget(self.column_selector)
+
+        # Function Input
+        self.function_input = QtWidgets.QLineEdit()
+        self.function_input.setPlaceholderText("Enter function, e.g., <col1> - <col2>")
+        layout.addWidget(QtWidgets.QLabel("Define Function:"))
+        layout.addWidget(self.function_input)
+
+        # Tree Widget for Preview
+        self.preview_tree = QtWidgets.QTreeWidget()
+        self.preview_tree.setColumnCount(len(self.sample_data[0]) + 1)  # +1 for the new column
+        self.preview_tree.setHeaderLabels(list(self.sample_data[0].keys()) + ['New Column'])
+        layout.addWidget(QtWidgets.QLabel("Preview:"))
+        layout.addWidget(self.preview_tree)
+
+        # Buttons
+        self.create_button = QtWidgets.QPushButton("Create Column")
+        self.create_button.clicked.connect(self.create_column)
+        layout.addWidget(self.create_button)
+
+        # Connect signals
+        self.column_selector.itemSelectionChanged.connect(self.update_preview)
+        self.function_input.textChanged.connect(self.auto_select_columns)
+        self.function_input.textChanged.connect(self.update_preview)
+
+        # Initial Preview
+        self.update_preview()
+
+    def auto_select_columns(self):
+        """Automatically select columns in the list based on the function input."""
+        function_text = self.function_input.text()
+        used_columns = self.extract_used_columns(function_text)
+
+        # Auto-select columns in the list widget
+        for i in range(self.column_selector.count()):
+            item = self.column_selector.item(i)
+            item.setSelected(item.text() in used_columns)
+
+    def extract_used_columns(self, function_text):
+        """Extract column names used in the function."""
+        # Use regex to find patterns like <col_name>
+        return set(re.findall(r"<(.*?)>", function_text))
+
+    def update_preview(self):
+        """Update the tree preview of the functional column based on sample data."""
+        selected_columns = [item.text() for item in self.column_selector.selectedItems()]
+        function_text = self.function_input.text()
+
+        # Clear previous items
+        self.preview_tree.clear()
+
+        # Check if the function is valid and safe
+        try:
+            for row in self.sample_data:
+                preview_row = {col: row[col] for col in selected_columns if col in row}
+                result = self.evaluate_function(function_text, preview_row)
+                
+                # Create tree widget items for each row
+                item = QtWidgets.QTreeWidgetItem([str(row[col]) for col in row.keys()] + [str(result)])
+                self.preview_tree.addTopLevelItem(item)
+
+        except Exception as e:
+            error_item = QtWidgets.QTreeWidgetItem(["Error: " + str(e)])
+            self.preview_tree.addTopLevelItem(error_item)
+
+    def evaluate_function(self, function_text, row):
+        """Evaluate the function safely using the provided row data."""
+        for col, value in row.items():
+            function_text = function_text.replace(f"<{col}>", str(value))
+
+        node = ast.parse(function_text, mode='eval')
+        return self.safe_eval(node.body)
+
+    def safe_eval(self, node):
+        """Evaluate an expression node safely."""
+        if isinstance(node, ast.BinOp):
+            left = self.safe_eval(node.left)
+            right = self.safe_eval(node.right)
+            operator_func = SAFE_OPERATORS.get(type(node.op))
+            if operator_func:
+                return operator_func(left, right)
+        elif isinstance(node, ast.Num):
+            return node.n
+        raise ValueError("Invalid expression")
+
+    def create_column(self):
+        """Create the new functional column in the database."""
+        column_name, ok = QtWidgets.QInputDialog.getText(self, "Column Name", "Enter name for new column:")
+        if ok and column_name:
+            QtWidgets.QMessageBox.information(self, "Success", f"Column '{column_name}' created successfully.")
+        else:
+            QtWidgets.QMessageBox.warning(self, "Error", "Column creation cancelled.")
 
 class DatabaseViewWidget(DataViewWidget):
 
@@ -581,11 +698,15 @@ class DatabaseViewWidget(DataViewWidget):
         """Initialize the attributes.
         """
         self._current_table = ''
-        self.active_filter_columns = set()  # Keep track of columns with active filters
+        self._visible_filter_columns = set()
+        self._column_to_relation_chain_dict: Dict[str, str] = {}
 
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
+        self.add_relation_column_menu = self.tree_widget.header_menu.addMenu('Add Relation Column')
+        self.add_functional_column_action = self.tree_widget.header_menu.addAction('Add Functional Column')
+
         self.add_record_button = QtWidgets.QPushButton(TablerQIcon.file_plus, 'Add Record')
         self.delete_record_button = QtWidgets.QPushButton(TablerQIcon.file_minus, 'Delete Record')
 
@@ -597,10 +718,88 @@ class DatabaseViewWidget(DataViewWidget):
         """
         # Connect signals to slots
         self.add_filter_button.clicked.connect(self.show_column_selection_menu)
-        self.filter_bar_widget.filter_widget_removed.connect(self.active_filter_columns.discard)
+        self.filter_bar_widget.filter_widget_removed.connect(self._visible_filter_columns.discard)
+        self.tree_widget.about_to_show_header_menu.connect(self.handle_header_context_menu)
         self.add_record_button.clicked.connect(self.show_add_record_dialog)
         self.delete_record_button.clicked.connect(self.delete_record)
         self.tree_widget.itemDoubleClicked.connect(self.edit_record)
+
+        # NOTE: WIP
+        self.add_functional_column_action.triggered.connect(self.open_functional_column_dialog)
+
+    def handle_header_context_menu(self, column_index: int):
+        """Handle the header context menu signal.
+
+        Args:
+            column_index (int): The index of the column where the context menu was requested.
+        """
+        self.add_relation_column_menu.clear()
+        self.add_relation_column_menu.setDisabled(True)
+
+        if not self._current_table:
+            return
+
+        # Determine the current table based on the selected column's header
+        tree_column_name = self.tree_widget.column_names[column_index]
+
+        # TODO: Store relation path in header item to be extract from item directly
+        # Check if the column header includes a related table
+        if '.' in tree_column_name:
+            # The column represents a relation, split to get the table name
+            local_table, local_field = tree_column_name.split('.')
+        else:
+            # Use the original current table
+            local_table = self._current_table
+            local_field = tree_column_name
+
+        # Get foreign key information for the determined table
+        related_fk = self.db_manager.get_foreign_key(local_table, local_field)
+
+        # Check for many-to-many fields if no direct foreign key was found
+        if not related_fk:
+            # TODO: Handle m2m > relation > relation
+            many_to_many_fields = self.db_manager.get_many_to_many_fields(local_table)
+
+            if local_field in many_to_many_fields:
+                m2m_field = many_to_many_fields[local_field]
+
+                # Get the related fields from the 'to' table
+                related_field_names = self.db_manager.get_field_names(m2m_field.remote_table)
+
+                # Add actions for each field in the related table to handle m2m relation columns
+                for display_field in related_field_names[1:]:
+                    display_column_label = f"{m2m_field.remote_table}.{display_field}"
+                    action = QtWidgets.QAction(display_column_label, self)
+
+                    # Connect the action to the m2m-specific add relation function
+                    action.triggered.connect(
+                        partial(self.add_relation_column_m2m, local_table, display_field, m2m_field, display_column_label)
+                    )
+
+                    self.add_relation_column_menu.addAction(action)
+
+                self.add_relation_column_menu.setEnabled(True)
+            return
+
+        # If a direct foreign key relation is found, handle it as before
+        referenced_table = related_fk.referenced_table
+        referenced_field = related_fk.referenced_field
+
+        # Retrieve fields from the related table
+        related_field_names = self.db_manager.get_field_names(referenced_table)
+
+        # Create a menu action for each foreign key relation
+        for display_field in related_field_names[1:]:
+            action = QtWidgets.QAction(f"{referenced_table}.{display_field}", self)
+
+            # Pass the correct arguments to add_relation_column
+            action.triggered.connect(
+                partial(self.add_relation_column, local_table, referenced_table, display_field, local_field, referenced_field)
+            )
+
+            self.add_relation_column_menu.addAction(action)
+
+        self.add_relation_column_menu.setEnabled(True)
 
     @staticmethod
     def generate_sql_query(column_name: str, filter_condition: 'FilterCondition', values: Tuple) -> str:
@@ -620,6 +819,21 @@ class DatabaseViewWidget(DataViewWidget):
         else:
             sql_condition = filter_condition.sql_format.format(column=column_name)
         return sql_condition
+
+    # NOTE: WIP
+    def open_functional_column_dialog(self):
+        """Open the Functional Column Dialog to create a new column.
+        """
+        if not self._current_table:
+            QtWidgets.QMessageBox.warning(self, "Error", "No table selected.")
+            return
+
+        # Fetch sample data for preview (e.g., first 5 rows)
+        sample_data = list(self.db_manager.query_table_data(self._current_table, as_dict=True))[:5]
+
+        # Create and show the Functional Column Dialog
+        dialog = FunctionalColumnDialog(self.db_manager, self._current_table, sample_data, self)
+        dialog.exec_()
 
     def set_database_manager(self, db_manager: 'DatabaseManager'):
         """Set the database manager for handling database operations.
@@ -710,7 +924,7 @@ class DatabaseViewWidget(DataViewWidget):
 
         for column in self.tree_widget.column_names:
             # Only add columns to the menu that don't already have an active filter
-            if column not in self.active_filter_columns:
+            if column not in self._visible_filter_columns:
                 action = menu.addAction(column)
                 action.triggered.connect(partial(self.create_filter_widget, column))
 
@@ -719,36 +933,38 @@ class DatabaseViewWidget(DataViewWidget):
     def create_filter_widget(self, column_name: str):
         """Create a filter widget based on the selected column and its data type.
         """
-        # Get field information for the column
-        field_info = self.db_manager.get_field(self._current_table, column_name)
+        is_relation_column = False
 
-        # TODO: Store relation path in header item to be extract from item directly instead of extract from split '.'
-        # Check if the column is a foreign key or a many-to-many field
-        if '.' in column_name or field_info.is_foreign_key or field_info.is_many_to_many:
+        # TODO: Store relation chain in header item to be extract from item directly instead of extract from split '.'
+        if '.' in column_name:
+            # The column represents a relation, split to get the table and field names
+            related_table, display_field = column_name.split('.')
+            is_relation_column = True
+        else:
+            # Get field information for the column
+            field_info = self.db_manager.get_field(self._current_table, column_name)
+
             # Handle relation columns
-            if '.' in column_name:
-                # TODO: Handle the column based on its type if it is not TEXT
-                # The column represents a relation, split to get the table and field names
-                related_table, display_field = column_name.split('.')
-            elif field_info.is_foreign_key:
-                related_table = field_info.fk.table
+            if field_info.is_foreign_key:
+                related_table = field_info.fk.referenced_table
                 display_field = None
+                is_relation_column = True
             elif field_info.is_many_to_many:
                 # Handle many-to-many relationship fields
-                fks = self.db_manager.get_foreign_keys(field_info.m2m.junction_table)
-                for fk in fks:
-                    if fk.table != self._current_table:
-                        to_table_fk = fk
-                        break
-                related_table = to_table_fk.table
-                display_field = to_table_fk.to_field
+                related_table = field_info.m2m.remote_table
+                display_field = field_info.m2m.remote_fk.referenced_field
+                is_relation_column = True
 
+        # Check if the column is a foreign key or a many-to-many field
+        if is_relation_column:
+            # TODO: Handle the column based on its type if it is not TEXT
             # Fetch possible values from the related table
             possible_values = self.db_manager.get_possible_values(related_table, display_field=display_field)
 
             # Create a MultiSelectFilterWidget with the possible values
             filter_widget = widgets.MultiSelectFilterWidget(filter_name=column_name)
             filter_widget.add_items(possible_values)
+
         else:
             # Use ColumnType enum to map SQL type to appropriate filter widget
             column_type = ColumnType.from_sql(field_info.type)
@@ -761,7 +977,61 @@ class DatabaseViewWidget(DataViewWidget):
 
         if filter_widget:
             self.add_filter_widget(filter_widget)
-            self.active_filter_columns.add(column_name)  # Mark this column as having an active filter
+            self._visible_filter_columns.add(column_name)
+
+    def add_relation_column(self, local_table: str, referenced_table: str, display_field: str, local_field: str, referenced_field: str):
+        """Add a relation column to the tree widget.
+
+        Args:
+            local_table (str): The table from which the relation is originating.
+            referenced_table (str): The name of the related table to join.
+            display_field (str): The column from the related table to display.
+            local_field (str): The foreign key field in the current table.
+            referenced_field (str): The primary key field in the related table.
+        """
+        current_column_names = self.tree_widget.column_names.copy()
+
+        # Check if the related column header already exists
+        target_column_name = f"{referenced_table}.{display_field}"
+        if target_column_name not in current_column_names:
+            current_column_names.append(target_column_name)
+            self.tree_widget.setHeaderLabels(current_column_names)
+
+        # TODO: Set `relation_chain` in tooltip of header column
+        column_name = local_field if local_table == self._current_table else f'{local_table}.{local_field}'
+        relation_chain = self._column_to_relation_chain_dict.get(column_name, f'{local_table}.{local_field}')
+        relation_chain +=  f'.{display_field}'
+        self._column_to_relation_chain_dict[target_column_name] = relation_chain
+
+        # Fetch data from the current table
+        data_tuples = self.db_manager.query_table_data(local_table, fields=[local_field])
+
+        # Update the tree widget with the new column data
+        for i, data_tuple in enumerate(list(data_tuples)):
+            target_value = self.db_manager.fetch_related_value(referenced_table, display_field, referenced_field, data_tuple[0])
+
+            # TODO: Handle when grouping
+            item: 'TreeWidgetItem' = self.tree_widget.topLevelItem(i)
+            if item:
+                item.set_value(target_column_name, target_value)
+
+    def add_relation_column_m2m(self, local_table: str, display_field: str, m2m_field: 'ManyToManyField', display_column_label: str):
+        """Add a many-to-many relation column to the tree widget.
+
+        Args:
+            local_table (str): The name of the originating table.
+            display_field (str): The field in the related table to display.
+            m2m_field (ManyToManyField): The ManyToManyField object containing information about the relationship.
+        """
+        current_column_names = self.tree_widget.column_names.copy()
+
+        # Check if the related column header already exists
+        if display_column_label not in current_column_names:
+            current_column_names.append(display_column_label)
+            self.tree_widget.setHeaderLabels(current_column_names)
+        data_dicts = self.db_manager.get_many_to_many_data(local_table, m2m_field.track_field_name, display_field=display_field, display_field_label=display_column_label)
+        for data_dict in data_dicts:
+            self.tree_widget.update_item(data_dict)
 
     def activate_filter(self):
         """Apply the active filters to the database query and update the tree widget.
@@ -776,6 +1046,19 @@ class DatabaseViewWidget(DataViewWidget):
         # Iterate over all active filter widgets
         for filter_widget in self.filter_bar_widget.get_active_filters():
             column_name = filter_widget.filter_name
+
+            # TODO: Handle on relation column
+            #       WIP
+            relation_chain = self._column_to_relation_chain_dict.get(column_name)
+            print(relation_chain)
+            root_table, *relation_fields = relation_chain.split('.')
+
+            for field in relation_fields:
+                fk = self.db_manager.get_foreign_key(root_table, field)
+
+            print(root_table)
+            print(relation_fields)
+            # ---
 
             # Get field information for the column
             field_info = self.db_manager.get_field(self._current_table, column_name)

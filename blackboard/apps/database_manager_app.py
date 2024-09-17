@@ -6,10 +6,6 @@ from typing import List, Tuple, Optional, Dict
 # ------------------------
 import os
 import sys
-from functools import partial
-import ast
-import operator
-import re
 
 # Third Party Imports
 # -------------------
@@ -484,12 +480,12 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
 
     DEFAULT_DISPLAY_NAME = 'name'
 
-    def __init__(self, db_manager: DatabaseManager, from_table: str, parent=None):
+    def __init__(self, db_manager: DatabaseManager, local_table: str, parent=None):
         super().__init__(parent)
 
         # Store the arguments
         self.db_manager = db_manager
-        self.from_table = from_table
+        self.local_table = local_table
 
         # Initialize setup
         self.__init_ui()
@@ -508,14 +504,14 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
         self.junction_table_label = LabelEmbedderWidget(self.junction_table_input, "Junction Table Name")
 
         self.from_table_dropdown = QtWidgets.QComboBox()
-        self.from_table_dropdown.addItems([self.from_table])
+        self.from_table_dropdown.addItems([self.local_table])
         self.from_table_dropdown.setEnabled(False)
         self.from_key_field_dropdown = QtWidgets.QComboBox()
         self.from_display_field_dropdown = QtWidgets.QComboBox()
 
         self.to_table_dropdown = QtWidgets.QComboBox()
         table_names = self.db_manager.get_table_names()
-        table_names.remove(self.from_table)
+        table_names.remove(self.local_table)
         self.to_table_dropdown.addItems(table_names)
         self.to_table_dropdown.setCurrentIndex(-1)
         self.to_table_label = LabelEmbedderWidget(self.to_table_dropdown, "To Table")
@@ -552,12 +548,12 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
     def _init_from_table_fields(self):
         """Initialize the 'from' table's key and display fields.
         """
-        primary_keys = self.db_manager.get_primary_keys(self.from_table)
-        unique_fields = self.db_manager.get_unique_fields(self.from_table)
+        primary_keys = self.db_manager.get_primary_keys(self.local_table)
+        unique_fields = self.db_manager.get_unique_fields(self.local_table)
 
         # Combine unique fields and primary keys
         reference_fields = primary_keys + unique_fields
-        display_fields = self.db_manager.get_field_names(self.from_table, include_fk=False, include_m2m=False)
+        display_fields = self.db_manager.get_field_names(self.local_table, include_fk=False, include_m2m=False)
 
         # Set default key and display fields for the "from" table
         self.from_key_field_dropdown.clear()
@@ -593,11 +589,11 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
     def _update_junction_table_name(self):
         """Automatically set the junction table name based on selected tables.
         """
-        from_table = self.from_table
-        to_table = self.to_table_dropdown.currentText()
-        if to_table:
+        local_table = self.local_table
+        referenced_table = self.to_table_dropdown.currentText()
+        if referenced_table:
             # Sort table names alphabetically and join them with an underscore
-            sorted_tables = sorted([from_table, to_table])
+            sorted_tables = sorted([local_table, referenced_table])
             junction_name = "_".join(sorted_tables)
             self.junction_table_input.setText(junction_name)
 
@@ -605,146 +601,27 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
         """Handle adding the many-to-many relationship field.
         """
         junction_table_name = self.junction_table_input.text()
-        to_table = self.to_table_dropdown.currentText()
-        from_key_field = self.from_key_field_dropdown.currentText()
+        referenced_table = self.to_table_dropdown.currentText()
+        local_field = self.from_key_field_dropdown.currentText()
         from_display_field = self.from_display_field_dropdown.currentText()
-        to_key_field = self.to_key_field_dropdown.currentText()
+        referenced_field = self.to_key_field_dropdown.currentText()
         to_display_field = self.to_display_field_dropdown.currentText()
         track_vice_versa = self.track_vice_versa_checkbox.isChecked()
 
         self.db_manager.create_junction_table(
-            from_table=self.from_table,
-            to_table=to_table,
-            from_field=from_key_field,
-            to_field=to_key_field,
+            from_table=self.local_table,
+            to_table=referenced_table,
+            from_field=local_field,
+            to_field=referenced_field,
             junction_table_name=junction_table_name,
-            track_field_name=f"{to_table}_{to_key_field}s",
-            track_field_vice_versa_name=f"{self.from_table}_{from_key_field}s",
+            track_field_name=f"{referenced_table}_{referenced_field}s",
+            track_field_vice_versa_name=f"{self.local_table}_{local_field}s",
             from_display_field=from_display_field,
             to_display_field=to_display_field,
             track_vice_versa=track_vice_versa
         )
 
         self.accept()
-
-# NOTE: WIP
-SAFE_OPERATORS = {
-    ast.Add: operator.add,
-    ast.Sub: operator.sub,
-    ast.Mult: operator.mul,
-    ast.Div: operator.truediv,
-}
-
-class FunctionalColumnDialog(QtWidgets.QDialog):
-    def __init__(self, db_manager, table_name, sample_data, parent=None):
-        super().__init__(parent)
-        self.db_manager = db_manager
-        self.table_name = table_name
-        self.sample_data = sample_data
-        self.init_ui()
-
-    def init_ui(self):
-        """Initialize the UI components."""
-        self.setWindowTitle("Create Functional Column")
-        layout = QtWidgets.QVBoxLayout(self)
-
-        # Column Selector
-        self.column_selector = QtWidgets.QListWidget()
-        self.column_selector.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.column_selector.addItems(self.db_manager.get_field_names(self.table_name))
-        layout.addWidget(QtWidgets.QLabel("Select Columns:"))
-        layout.addWidget(self.column_selector)
-
-        # Function Input
-        self.function_input = QtWidgets.QLineEdit()
-        self.function_input.setPlaceholderText("Enter function, e.g., <col1> - <col2>")
-        layout.addWidget(QtWidgets.QLabel("Define Function:"))
-        layout.addWidget(self.function_input)
-
-        # Tree Widget for Preview
-        self.preview_tree = QtWidgets.QTreeWidget()
-        self.preview_tree.setColumnCount(len(self.sample_data[0]) + 1)  # +1 for the new column
-        self.preview_tree.setHeaderLabels(list(self.sample_data[0].keys()) + ['New Column'])
-        layout.addWidget(QtWidgets.QLabel("Preview:"))
-        layout.addWidget(self.preview_tree)
-
-        # Buttons
-        self.create_button = QtWidgets.QPushButton("Create Column")
-        self.create_button.clicked.connect(self.create_column)
-        layout.addWidget(self.create_button)
-
-        # Connect signals
-        self.column_selector.itemSelectionChanged.connect(self.update_preview)
-        self.function_input.textChanged.connect(self.auto_select_columns)
-        self.function_input.textChanged.connect(self.update_preview)
-
-        # Initial Preview
-        self.update_preview()
-
-    def auto_select_columns(self):
-        """Automatically select columns in the list based on the function input."""
-        function_text = self.function_input.text()
-        used_columns = self.extract_used_columns(function_text)
-
-        # Auto-select columns in the list widget
-        for i in range(self.column_selector.count()):
-            item = self.column_selector.item(i)
-            item.setSelected(item.text() in used_columns)
-
-    def extract_used_columns(self, function_text):
-        """Extract column names used in the function."""
-        # Use regex to find patterns like <col_name>
-        return set(re.findall(r"<(.*?)>", function_text))
-
-    def update_preview(self):
-        """Update the tree preview of the functional column based on sample data."""
-        selected_columns = [item.text() for item in self.column_selector.selectedItems()]
-        function_text = self.function_input.text()
-
-        # Clear previous items
-        self.preview_tree.clear()
-
-        # Check if the function is valid and safe
-        try:
-            for row in self.sample_data:
-                preview_row = {col: row[col] for col in selected_columns if col in row}
-                result = self.evaluate_function(function_text, preview_row)
-                
-                # Create tree widget items for each row
-                item = QtWidgets.QTreeWidgetItem([str(row[col]) for col in row.keys()] + [str(result)])
-                self.preview_tree.addTopLevelItem(item)
-
-        except Exception as e:
-            error_item = QtWidgets.QTreeWidgetItem(["Error: " + str(e)])
-            self.preview_tree.addTopLevelItem(error_item)
-
-    def evaluate_function(self, function_text, row):
-        """Evaluate the function safely using the provided row data."""
-        for col, value in row.items():
-            function_text = function_text.replace(f"<{col}>", str(value))
-
-        node = ast.parse(function_text, mode='eval')
-        return self.safe_eval(node.body)
-
-    def safe_eval(self, node):
-        """Evaluate an expression node safely."""
-        if isinstance(node, ast.BinOp):
-            left = self.safe_eval(node.left)
-            right = self.safe_eval(node.right)
-            operator_func = SAFE_OPERATORS.get(type(node.op))
-            if operator_func:
-                return operator_func(left, right)
-        elif isinstance(node, ast.Num):
-            return node.n
-        raise ValueError("Invalid expression")
-
-    def create_column(self):
-        """Create the new functional column in the database."""
-        column_name, ok = QtWidgets.QInputDialog.getText(self, "Column Name", "Enter name for new column:")
-        if ok and column_name:
-            QtWidgets.QMessageBox.information(self, "Success", f"Column '{column_name}' created successfully.")
-        else:
-            QtWidgets.QMessageBox.warning(self, "Error", "Column creation cancelled.")
 
 class DBWidget(QtWidgets.QWidget):
 
@@ -790,11 +667,6 @@ class DBWidget(QtWidgets.QWidget):
         self.__init_left_widget()
         self.__init_data_view_widget()
 
-        # NOTE: WIP
-        add_functional_column_action = QtWidgets.QAction('Add Functional Column', self)
-        add_functional_column_action.triggered.connect(self.open_functional_column_dialog)
-        self.tree_data_widget.header_menu.addAction(add_functional_column_action)
-
         # Add Widgets to Layouts
         # ----------------------
         self.main_layout.addWidget(splitter)
@@ -819,8 +691,6 @@ class DBWidget(QtWidgets.QWidget):
         self.add_relation_field_button.clicked.connect(self.show_add_relation_field_dialog)
         self.add_m2m_field_button.clicked.connect(self.show_add_many_to_many_field_dialog)
         self.delete_field_button.triggered.connect(self.delete_field)
-
-        self.tree_data_widget.about_to_show_header_menu.connect(self.handle_header_context_menu)
 
     def __init_left_widget(self):
         """Create and configure the left widget.
@@ -888,161 +758,10 @@ class DBWidget(QtWidgets.QWidget):
         self.data_view = DatabaseViewWidget(self.db_manager, parent=self)
 
         self.tree_data_widget = self.data_view.tree_widget
-        self.add_relation_column_menu = self.tree_data_widget.header_menu.addMenu('Add Relation Column')
 
         # Add Widgets to Layouts
         # ----------------------
         data_view_layout.addWidget(self.data_view)
-
-    def handle_header_context_menu(self, column_index: int):
-        """Handle the header context menu signal.
-
-        Args:
-            column_index (int): The index of the column where the context menu was requested.
-        """
-        self.add_relation_column_menu.clear()
-        self.add_relation_column_menu.setDisabled(True)
-
-        if not self.current_table:
-            return
-
-        # Determine the current table based on the selected column's header
-        tree_column_name = self.tree_data_widget.column_names[column_index]
-
-        # TODO: Store relation path in header item to be extract from item directly
-        # Check if the column header includes a related table
-        if '.' in tree_column_name:
-            # The column represents a relation, split to get the table name
-            from_table, from_field = tree_column_name.split('.')
-        else:
-            # Use the original current table
-            from_table = self.current_table
-            from_field = tree_column_name
-
-        # Get foreign key information for the determined table
-        foreign_keys = self.db_manager.get_foreign_keys(from_table)
-
-        # Check if the selected column has a foreign key relation
-        related_fk = next((fk for fk in foreign_keys if fk.from_field == from_field), None)
-
-        # Check for many-to-many fields if no direct foreign key was found
-        if not related_fk:
-            # TODO: Handle m2m > relation > relation
-            many_to_many_fields = self.db_manager.get_many_to_many_fields(from_table)
-
-            if from_field in many_to_many_fields:
-                m2m_field = many_to_many_fields[from_field]
-                junction_table = m2m_field.junction_table
-
-                # Retrieve foreign keys from the junction table
-                fks = self.db_manager.get_foreign_keys(junction_table)
-                from_table_fk = next(fk for fk in fks if fk.table == from_table)
-                to_table_fk = next(fk for fk in fks if fk != from_table_fk)
-
-                # Get the related fields from the 'to' table
-                related_field_names = self.db_manager.get_field_names(to_table_fk.table)
-
-                # Add actions for each field in the related table to handle m2m relation columns
-                for display_field in related_field_names[1:]:
-                    display_column_label = f"{to_table_fk.table}.{display_field}"
-                    action = QtWidgets.QAction(display_column_label, self)
-
-                    # Connect the action to the m2m-specific add relation function
-                    action.triggered.connect(
-                        partial(self.add_relation_column_m2m, from_table, display_field, m2m_field, display_column_label)
-                    )
-
-                    self.add_relation_column_menu.addAction(action)
-
-                self.add_relation_column_menu.setEnabled(True)
-            return
-
-        # If a direct foreign key relation is found, handle it as before
-        to_table = related_fk.table
-        to_field = related_fk.to_field
-
-        # Retrieve fields from the related table
-        related_field_names = self.db_manager.get_field_names(to_table)
-
-        # Create a menu action for each foreign key relation
-        for display_field in related_field_names[1:]:
-            action = QtWidgets.QAction(f"{to_table}.{display_field}", self)
-
-            # Pass the correct arguments to add_relation_column
-            action.triggered.connect(
-                partial(self.add_relation_column, from_table, to_table, display_field, from_field, to_field)
-            )
-
-            self.add_relation_column_menu.addAction(action)
-
-        self.add_relation_column_menu.setEnabled(True)
-
-    # NOTE: WIP
-    def open_functional_column_dialog(self):
-        """Open the Functional Column Dialog to create a new column.
-        """
-        if not self.current_table:
-            QtWidgets.QMessageBox.warning(self, "Error", "No table selected.")
-            return
-
-        # Fetch sample data for preview (e.g., first 5 rows)
-        sample_data = list(self.db_manager.query_table_data(self.current_table, as_dict=True))[:5]
-
-        # Create and show the Functional Column Dialog
-        dialog = FunctionalColumnDialog(self.db_manager, self.current_table, sample_data, self)
-        dialog.exec_()
-
-        # Update the view if a new column was successfully created
-        self.refresh_data()
-
-    def add_relation_column(self, from_table: str, to_table: str, display_field: str, from_field: str, to_field: str):
-        """Add a relation column to the tree widget.
-
-        Args:
-            from_table (str): The table from which the relation is originating.
-            to_table (str): The name of the related table to join.
-            display_field (str): The column from the related table to display.
-            from_field (str): The foreign key field in the current table.
-            to_field (str): The primary key field in the related table.
-        """
-        current_column_names = self.tree_data_widget.column_names.copy()
-
-        # Check if the related column header already exists
-        target_column_name = f"{to_table}.{display_field}"
-        if target_column_name not in current_column_names:
-            current_column_names.append(target_column_name)
-            self.tree_data_widget.setHeaderLabels(current_column_names)
-
-        # Fetch data from the current table
-        data_tuples = self.db_manager.query_table_data(from_table, fields=[from_field])
-
-        # Update the tree widget with the new column data
-        for i, data_tuple in enumerate(list(data_tuples)):
-            target_value = self.db_manager.fetch_related_value(to_table, display_field, to_field, data_tuple[0])
-
-            # TODO: Handle when grouping
-            item: 'TreeWidgetItem' = self.tree_data_widget.topLevelItem(i)
-            if item:
-                item.set_value(target_column_name, target_value)
-
-    def add_relation_column_m2m(self, from_table: str, display_field: str, m2m_field: ManyToManyField, display_column_label: str):
-        """
-        Add a many-to-many relation column to the tree widget.
-
-        Args:
-            from_table (str): The name of the originating table.
-            display_field (str): The field in the related table to display.
-            m2m_field (ManyToManyField): The ManyToManyField object containing information about the relationship.
-        """
-        current_column_names = self.tree_data_widget.column_names.copy()
-
-        # Check if the related column header already exists
-        if display_column_label not in current_column_names:
-            current_column_names.append(display_column_label)
-            self.tree_data_widget.setHeaderLabels(current_column_names)
-        data_dicts = self.db_manager.get_many_to_many_data(from_table, m2m_field.track_field_name, display_field=display_field, display_field_label=display_column_label)
-        for data_dict in data_dicts:
-            self.tree_data_widget.update_item(data_dict)
 
     def open_database(self):
         db_name, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open Database", "", "SQLite Database Files (*.db *.sqlite)")
@@ -1106,7 +825,7 @@ class DBWidget(QtWidgets.QWidget):
             column_definition = field_info.get_field_definition()
 
             if field_info.is_foreign_key:
-                column_definition += f" (FK to {field_info.fk.table}.{field_info.fk.to_field})"
+                column_definition += f" (FK to {field_info.fk.referenced_table}.{field_info.fk.referenced_field})"
 
             self.fields_list_widget.addItem(column_definition)
 

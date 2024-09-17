@@ -16,24 +16,35 @@ import logging
 class ForeignKey:
     """Represents a foreign key constraint in a database table.
     """
-    table: str          # The referenced table name
-    from_field: str     # The field in the current table
-    to_field: str       # The field in the referenced table
-    on_update: str      # The action on update (e.g., "CASCADE", "RESTRICT")
-    on_delete: str      # The action on delete (e.g., "CASCADE", "RESTRICT")
+    constraint_id: int           # Foreign key constraint ID
+    sequence: int                # Sequence number within the foreign key
+    local_table: str             # The local table name (the table containing the foreign key)
+    local_field: str             # The field in the local table (foreign key column)
+    referenced_table: str        # The referenced table name
+    referenced_field: str        # The field in the referenced table (primary key column)
+    on_update: str               # Action on update (e.g., "CASCADE", "RESTRICT", "SET NULL")
+    on_delete: str               # Action on delete (e.g., "CASCADE", "RESTRICT", "SET NULL")
+    match: str                   # The match type (e.g., "NONE", "PARTIAL", "FULL")
 
-    def get_foreign_key_definition(self) -> str:
+    def get_field_definition(self) -> str:
         """Generate the SQL definition string for this foreign key.
         """
-        return (f"FOREIGN KEY({self.from_field}) REFERENCES {self.table}({self.to_field}) "
-                f"ON UPDATE {self.on_update} ON DELETE {self.on_delete}")
+        definition = (f"FOREIGN KEY({self.local_field}) REFERENCES {self.referenced_table}({self.referenced_field}) "
+                      f"ON UPDATE {self.on_update} ON DELETE {self.on_delete}")
+        if self.match and self.match != 'NONE':
+            definition += f" MATCH {self.match}"
+        return definition
 
 @dataclass
 class ManyToManyField:
-    """Represents a many-to-many relationship field."""
-    from_table: str                         # The name of the originating table
-    track_field_name: str                   # The field name in the originating table
+    """Represents a many-to-many relationship field.
+    """
+    track_field_name: str                   # The field name used for display purposes
+    local_table: str                        # The originating table name
+    remote_table: str                       # The related table name
     junction_table: str                     # The name of the junction table
+    local_fk: ForeignKey                    # ForeignKeyInfo for the local table
+    remote_fk: ForeignKey                   # ForeignKeyInfo for the remote table
 
 @dataclass
 class FieldInfo:
@@ -43,12 +54,13 @@ class FieldInfo:
     notnull: int = 0
     dflt_value: Optional[str] = None
     pk: int = 0
-    unique: bool = False
+    is_unique: bool = False
     fk: Optional[ForeignKey] = None
     m2m: Optional[ManyToManyField] = None
 
     def get_field_definition(self) -> str:
-        """Generate the SQL definition string for this field."""
+        """Generate the SQL definition string for this field.
+        """
         definition = f"{self.name} {self.type}"
         if self.is_not_null:
             definition += " NOT NULL"
@@ -57,7 +69,7 @@ class FieldInfo:
         if self.is_unique:
             definition += " UNIQUE"
         # if self.is_foreign_key:
-        #     definition += f", {self.fk.get_foreign_key_definition()}"
+        #     definition += f", {self.fk.get_field_definition()}"
         return definition
 
     @property
@@ -71,10 +83,6 @@ class FieldInfo:
     @property
     def is_foreign_key(self) -> bool:
         return self.fk is not None
-
-    @property
-    def is_unique(self) -> bool:
-        return self.unique
 
     @property
     def is_many_to_many(self) -> bool:
@@ -315,12 +323,12 @@ class DatabaseManager:
         unique_fields = self.get_unique_fields(table_name)
 
         # Create a dictionary mapping field names to FieldInfo objects
-        name_to_field_info = {field[1]: FieldInfo(*field, unique=(field[1] in unique_fields)) for field in fields}
+        name_to_field_info = {field[1]: FieldInfo(*field, is_unique=(field[1] in unique_fields)) for field in fields}
 
         # Add foreign key information to the FieldInfo objects
         foreign_keys = self.get_foreign_keys(table_name)
         for foreign_key in foreign_keys:
-            name_to_field_info[foreign_key.from_field].fk = foreign_key
+            name_to_field_info[foreign_key.local_field].fk = foreign_key
 
         # Include many-to-many fields if requested
         if include_many_to_many:
@@ -344,32 +352,64 @@ class DatabaseManager:
 
         Returns:
             FieldInfo: The FieldInfo instance representing the field's information.
+
+        Raises:
+            ValueError: If the table or field name is invalid or the field does not exist.
+            sqlite3.Error: If there is an error executing the SQL command.
         """
-        fields = self.get_fields(table_name, include_many_to_many=True)
-        return fields.get(field_name)
+        if not table_name.isidentifier() or not field_name.isidentifier():
+            raise ValueError("Invalid table or field name")
 
-    def get_possible_values(self, table_name: str, display_field: Optional[str] = None) -> List[str]:
-        """Get possible values from a related table using a display field.
+        cursor = self._connection.cursor()
 
-        Args:
-            table_name (str): The name of the related table.
-            display_field (Optional[str]): The field to display. Defaults to the primary key.
+        # Try to retrieve field information for the specific field from the table's columns
+        cursor.execute(
+            f"SELECT * FROM pragma_table_info('{table_name}') WHERE name = ?",
+            (field_name,)
+        )
+        row = cursor.fetchone()
 
-        Returns:
-            List[str]: A list of possible values from the specified display field.
-        """
-        # Determine the display field: use the provided display field or default to the primary key
-        display_field = display_field or self.get_primary_keys(table_name)[0]
+        if row is not None:
+            # Field exists in the table columns
+            column_id, name, data_type, not_null, default_value, primary_key = row
 
-        # Ensure the display field exists in the table
-        if display_field not in self.get_field_names(table_name):
-            raise ValueError(f"Field '{display_field}' does not exist in table '{table_name}'")
+            # Check if the field is unique
+            unique_fields = self.get_unique_fields(table_name)
+            is_unique = field_name in unique_fields
 
-        # Execute query to get the unique values for the display field
-        self._cursor.execute(f"SELECT DISTINCT {display_field} FROM {table_name} ORDER BY {display_field}")
-        return [row[0] for row in self._cursor.fetchall()]
+            # Initialize FieldInfo
+            field_info = FieldInfo(
+                cid=column_id,
+                name=name,
+                type=data_type,
+                notnull=bool(not_null),
+                dflt_value=default_value,
+                pk=bool(primary_key),
+                is_unique=is_unique
+            )
 
-    def get_field_names(self, table_name: str, include_fk: bool = True,include_m2m: bool = False,
+            # Retrieve foreign key information for the field
+            foreign_key = self.get_foreign_key(table_name, field_name)
+            if foreign_key:
+                field_info.fk = foreign_key
+        else:
+            # Field is not in the table's columns; check if it's a many-to-many relationship
+            try:
+                m2m_field = self.get_many_to_many_field(table_name, field_name)
+                # Initialize FieldInfo with m2m field
+                field_info = FieldInfo(
+                    name=field_name,
+                    m2m=m2m_field
+                )
+            except ValueError:
+                # Field is neither a column nor a many-to-many relationship
+                cursor.close()
+                raise ValueError(f"Field '{field_name}' does not exist in table '{table_name}'")
+
+        cursor.close()
+        return field_info
+
+    def get_field_names(self, table_name: str, include_fk: bool = True, include_m2m: bool = False,
                         exclude_regular: bool = False) -> List[str]:
         """Retrieve the names of the fields (columns) in a specified table, with options to include or exclude foreign keys (FK) and many-to-many (M2M) fields.
 
@@ -413,20 +453,35 @@ class DatabaseManager:
 
         return field_names
 
+    def get_possible_values(self, table_name: str, display_field: Optional[str] = None) -> List[str]:
+        """Get possible values from a related table using a display field.
+
+        Args:
+            table_name (str): The name of the related table.
+            display_field (Optional[str]): The field to display. Defaults to the primary key.
+
+        Returns:
+            List[str]: A list of possible values from the specified display field.
+        """
+        # Determine the display field: use the provided display field or default to the primary key
+        display_field = display_field or self.get_primary_keys(table_name)[0]
+
+        # Ensure the display field exists in the table
+        if display_field not in self.get_field_names(table_name):
+            raise ValueError(f"Field '{display_field}' does not exist in table '{table_name}'")
+
+        # Execute query to get the unique values for the display field
+        self._cursor.execute(f"SELECT DISTINCT {display_field} FROM {table_name} ORDER BY {display_field}")
+        return [row[0] for row in self._cursor.fetchall()]
+
     def get_foreign_keys(self, table_name: str) -> List['ForeignKey']:
-        """Retrieve the foreign keys of a specified table.
+        """Retrieve foreign key constraints for the specified table.
 
         Args:
             table_name (str): The name of the table to retrieve foreign keys from.
 
         Returns:
-            List[ForeignKey]: A list of ForeignKey data class instances, each representing a foreign key in the table.
-                Each ForeignKey instance contains the following attributes:
-                    - table: The name of the referenced table.
-                    - from_field: The field in the current table.
-                    - to_field: The field in the referenced table.
-                    - on_update: The action on update (e.g., "CASCADE", "RESTRICT").
-                    - on_delete: The action on delete (e.g., "CASCADE", "RESTRICT").
+            List[ForeignKey]: A list of `ForeignKey` instances representing the foreign keys.
 
         Raises:
             ValueError: If the table name is not a valid Python identifier.
@@ -436,30 +491,75 @@ class DatabaseManager:
             raise ValueError("Invalid table name")
 
         cursor = self._connection.cursor()
-        cursor.execute(f"PRAGMA foreign_key_list({table_name})")
-        foreign_keys = cursor.fetchall()
+        cursor.execute(f"PRAGMA foreign_key_list('{table_name}')")
+        foreign_keys = []
+        for row in cursor.fetchall():
+            constraint_id, sequence, referenced_table, local_field, referenced_field, on_update, on_delete, match = row
+            fk_info = ForeignKey(
+                constraint_id=constraint_id,
+                sequence=sequence,
+                local_table=table_name,
+                local_field=local_field,
+                referenced_table=referenced_table,
+                referenced_field=referenced_field,
+                on_update=on_update,
+                on_delete=on_delete,
+                match=match,
+            )
+            foreign_keys.append(fk_info)
         cursor.close()
 
-        return [
-            ForeignKey(
-                table=fk[2],
-                from_field=fk[3],
-                to_field=fk[4],
-                on_update=fk[5],
-                on_delete=fk[6]
-            )
-            for fk in foreign_keys
-        ]
+        return foreign_keys
+
+    def get_foreign_key(self, table_name: str, field_name: str) -> Optional['ForeignKey']:
+        """Retrieve the foreign key constraint for a specific field in the specified table.
+
+        Args:
+            table_name (str): The name of the table to retrieve the foreign key from.
+            field_name (str): The name of the field to check for a foreign key constraint.
+
+        Returns:
+            Optional[ForeignKey]: A `ForeignKey` instance representing the foreign key constraint,
+                or `None` if the field is not a foreign key.
+
+        Raises:
+            ValueError: If the table name or field name is not a valid Python identifier.
+            sqlite3.Error: If there is an error executing the SQL command.
+        """
+        if not table_name.isidentifier() or not field_name.isidentifier():
+            raise ValueError("Invalid table name or field name")
+
+        cursor = self._connection.cursor()
+        cursor.execute(f"PRAGMA foreign_key_list('{table_name}')")
+        foreign_key = None
+        for row in cursor.fetchall():
+            constraint_id, sequence, referenced_table, local_field, referenced_field, on_update, on_delete, match = row
+            if local_field == field_name:
+                foreign_key = ForeignKey(
+                    constraint_id=constraint_id,
+                    sequence=sequence,
+                    local_table=table_name,
+                    local_field=local_field,
+                    referenced_table=referenced_table,
+                    referenced_field=referenced_field,
+                    on_update=on_update,
+                    on_delete=on_delete,
+                    match=match,
+                )
+                break  # Assuming one foreign key per field
+        cursor.close()
+
+        return foreign_key
 
     def get_many_to_many_fields(self, table_name: str) -> Dict[str, 'ManyToManyField']:
-        """Retrieve many-to-many relationships for a specified table.
+        """Retrieve all many-to-many relationships for a specified table.
 
         Args:
             table_name (str): The name of the table to retrieve many-to-many relationships for.
 
         Returns:
             Dict[str, ManyToManyField]: A dictionary where keys are `track_field_name` and values are ManyToManyField 
-                dataclass instances representing the relationships.
+                instances representing the relationships.
         """
         if not table_name.isidentifier():
             raise ValueError("Invalid table name")
@@ -468,7 +568,7 @@ class DatabaseManager:
         if not self.is_table_exists('_meta_many_to_many'):
             return {}
 
-        # Proceed with fetching the many-to-many relationships
+        # Fetch all many-to-many relationships for the table
         cursor = self._connection.cursor()
         cursor.execute('''
             SELECT track_field_name, junction_table
@@ -479,15 +579,103 @@ class DatabaseManager:
         records = cursor.fetchall()
         cursor.close()
 
-        # Create a dictionary with track_field_name as keys and ManyToManyField instances as values
-        return {
-            record[0]: ManyToManyField(
-                from_table=table_name,
-                track_field_name=record[0],
-                junction_table=record[1],
+        many_to_many_relationships = {}
+
+        for record in records:
+            track_field_name, junction_table = record
+
+            # Retrieve foreign keys from the junction table
+            foreign_keys = self.get_foreign_keys(junction_table)
+            local_fk = None
+            remote_fk = None
+
+            for fk in foreign_keys:
+                if fk.referenced_table == table_name:
+                    local_fk = fk
+                else:
+                    remote_fk = fk
+                    remote_table = remote_fk.referenced_table
+
+            if not local_fk or not remote_fk:
+                raise ValueError(f"Foreign keys referencing '{table_name}' and '{remote_table}' not found in '{junction_table}'.")
+
+            # Create the ManyToManyField instance
+            many_to_many_field = ManyToManyField(
+                track_field_name=track_field_name,
+                local_table=table_name,
+                remote_table=remote_table,
+                junction_table=junction_table,
+                local_fk=local_fk,
+                remote_fk=remote_fk
             )
-            for record in records
-        }
+
+            # Use track_field_name as the key in the dictionary
+            many_to_many_relationships[track_field_name] = many_to_many_field
+
+        return many_to_many_relationships
+
+    def get_many_to_many_field(self, table_name: str, field_name: str) -> 'ManyToManyField':
+        """Retrieve a specific many-to-many relationship for a specified table and field.
+
+        Args:
+            table_name (str): The name of the table to retrieve the many-to-many relationship for.
+            field_name (str): The name of the field representing the many-to-many relationship.
+
+        Returns:
+            ManyToManyField: An instance representing the many-to-many relationship.
+
+        Raises:
+            ValueError: If the field does not represent a many-to-many relationship.
+        """
+        if not table_name.isidentifier() or not field_name.isidentifier():
+            raise ValueError("Invalid table or field name")
+
+        # Check if the _meta_many_to_many table exists
+        if not self.is_table_exists('_meta_many_to_many'):
+            return
+
+        # Fetch the specific many-to-many relationship
+        cursor = self._connection.cursor()
+        cursor.execute('''
+            SELECT track_field_name, junction_table
+            FROM _meta_many_to_many
+            WHERE from_table = ? AND track_field_name = ?
+        ''', (table_name, field_name))
+
+        record = cursor.fetchone()
+        cursor.close()
+
+        if not record:
+            raise ValueError(f"No many-to-many relationship found for field '{field_name}' in table '{table_name}'.")
+
+        track_field_name, junction_table = record
+
+        # Retrieve foreign keys from the junction table
+        foreign_keys = self.get_foreign_keys(junction_table)
+        local_fk = None
+        remote_fk = None
+
+        for fk in foreign_keys:
+            if fk.referenced_table == table_name:
+                local_fk = fk  # Foreign key referencing the local table
+            else:
+                remote_fk = fk  # Foreign key referencing the remote table
+                remote_table = remote_fk.referenced_table
+
+        if not local_fk or not remote_fk:
+            raise ValueError(f"Foreign keys referencing '{table_name}' and '{remote_table}' not found in '{junction_table}'.")
+
+        # Create the ManyToManyField instance
+        many_to_many_field = ManyToManyField(
+            track_field_name=track_field_name,
+            local_table=table_name,
+            remote_table=remote_table,
+            junction_table=junction_table,
+            local_fk=local_fk,
+            remote_fk=remote_fk
+        )
+
+        return many_to_many_field
 
     def get_many_to_many_field_names(self, table_name: str) -> List[str]:
         """Retrieve the track field names of all many-to-many relationships for the current table.
@@ -539,7 +727,7 @@ class DatabaseManager:
         new_fields.append(f"{field_name} {field_definition}")
 
         # Include existing foreign keys
-        new_fields.extend(fk.get_foreign_key_definition() for fk in foreign_keys)
+        new_fields.extend(fk.get_field_definition() for fk in foreign_keys)
 
         # Add the new foreign key constraint if provided
         if foreign_key:
@@ -587,7 +775,7 @@ class DatabaseManager:
             # Retrieve and filter foreign key constraints
             field_definitions = [field.get_field_definition() for field in new_fields]
             foreign_keys = self.get_foreign_keys(table_name)
-            field_definitions.extend([fk.get_foreign_key_definition() for fk in foreign_keys if fk.from_field != field_name])
+            field_definitions.extend([fk.get_field_definition() for fk in foreign_keys if fk.from_field != field_name])
             field_definitions_str = ', '.join(field_definitions)
 
             # Create a temporary table with the new schema
@@ -670,17 +858,11 @@ class DatabaseManager:
         m2m_fields = self.get_many_to_many_fields(table_name)
         for m2m_field in m2m_fields.values():
             junction_table = m2m_field.junction_table
-            fks = self.get_foreign_keys(junction_table)
-
-            for fk in fks:
-                if fk.table == table_name:
-                    from_table_fk = fk
-                    break
 
             # Delete related entries in the junction table
             self._cursor.execute(f'''
                 DELETE FROM {junction_table}
-                WHERE {from_table_fk.from_field} = ?
+                WHERE {m2m_field.local_fk.local_field} = ?
             ''', (list(pk_values.values())[0],))
 
         # Then, delete the main record from the table
@@ -737,13 +919,13 @@ class DatabaseManager:
         self._cursor.execute("SELECT name FROM sqlite_master WHERE type='view'")
         return [row[0] for row in self._cursor.fetchall()]
 
-    def get_many_to_many_data(self, table_name: str, track_field: str, from_values: Optional[List[Union[int, str, float]]] = None,
+    def get_many_to_many_data(self, table_name: str, track_field_name: str, from_values: Optional[List[Union[int, str, float]]] = None,
                               display_field: str = '', display_field_label: str = '') -> List[Dict[str, Union[int, str, float]]]:
         """Retrieve the display field data related to specific records in a many-to-many relationship.
 
         Args:
             table_name (str): The name of the table from which the relationship starts.
-            track_field (str): The field name that tracks the many-to-many relationship.
+            track_field_name (str): The field name that tracks the many-to-many relationship.
             from_values (Optional[List[Union[int, str, float]]]): A list of values in the from_table to match. If None, retrieve for all.
             display_field (str): The name of the display field in the related table to retrieve.
 
@@ -751,45 +933,32 @@ class DatabaseManager:
             List[Dict[str, Union[int, str, float]]]: A list of dictionaries, each containing the 'id' from the original table and the corresponding list of related tags or other display fields.
         """
         cursor = self._connection.cursor()
-        # Retrieve the junction table associated with the many-to-many field
-        cursor.execute('''
-            SELECT junction_table
-            FROM _meta_many_to_many
-            WHERE from_table = ? AND track_field_name = ?
-        ''', (table_name, track_field))
 
-        junction_table = cursor.fetchone()[0]
-
-        # Identify foreign key relationships in the junction table
-        fks = self.get_foreign_keys(junction_table)
-        for fk in fks:
-            if fk.table == table_name:
-                from_table_fk = fk
-                key_type = self.get_field_type(table_name, from_table_fk.to_field)
-            else:
-                to_table_fk = fk
+        m2m = self.get_many_to_many_field(table_name, track_field_name)
 
         # Determine the display field and its type
-        display_field = display_field or to_table_fk.to_field
-        display_field_type = self.get_field_type(to_table_fk.table, display_field)
+        display_field = display_field or m2m.remote_fk.referenced_field
+        display_field_type = self.get_field_type(m2m.remote_table, display_field)
 
         # Retrieve all values if not specified
         if from_values is None:
             cursor.execute(f'''
-                SELECT DISTINCT {from_table_fk.from_field}
-                FROM {junction_table}
+                SELECT DISTINCT {m2m.local_fk.local_field}
+                FROM {m2m.junction_table}
             ''')
             from_values = [row[0] for row in cursor.fetchall()]
+
+        key_type = self.get_field_type(table_name, m2m.local_fk.referenced_field)
 
         # Prepare the SQL query
         placeholders = ', '.join('?' for _ in from_values)
         query = f'''
-            SELECT CAST({junction_table}.{from_table_fk.from_field} AS {key_type}) AS {from_table_fk.to_field},
-                GROUP_CONCAT({to_table_fk.table}.{display_field}) AS {track_field}
-            FROM {junction_table}
-            JOIN {to_table_fk.table} ON {junction_table}.{to_table_fk.from_field} = {to_table_fk.table}.{to_table_fk.to_field}
-            WHERE {junction_table}.{from_table_fk.from_field} IN ({placeholders})
-            GROUP BY {junction_table}.{from_table_fk.from_field}
+            SELECT CAST({m2m.junction_table}.{m2m.local_fk.local_field} AS {key_type}) AS {m2m.local_fk.referenced_field},
+                GROUP_CONCAT({m2m.remote_table}.{display_field}) AS {track_field_name}
+            FROM {m2m.junction_table}
+            JOIN {m2m.remote_table} ON {m2m.junction_table}.{m2m.remote_fk.local_field} = {m2m.remote_table}.{m2m.remote_fk.referenced_field}
+            WHERE {m2m.junction_table}.{m2m.local_fk.local_field} IN ({placeholders})
+            GROUP BY {m2m.junction_table}.{m2m.local_fk.local_field}
         '''
 
         cursor.execute(query, from_values)
@@ -805,11 +974,11 @@ class DatabaseManager:
             else:
                 return value
 
-        display_field_label = display_field_label or track_field
+        display_field_label = display_field_label or track_field_name
         # Return data with proper formatting
         return [
             {
-                from_table_fk.to_field: row[0],
+                m2m.local_fk.referenced_field: row[0],
                 display_field_label: [convert_value(val, display_field_type) for val in row[1].split(',')]
             }
             for row in results
@@ -1139,24 +1308,12 @@ class DatabaseManager:
             selected_values (List[Union[int, str, float]]): The list of values to insert into the junction table.
             is_rowid (bool): Indicates if `from_value` is a rowid that needs to be translated into the corresponding foreign key value.
         """
-        self._cursor.execute('''
-            SELECT junction_table
-            FROM _meta_many_to_many
-            WHERE from_table = ? AND track_field_name = ?
-        ''', (from_table, track_field_name))
-        
-        junction_table = self._cursor.fetchone()[0]
-        fks = self.get_foreign_keys(junction_table)
-        for fk in fks:
-            if fk.table == from_table:
-                from_table_fk = fk
-            else:
-                to_table_fk = fk
+        m2m = self.get_many_to_many_field(from_table, track_field_name)
 
         if is_rowid:
             # Translate the rowid into the corresponding foreign key value
             self._cursor.execute(f'''
-                SELECT {from_table_fk.to_field}
+                SELECT {m2m.local_fk.referenced_field}
                 FROM {from_table}
                 WHERE rowid = ?
             ''', (from_value,))
@@ -1164,14 +1321,14 @@ class DatabaseManager:
 
         # Clear existing junction table entries for this record
         self._cursor.execute(f'''
-            DELETE FROM {junction_table}
-            WHERE {from_table_fk.from_field} = ?
+            DELETE FROM {m2m.junction_table}
+            WHERE {m2m.local_fk.local_field} = ?
         ''', (from_value,))
 
         # Insert new entries into the junction table
         for value in selected_values:
             self._cursor.execute(f'''
-                INSERT INTO {junction_table} ({from_table_fk.from_field}, {to_table_fk.from_field})
+                INSERT INTO {m2m.junction_table} ({m2m.local_fk.local_field}, {m2m.remote_fk.local_field})
                 VALUES (?, ?)
             ''', (from_value, value))
         
