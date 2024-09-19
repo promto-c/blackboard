@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 from typing import Generator
-from blackboard.utils.database_manager import DatabaseManager
+from blackboard.utils.database import DatabaseManager
 
 @pytest.fixture(scope="function")
 def db_manager(tmp_path: Path) -> Generator[DatabaseManager, None, None]:
@@ -16,10 +16,14 @@ def test_create_table(db_manager: DatabaseManager):
     fields = {"id": "INTEGER PRIMARY KEY", "name": "TEXT NOT NULL"}
     db_manager.create_table(table_name, fields)
 
-    table_info = list(db_manager.get_fields(table_name).values())
+    model = db_manager.get_model(table_name)
+
+    table_info = list(model.get_fields().values())
     assert len(table_info) == 2
     assert table_info[0].name == "id"
+    assert table_info[0].type == "INTEGER"
     assert table_info[1].name == "name"
+    assert table_info[1].type == "TEXT"
 
 def test_add_enum_metadata(db_manager: DatabaseManager):
     db_manager.add_enum_metadata("test_table", "status", "enum_status")
@@ -72,9 +76,10 @@ def test_update_record(db_manager: DatabaseManager):
 
 def test_delete_field(db_manager: DatabaseManager):
     db_manager.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT", "age": "INTEGER"})
-    db_manager.delete_field("test_table", "age")
+    model = db_manager.get_model('test_table')
+    model.delete_field("age")
 
-    fields = db_manager.get_field_names("test_table")
+    fields = model.get_field_names("test_table")
     assert "age" not in fields
 
 def test_delete_table(db_manager: DatabaseManager):
@@ -83,3 +88,21 @@ def test_delete_table(db_manager: DatabaseManager):
 
     tables = db_manager.get_table_names()
     assert "test_table" not in tables
+
+def test_create_and_query_many_to_many(db_manager: DatabaseManager):
+    # Create two related tables and a junction table for many-to-many relationship
+    db_manager.create_table("authors", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    db_manager.create_table("books", {"id": "INTEGER PRIMARY KEY", "title": "TEXT"})
+
+    db_manager.create_junction_table("authors", "books")
+
+    # Insert data into both tables and create many-to-many relationships
+    author_id = db_manager.insert_record("authors", {"name": "Author 1"})
+    book_id = db_manager.insert_record("books", {"title": "Book 1"})
+    
+    db_manager.update_junction_table("authors", "books", author_id, [book_id])
+
+    # Query the junction table and verify the many-to-many relationship
+    results = db_manager.query_many_to_many("authors", "books", author_id)
+    assert len(results) == 1
+    assert results[0] == book_id

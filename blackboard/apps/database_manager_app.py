@@ -1,6 +1,8 @@
 # Type Checking Imports
 # ---------------------
-from typing import List, Tuple, Optional, Dict
+from typing import TYPE_CHECKING, List, Tuple, Optional, Dict
+if TYPE_CHECKING:
+    from blackboard.utils.database.abstract_database import AbstractModel
 
 # Standard Library Imports
 # ------------------------
@@ -14,7 +16,7 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-from blackboard.utils.database_manager import DatabaseManager, FieldInfo, ManyToManyField
+from blackboard.utils.database import DatabaseManager, FieldInfo, ManyToManyField
 from blackboard.widgets.main_window import MainWindow
 from blackboard.widgets import TreeWidgetItem, DatabaseViewWidget
 from blackboard.widgets.header_view import SearchableHeaderView
@@ -25,7 +27,6 @@ from blackboard.widgets.button import ItemOverlayButton
 
 # Class Definitions
 # -----------------
-
 class AddTableDialog(QtWidgets.QDialog):
     """
     UI Design:
@@ -148,12 +149,12 @@ class AddFieldDialog(QtWidgets.QDialog):
 
     WINDOW_TITLE = 'Add Field'
 
-    def __init__(self, db_manager: DatabaseManager, table_name: str, parent=None):
+    def __init__(self, db_manager: DatabaseManager, model: 'AbstractModel', parent=None):
         super().__init__(parent)
 
         # Store the arguments
         self.db_manager = db_manager
-        self.table_name = table_name
+        self.model = model
 
         # Initialize setup
         self.__init_attributes()
@@ -267,8 +268,7 @@ class AddFieldDialog(QtWidgets.QDialog):
                 enum_values = self.enum_list_widget.get_values()
 
         if field_name and field_definition:
-            self.db_manager.add_field(
-                self.table_name,
+            self.model.add_field(
                 field_name,
                 field_definition,
                 enum_values=enum_values,
@@ -303,12 +303,12 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
 
     DEFAULT_DISPLAY_NAME = 'name'
 
-    def __init__(self, db_manager: DatabaseManager, table_name: str, parent=None):
+    def __init__(self, db_manager: DatabaseManager, model: 'AbstractModel', parent=None):
         super().__init__(parent)
 
         # Store the arguments
         self.db_manager = db_manager
-        self.table_name = table_name
+        self.local_model = model
 
         # Initialize setup
         self.__init_ui()
@@ -332,7 +332,7 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
         
         # Exclude current table from the list of reference tables
         table_names = self.db_manager.get_table_names()
-        table_names.remove(self.table_name)
+        table_names.remove(self.local_model.name)
         self.table_dropdown.addItems(table_names)
         self.table_dropdown.setCurrentIndex(-1)
         self.table_label = LabelEmbedderWidget(self.table_dropdown, "Reference Table:")
@@ -393,8 +393,7 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
             field_definition += " NOT NULL"
 
         if relationship_type == "Many-to-One":
-            self.db_manager.add_field(
-                self.table_name,
+            self.local_model.add_field(
                 field_name,
                 field_definition,
                 foreign_key=f"{reference_table}({key_field})"
@@ -402,8 +401,7 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
 
         elif relationship_type == "One-to-One":
             # Add the column with a UNIQUE constraint
-            self.db_manager.add_field(
-                self.table_name,
+            self.local_model.add_field(
                 field_name,
                 field_definition + ' UNIQUE',
                 foreign_key=f"{reference_table}({key_field})"
@@ -411,7 +409,7 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
 
         if display_field != key_field:
             # Store the display field information
-            self.db_manager.add_display_field(self.table_name, field_name, display_field)
+            self.local_model.add_display_field(field_name, display_field)
 
         self.accept()
 
@@ -424,18 +422,20 @@ class AddRelationFieldDialog(QtWidgets.QDialog):
             self.add_button.setEnabled(True)
 
     # TODO: Handle composite primary keys
-    def _update_fields(self, table_name: str = None):
-        table_name = table_name or self.table_dropdown.currentText()
-        if not table_name:
+    def _update_fields(self, referenced_table_name: str = None):
+        referenced_table_name = referenced_table_name or self.table_dropdown.currentText()
+        if not referenced_table_name:
             return
+        
+        referenced_model = self.db_manager.get_model(referenced_table_name)
 
         # Retrieve primary keys and unique fields
-        primary_keys = self.db_manager.get_primary_keys(table_name)
-        unique_fields = self.db_manager.get_unique_fields(table_name)
+        primary_keys = referenced_model.get_primary_keys()
+        unique_fields = referenced_model.get_unique_fields()
 
         # Combine unique fields and primary keys
         reference_fields = primary_keys + unique_fields
-        reference_display_fields = self.db_manager.get_field_names(table_name, include_fk=False, include_m2m=False)
+        reference_display_fields = referenced_model.get_field_names(include_fk=False, include_m2m=False)
 
         # Clear and populate the dropdowns
         self.key_field_dropdown.clear()
@@ -480,12 +480,12 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
 
     DEFAULT_DISPLAY_NAME = 'name'
 
-    def __init__(self, db_manager: DatabaseManager, local_table: str, parent=None):
+    def __init__(self, db_manager: DatabaseManager, local_model: 'AbstractModel', parent=None):
         super().__init__(parent)
 
         # Store the arguments
         self.db_manager = db_manager
-        self.local_table = local_table
+        self.local_model = local_model
 
         # Initialize setup
         self.__init_ui()
@@ -504,14 +504,14 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
         self.junction_table_label = LabelEmbedderWidget(self.junction_table_input, "Junction Table Name")
 
         self.from_table_dropdown = QtWidgets.QComboBox()
-        self.from_table_dropdown.addItems([self.local_table])
+        self.from_table_dropdown.addItems([self.local_model.name])
         self.from_table_dropdown.setEnabled(False)
         self.from_key_field_dropdown = QtWidgets.QComboBox()
         self.from_display_field_dropdown = QtWidgets.QComboBox()
 
         self.to_table_dropdown = QtWidgets.QComboBox()
         table_names = self.db_manager.get_table_names()
-        table_names.remove(self.local_table)
+        table_names.remove(self.local_model.name)
         self.to_table_dropdown.addItems(table_names)
         self.to_table_dropdown.setCurrentIndex(-1)
         self.to_table_label = LabelEmbedderWidget(self.to_table_dropdown, "To Table")
@@ -548,12 +548,12 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
     def _init_from_table_fields(self):
         """Initialize the 'from' table's key and display fields.
         """
-        primary_keys = self.db_manager.get_primary_keys(self.local_table)
-        unique_fields = self.db_manager.get_unique_fields(self.local_table)
+        primary_keys = self.local_model.get_primary_keys()
+        unique_fields = self.local_model.get_unique_fields()
 
         # Combine unique fields and primary keys
         reference_fields = primary_keys + unique_fields
-        display_fields = self.db_manager.get_field_names(self.local_table, include_fk=False, include_m2m=False)
+        display_fields = self.local_model.get_field_names(include_fk=False, include_m2m=False)
 
         # Set default key and display fields for the "from" table
         self.from_key_field_dropdown.clear()
@@ -569,13 +569,15 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
         table_name = self.to_table_dropdown.currentText()
         if not table_name:
             return
+        
+        model = self.db_manager.get_model(table_name)
 
-        primary_keys = self.db_manager.get_primary_keys(table_name)
-        unique_fields = self.db_manager.get_unique_fields(table_name)
+        primary_keys = model.get_primary_keys()
+        unique_fields = model.get_unique_fields()
 
         # Combine unique fields and primary keys
         reference_fields = primary_keys + unique_fields
-        display_fields = self.db_manager.get_field_names(table_name, include_fk=False, include_m2m=False)
+        display_fields = model.get_field_names(include_fk=False, include_m2m=False)
 
         # Update the key and display fields for the "to" table
         self.to_key_field_dropdown.clear()
@@ -589,11 +591,10 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
     def _update_junction_table_name(self):
         """Automatically set the junction table name based on selected tables.
         """
-        local_table = self.local_table
         referenced_table = self.to_table_dropdown.currentText()
         if referenced_table:
             # Sort table names alphabetically and join them with an underscore
-            sorted_tables = sorted([local_table, referenced_table])
+            sorted_tables = sorted([self.local_model.name, referenced_table])
             junction_name = "_".join(sorted_tables)
             self.junction_table_input.setText(junction_name)
 
@@ -609,13 +610,13 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
         track_vice_versa = self.track_vice_versa_checkbox.isChecked()
 
         self.db_manager.create_junction_table(
-            from_table=self.local_table,
+            from_table=self.local_model.name,
             to_table=referenced_table,
             from_field=local_field,
             to_field=referenced_field,
             junction_table_name=junction_table_name,
             track_field_name=f"{referenced_table}_{referenced_field}s",
-            track_field_vice_versa_name=f"{self.local_table}_{local_field}s",
+            track_field_vice_versa_name=f"{self.local_model.name}_{local_field}s",
             from_display_field=from_display_field,
             to_display_field=to_display_field,
             track_vice_versa=track_vice_versa
@@ -815,8 +816,9 @@ class DBWidget(QtWidgets.QWidget):
 
         table_name = current_item.text()
         self.current_table = table_name
+        self.current_model = self.db_manager.get_model(self.current_table)
         self.data_view.set_table(self.current_table)
-        self.field_name_to_info = self.db_manager.get_fields(table_name)
+        self.field_name_to_info = self.current_model.get_fields()
 
         self.fields_list_widget.clear()
 
@@ -830,7 +832,7 @@ class DBWidget(QtWidgets.QWidget):
             self.fields_list_widget.addItem(column_definition)
 
         # TODO: Add Many-to-Many track fields to fields_list_widget
-        many_to_many_fields = self.db_manager.get_many_to_many_fields(self.current_table)
+        many_to_many_fields = self.current_model.get_many_to_many_fields()
         for field_name, m2m in many_to_many_fields.items():
             column_definition = f"{field_name} ({m2m.junction_table})"
             self.fields_list_widget.addItem(column_definition)
@@ -840,7 +842,7 @@ class DBWidget(QtWidgets.QWidget):
         if not self.current_table:
             return
 
-        dialog = AddFieldDialog(self.db_manager, self.current_table, self)
+        dialog = AddFieldDialog(self.db_manager, self.current_model, self)
         if dialog.exec_():
             self.load_table_info()
 
@@ -848,7 +850,7 @@ class DBWidget(QtWidgets.QWidget):
         if not self.current_table:
             return
 
-        dialog = AddRelationFieldDialog(self.db_manager, self.current_table, self)
+        dialog = AddRelationFieldDialog(self.db_manager, self.current_model, self)
         if dialog.exec_():
             self.load_table_info()
 
@@ -856,7 +858,7 @@ class DBWidget(QtWidgets.QWidget):
         if not self.current_table:
             return
 
-        dialog = AddManyToManyFieldDialog(self.db_manager, self.current_table, self)
+        dialog = AddManyToManyFieldDialog(self.db_manager, self.current_model, self)
         if dialog.exec_():
             self.load_table_info()
 
@@ -877,7 +879,7 @@ class DBWidget(QtWidgets.QWidget):
 
     def delete_field(self, item: QtWidgets.QListWidgetItem):
         field_name = item.text().split()[0]
-        self.db_manager.delete_field(self.current_table, field_name)
+        self.current_model.delete_field(field_name)
         self.load_table_info()
 
     def refresh_data(self):
