@@ -37,8 +37,8 @@ class DatabaseManager:
         self._db_name = db_name
 
         self.db_connection = self.DB_TYPE_TO_DATABASE_CONNECTION.get(db_type)(db_name)
-        self._connection = self.db_connection.connection
-        self._cursor = self.db_connection.cursor
+        self.connection = self.db_connection.connection
+        self.cursor = self.db_connection.cursor
 
     # Table Manager
     # -------------
@@ -60,7 +60,7 @@ class DatabaseManager:
             table_name (str): The name of the table to create.
             fields (Dict[str, str]): A dictionary mapping field names to their SQLite data types.
         """
-        self.db_connection.create_table(table_name, fields)
+        return self.db_connection.create_table(table_name, fields)
 
     def delete_table(self, table_name: str):
         """Delete an entire table from the database.
@@ -127,7 +127,7 @@ class DatabaseManager:
         Raises:
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        self.db_connection.create_junction_table(
+        return self.db_connection.create_junction_table(
             from_table, to_table, from_field, to_field,
             junction_table_name, track_field_name, track_field_vice_versa_name,
             from_display_field, to_display_field, track_vice_versa
@@ -142,7 +142,7 @@ class DatabaseManager:
             List[str]: A list of table names that match the 'enum_%' pattern.
         """
         self.db_connection.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'enum_%'")
-        return [row[0] for row in self._cursor.fetchall()]
+        return [row[0] for row in self.cursor.fetchall()]
 
     def get_enum_table_name(self, table_name: str, field_name: str) -> Optional[str]:
         """Retrieve the name of the enum table associated with a given field.
@@ -194,5 +194,5 @@ class DatabaseManager:
         for value in values:
             self.db_connection.cursor.execute(f"INSERT OR IGNORE INTO {table_name} (value) VALUES (?)", (value,))
 
-        self._connection.commit()
+        self.connection.commit()
 

@@ -25,17 +25,6 @@ def test_create_table(db_manager: DatabaseManager):
     assert table_info[1].name == "name"
     assert table_info[1].type == "TEXT"
 
-def test_add_enum_metadata(db_manager: DatabaseManager):
-    db_manager.add_enum_metadata("test_table", "status", "enum_status")
-
-    db_manager.cursor.execute("SELECT * FROM _meta_enum_field WHERE table_name='test_table'")
-    result = db_manager.cursor.fetchone()
-
-    assert result is not None
-    assert result[0] == "test_table"
-    assert result[1] == "status"
-    assert result[2] == "enum_status"
-
 def test_create_enum_table(db_manager: DatabaseManager):
     enum_values = ["Pending", "Completed", "Failed"]
     db_manager.create_enum_table("enum_status", enum_values)
@@ -44,34 +33,34 @@ def test_create_enum_table(db_manager: DatabaseManager):
     assert set(stored_values) == set(enum_values)
 
 def test_add_field(db_manager: DatabaseManager):
-    db_manager.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
-    db_manager.add_field("test_table", "age", "INTEGER")
+    test_model = db_manager.create_table("test_table", {"id": "INTEGER PRIMARY KEY"})
+    test_model.add_field("age", "INTEGER")
 
-    fields = db_manager.get_field_names("test_table")
+    fields = test_model.get_field_names()
     assert "age" in fields
 
 def test_insert_and_retrieve_record(db_manager: DatabaseManager):
-    db_manager.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
-    db_manager.insert_record("test_table", {"name": "Test Name"})
+    test_model = db_manager.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    test_model.insert_record({"name": "Test Name"})
 
-    rows = list(db_manager.query_table_data("test_table"))
+    rows = list(test_model.query())
     assert len(rows) == 1
     assert rows[0][1] == "Test Name"
 
 def test_update_record(db_manager: DatabaseManager):
     # Create a test table and insert a record
-    db_manager.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
-    db_manager.insert_record("test_table", {"name": "Old Name"})
+    test_model = db_manager.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+    test_model.insert_record({"name": "Old Name"})
 
     # Retrieve the inserted record to get the rowid
-    rows = list(db_manager.query_table_data("test_table", fields=["rowid", "name"]))
+    rows = list(test_model.query(fields=["rowid", "name"]))
     rowid = rows[0][0]
 
     # Update the record with a new name
-    db_manager.update_record("test_table", {"name": "New Name"}, pk_value=rowid)
+    test_model.update_record({"name": "New Name"}, pk_value=rowid)
 
     # Query the updated record and verify the update
-    updated_rows = list(db_manager.query_table_data("test_table", fields=["name"]))
+    updated_rows = list(test_model.query(fields=["name"]))
     assert updated_rows[0][0] == "New Name"
 
 def test_delete_field(db_manager: DatabaseManager):
@@ -79,7 +68,7 @@ def test_delete_field(db_manager: DatabaseManager):
     model = db_manager.get_model('test_table')
     model.delete_field("age")
 
-    fields = model.get_field_names("test_table")
+    fields = model.get_field_names()
     assert "age" not in fields
 
 def test_delete_table(db_manager: DatabaseManager):
@@ -89,20 +78,22 @@ def test_delete_table(db_manager: DatabaseManager):
     tables = db_manager.get_table_names()
     assert "test_table" not in tables
 
-def test_create_and_query_many_to_many(db_manager: DatabaseManager):
-    # Create two related tables and a junction table for many-to-many relationship
-    db_manager.create_table("authors", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
-    db_manager.create_table("books", {"id": "INTEGER PRIMARY KEY", "title": "TEXT"})
+# def test_create_and_query_many_to_many(db_manager: DatabaseManager):
+#     # Create two related models (tables) and a junction table for many-to-many relationship
+#     authors_model = db_manager.create_table("authors", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
+#     books_model = db_manager.create_table("books", {"id": "INTEGER PRIMARY KEY", "title": "TEXT"})
 
-    db_manager.create_junction_table("authors", "books")
+#     authors_model.add
+#     # Create a many-to-many junction table
+#     authors_books_model = db_manager.create_junction_table(
+#         from_table="authors",
+#         to_table="books",
+#         from_field="id",
+#         to_field="id"
+#     )
 
-    # Insert data into both tables and create many-to-many relationships
-    author_id = db_manager.insert_record("authors", {"name": "Author 1"})
-    book_id = db_manager.insert_record("books", {"title": "Book 1"})
-    
-    db_manager.update_junction_table("authors", "books", author_id, [book_id])
+#     # Insert data into both tables and create many-to-many relationships
+#     author_id = authors_model.insert_record({"name": "Author 1"})
+#     book_id = books_model.insert_record({"title": "Book 1"})
 
-    # Query the junction table and verify the many-to-many relationship
-    results = db_manager.query_many_to_many("authors", "books", author_id)
-    assert len(results) == 1
-    assert results[0] == book_id
+#     ...

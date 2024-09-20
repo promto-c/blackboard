@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 class AbstractDatabase(ABC):
 
     @abstractmethod
-    def create_table(self, table_name: str, fields: Dict[str, str]):
+    def create_table(self, table_name: str, fields: Dict[str, str]) -> 'AbstractModel':
         """Create a table in the database."""
         pass
 
@@ -96,6 +96,16 @@ class AbstractModel(ABC):
     @property
     def name(self) -> str:
         return self._table_name
+
+    @abstractmethod
+    def add_field(self, field_name: str, field_definition: str, foreign_key: Optional[str] = None, enum_values: Optional[List[str]] = None, enum_table_name: Optional[str] = None):
+        """Add a new field to an existing table, optionally with a foreign key or enum constraint."""
+        pass
+
+    @abstractmethod
+    def delete_field(self, field_name: str):
+        """Delete a field from a table."""
+        pass
 
     @abstractmethod
     def get_fields(self) -> Dict[str, 'FieldInfo']:

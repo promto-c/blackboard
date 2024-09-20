@@ -35,7 +35,7 @@ class SQLiteDatabase(AbstractDatabase):
     def create_junction_table(self, from_table: str, to_table: str, from_field: str = 'id', to_field: str = 'id',
                               junction_table_name: Optional[str] = None, track_field_name: str = None, track_field_vice_versa_name: str = None,
                               from_display_field: Optional[str] = None, to_display_field: Optional[str] = None,
-                              track_vice_versa: bool = False):
+                              track_vice_versa: bool = False) -> 'AbstractModel':
         """Create a junction table to represent a many-to-many relationship between two tables.
 
         Args:
@@ -110,6 +110,8 @@ class SQLiteDatabase(AbstractDatabase):
 
         self._connection.commit()
 
+        return self.get_model(junction_table_name)
+
     # Private Methods
     # ---------------
     def _create_meta_many_to_many_table(self):
@@ -161,7 +163,7 @@ class SQLiteDatabase(AbstractDatabase):
         
         return exists
 
-    def create_table(self, table_name: str, fields: Dict[str, str]):
+    def create_table(self, table_name: str, fields: Dict[str, str]) -> 'AbstractModel':
         """Create a new table in the database with specified fields.
 
         Args:
@@ -178,6 +180,8 @@ class SQLiteDatabase(AbstractDatabase):
         fields_str = ', '.join([f"{name} {type_}" for name, type_ in fields.items()])
         self._cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({fields_str})")
         self._connection.commit()
+
+        return self.get_model(table_name)
 
     def delete_table(self, table_name: str):
         """Delete an entire table from the database.
@@ -935,7 +939,7 @@ class SQLiteModel(AbstractModel):
             self._cursor.execute(f"CREATE TABLE {temp_table_name} ({field_definitions_str})")
             self._cursor.execute(f"INSERT INTO {temp_table_name} ({field_names_str}) SELECT {field_names_str} FROM {self._table_name}")
             # Replace the old table with the new one
-            self._cursor.execute(f"DROP TABLE {table_name}")
+            self._cursor.execute(f"DROP TABLE {self._table_name}")
             self._cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {self._table_name}")
 
             # Remove the display field metadata
@@ -1139,7 +1143,7 @@ class SQLiteModel(AbstractModel):
     def add_display_field(self, field_name: str, display_field_name: str, display_format: str = None):
         """Add a display field entry to the meta table.
         """
-        self._database._create_meta_display_field_table()
+        self._create_meta_display_field_table()
         self._cursor.execute('''
             INSERT OR REPLACE INTO _meta_display_field (table_name, field_name, display_foreign_field_name, display_format)
             VALUES (?, ?, ?, ?);

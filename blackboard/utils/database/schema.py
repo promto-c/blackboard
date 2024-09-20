@@ -1,10 +1,12 @@
 # Type Checking Imports
 # ---------------------
-from typing import Generator, List, Tuple, Union, Optional, Dict, Any
+from typing import TYPE_CHECKING, List, Optional
+if TYPE_CHECKING:
+    from .database_manager import DatabaseManager
 
 # Standard Library Imports
 # ------------------------
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 # Class Definitions
@@ -86,3 +88,59 @@ class FieldInfo:
         """Check if the field is part of a many-to-many relationship.
         """
         return self.m2m is not None
+
+# NOTE: WIP
+@dataclass
+class RelationStep:
+    local_table: str
+    foreign_key: str
+    referenced_table: str
+    referenced_field: str
+
+@dataclass
+class RelationChain:
+    root_table: str
+    steps: List[RelationStep] = field(default_factory=list)
+    select_fields: List[str] = field(default_factory=list)  # Fields to select from the final table
+
+    @staticmethod
+    def parse(chain: str, db_manager: 'DatabaseManager') -> 'RelationChain':
+        parts = chain.split('.')
+        if len(parts) < 2:
+            raise ValueError("Relation chain must include at least one relationship and one field.")
+
+        root_table = parts[0]
+        current_table = root_table
+        current_model = db_manager.get_model(current_table)
+        relation_chain = RelationChain(root_table=root_table)
+
+        for i in range(1, len(parts) - 1):
+            fk_column = parts[i]
+
+            try:
+                field_info = current_model.get_field(fk_column)
+            except ValueError as e:
+                raise ValueError(f"Error parsing relation chain: {e}")
+
+            if not field_info.fk:
+                raise ValueError(f"Field '{fk_column}' in table '{current_table}' is not a foreign key.")
+
+            step = RelationStep(
+                local_table=current_table,
+                foreign_key=fk_column,
+                referenced_table=field_info.fk.referenced_table,
+                referenced_field=field_info.fk.referenced_field
+            )
+            relation_chain.steps.append(step)
+            current_table = step.referenced_table
+            current_model = db_manager.get_model(current_table)
+
+        # The last part is the field to select from the final table
+        select_field = parts[-1]
+        if select_field not in current_model.get_field_names():
+            raise ValueError(f"Field '{select_field}' does not exist in table '{current_table}'.")
+
+        # Add the final field to select_fields
+        relation_chain.select_fields.append(f"{current_table}.{select_field} AS {select_field}")
+
+        return relation_chain
