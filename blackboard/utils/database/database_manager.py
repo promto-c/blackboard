@@ -11,6 +11,7 @@ import sqlite3
 # Local Imports
 # -------------
 from .sqlite_database import SQLiteDatabase
+from .schema import RelationChain
 
 
 # Class Definitions
@@ -196,3 +197,87 @@ class DatabaseManager:
 
         self.connection.commit()
 
+# NOTE: WIP
+class ViewModel:
+    """A class that constructs and executes SQL queries based on specified tables, fields, and relationships."""
+    def __init__(self, db_manager: 'DatabaseManager'):
+        self._db_manager = db_manager
+        self._database = db_manager._database
+        self._connection = self._database.connection
+        self._table_name = ''
+        self._selected_fields = []
+        self._relation_chains = []
+        self._join_tables = set()
+        self._aliases = {}
+        self._alias_counter = 1
+
+    def set_table(self, table_name: str):
+        """Set the base table for the query."""
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
+        self._table_name = table_name
+
+    def set_fields(self, field_list: List[str]):
+        """Set the fields to select from the base table."""
+        if not all(field.isidentifier() for field in field_list):
+            raise ValueError("Invalid field name in field list")
+        self._selected_fields.extend(field_list)
+
+    def add_relation_field(self, field_chain: str):
+        """Add a related field to select, specifying the chain of relationships."""
+        # Parse the relation chain using RelationChain class
+        relation_chain = RelationChain.parse(field_chain, self._db_manager)
+        self._relation_chains.append(relation_chain)
+        # Cache join tables
+        for step in relation_chain.steps:
+            self._join_tables.add((step.local_table, step.foreign_key, step.referenced_table, step.referenced_field))
+        # Add the select fields
+        self._selected_fields.extend(relation_chain.select_fields)
+
+    def prepare_query(self) -> str:
+        """Prepare the SQL query based on the set table, fields, and relationships."""
+        if not self._table_name:
+            raise ValueError("Table name is not set.")
+        # Start building the query
+        query = f"SELECT "
+        fields = []
+        # Add fields from the base table
+        for field in self._selected_fields:
+            if '.' not in field:
+                fields.append(f"{self._table_name}.{field}")
+            else:
+                # If field is already qualified, use it as is
+                fields.append(field)
+        query += ', '.join(fields)
+        query += f" FROM {self._table_name} AS {self._table_name}"
+        # Add JOINs
+        join_clauses = []
+        for relation_chain in self._relation_chains:
+            current_table = self._table_name
+            current_alias = self._aliases.get(current_table, current_table)
+            for step in relation_chain.steps:
+                # Generate an alias for the referenced table if not already aliased
+                if step.referenced_table not in self._aliases:
+                    alias = f"{step.referenced_table}_alias{self._alias_counter}"
+                    self._alias_counter += 1
+                    self._aliases[step.referenced_table] = alias
+                else:
+                    alias = self._aliases[step.referenced_table]
+                # Build the JOIN clause
+                join_clause = f" LEFT JOIN {step.referenced_table} AS {alias} ON {current_alias}.{step.foreign_key} = {alias}.{step.referenced_field}"
+                join_clauses.append(join_clause)
+                # Update current table and alias
+                current_alias = alias
+                current_table = step.referenced_table
+        # Append the JOIN clauses to the query
+        query += ' '.join(join_clauses)
+        return query
+
+    def execute(self):
+        """Execute the prepared query and return the results."""
+        query = self.prepare_query()
+        cursor = self._database.connection.cursor()
+        cursor.execute(query)
+        results = cursor.fetchall()
+        cursor.close()
+        return results
