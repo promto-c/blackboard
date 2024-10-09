@@ -277,25 +277,87 @@ class UIUtil:
         # Keep a reference to prevent garbage collection
         widget.animation = animation
 
-class FloatingCard(QtWidgets.QWidget):
-    """Custom floating card widget designed for feedback or comments."""
+class AutoResizingTextBrowser(QtWidgets.QTextBrowser):
 
+    MAX_HEIGHT = 300  # Set the maximum height as a class attribute
+
+    def __init__(self, parent=None):
+        """Initialize the auto-resizing text browser.
+
+        Args:
+            parent (Optional[QWidget]): The parent widget.
+        """
+        super().__init__(parent)
+        self.document().contentsChanged.connect(self.adjust_height_to_content)
+
+    def sizeHint(self):
+        """Override sizeHint to provide the height based on the document content.
+        """
+        document_height = self._calculate_content_height()
+        return QtCore.QSize(self.viewport().width(), document_height)
+
+    def adjust_height_to_content(self):
+        """Adjust the height of the widget to fit the document content, respecting the maximum height.
+        """
+        height = self._calculate_content_height()
+        # Use min() to ensure the height does not exceed MAX_HEIGHT
+        self.setFixedHeight(min(height, self.MAX_HEIGHT))
+
+    def _calculate_content_height(self):
+        """Calculate the total height needed to display the document content.
+        """
+        # Get the document height, considering the current width of the QTextBrowser
+        document_width = self.viewport().width()
+        self.document().setTextWidth(document_width)  # Set text width to match the widget's width
+        document_height = int(self.document().size().height())  # Convert to integer
+        # Calculate additional margins if necessary
+        vertical_margins = self.contentsMargins().top() + self.contentsMargins().bottom()
+        return document_height + vertical_margins
+
+    def resizeEvent(self, event):
+        """Handle the widget's resize event.
+        """
+        super().resizeEvent(event)
+        # Adjust height when the width changes
+        self.adjust_height_to_content()
+
+class FloatingCard(QtWidgets.QWidget):
+    """Custom floating card widget designed for feedback or comments.
+    """
+
+    # Initialization and Setup
+    # ------------------------
     def __init__(self, parent=None, content="", attached_image_path=None):
         super().__init__(parent)
+
+        # Store the arguments
         self.attached_image_path = attached_image_path
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        self.content = content
+
+        # Initialize setup
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
+        # Set size policy to expand to the available width
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
 
         # Apply shadow effect using utility method
         self.setGraphicsEffect(UIUtil.create_shadow_effect())
 
+        # Set size policy to expand to the available width
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+
+        # Create Layouts
+        # --------------
         # Main layout of the card
         self.main_layout = QtWidgets.QVBoxLayout(self)
         self.main_layout.setContentsMargins(10, 0, 10, 20)
         self.main_layout.setSpacing(0)
-
-        # Set size policy to expand to the available width
-        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
 
         # Header layout containing the drag area and the status/next step widget
         header_widget = QtWidgets.QWidget(self)
@@ -309,10 +371,9 @@ class FloatingCard(QtWidgets.QWidget):
             color: {TEXT_COLOR};
         """)
 
-        # Drag area
-        self.card_label = QtWidgets.QLabel("Task Note", header_widget)
-        self.card_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        header_layout.addWidget(self.card_label)
+        card_label = QtWidgets.QLabel("Task Note", header_widget)
+        card_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        header_layout.addWidget(card_label)
 
         # Status and next step widget
         self.status_widget = StatusNextStepWidget(current_status="To Do", parent=header_widget)
@@ -327,13 +388,13 @@ class FloatingCard(QtWidgets.QWidget):
         self.comment_area = QtWidgets.QTextBrowser(self)
 
         # Add attached image if present
-        if attached_image_path:
+        if self.attached_image_path:
             self.image_label = QtWidgets.QLabel(self)
             self.image_label.setAlignment(QtCore.Qt.AlignCenter)
             self.main_layout.addWidget(self.image_label)
-            self.update_image(attached_image_path)
+            self.update_image(self.attached_image_path)
 
-        content = set_markdown_with_simple_line_breaks(content)
+        content = set_markdown_with_simple_line_breaks(self.content)
         self.comment_area.setMarkdown(content)
         self.comment_area.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.comment_area.setStyleSheet(f"""
@@ -350,11 +411,14 @@ class FloatingCard(QtWidgets.QWidget):
         self.comment_area.document().contentsChanged.connect(self.adjust_comment_area_size)
         self.main_layout.addWidget(self.comment_area)
 
-        # Connect the anchorClicked signal to handle user mentions
-        self.comment_area.anchorClicked.connect(self.handle_user_mentions)
-
         # Adjust card size based on content
         self.adjust_card_size()
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
+        # Connect the anchorClicked signal to handle user mentions
+        self.comment_area.anchorClicked.connect(self._handle_user_mentions)
 
     def update_image(self, image_path):
         """Update the image label with a scaled version of the image to fit the card width."""
@@ -401,7 +465,7 @@ class FloatingCard(QtWidgets.QWidget):
         self.adjust_card_size()
         super().resizeEvent(event)
 
-    def handle_user_mentions(self, url):
+    def _handle_user_mentions(self, url):
         """Handle clicks on user mentions."""
         user = url.toString().lstrip("user:")
         QtWidgets.QMessageBox.information(self, "User Mention", f"You clicked on @{user}")
@@ -549,7 +613,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         self.scroll_content.setStyleSheet("background: transparent;")
 
         # Add a few floating cards below the header inside the scrollable area
-        card_count = 5
+        card_count = 4
         for i in range(card_count):
             content = f"This is a comment or feedback. Mentioning @user{i}."
             card = FloatingCard(self, content=content)
@@ -578,7 +642,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
                 border: none;
             }}
         """)
-        self.attach_button.clicked.connect(self.attach_screenshot)
+
         sticky_layout.addWidget(self.attach_button)
 
         # Input field for new task or comment
@@ -593,8 +657,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
                 padding: 5px;
             }}
         """)
-        self.new_task_input.textChanged.connect(self.adjust_input_height)
-        self.new_task_input.textChanged.connect(self.toggle_add_button_state)  # Enable/disable button on text change
+
         sticky_layout.addWidget(self.new_task_input)
 
         # Add button for adding new task or comment with icon
@@ -616,7 +679,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
                 color: {DISABLED_COLOR};
             }}
         """)
-        self.add_button.clicked.connect(self.add_new_task)
+
         sticky_layout.addWidget(self.add_button)
 
         self.main_layout.addWidget(sticky_bar)
@@ -626,11 +689,14 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         # Apply shadow effect using utility method
         self.setGraphicsEffect(UIUtil.create_shadow_effect())
 
+        self.attach_button.clicked.connect(self.attach_screenshot)
+        self.new_task_input.textChanged.connect(self.adjust_input_height)
+        self.new_task_input.textChanged.connect(self.toggle_add_button_state)
+        self.add_button.clicked.connect(self.add_new_task)
+
         # Add keyboard shortcuts for common actions
         self.add_task_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Return"), self)
         self.add_task_shortcut.activated.connect(self.add_new_task)
-        self.attach_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+O"), self)
-        self.attach_shortcut.activated.connect(self.attach_screenshot)
 
         self.adjust_input_height()
 
@@ -680,16 +746,19 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
     def add_new_task(self):
         """Add a new task or comment as a floating card."""
         new_task_text = self.new_task_input.toPlainText().strip()
-        if new_task_text:
-            # Handle user mentions by converting @username to clickable links
-            formatted_text = self.format_user_mentions(new_task_text)
-            new_card = FloatingCard(self, content=formatted_text, attached_image_path=getattr(self, 'attached_image_path', None))
-            self.add_card_with_animation(new_card)
-            self.new_task_input.clear()  # Clear the input field after adding
-            self.attached_image_path = None  # Reset the attached image path
 
-            # Scroll to the bottom of the scroll area
-            QtCore.QTimer.singleShot(0, self.scroll_to_bottom)
+        if not new_task_text:
+            return
+
+        # Handle user mentions by converting @username to clickable links
+        formatted_text = self.format_user_mentions(new_task_text)
+        new_card = FloatingCard(self, content=formatted_text, attached_image_path=getattr(self, 'attached_image_path', None))
+        self.add_card(new_card)
+        self.new_task_input.clear()  # Clear the input field after adding
+        self.attached_image_path = None  # Reset the attached image path
+
+        # Scroll to the bottom of the scroll area
+        QtCore.QTimer.singleShot(0, self.scroll_to_bottom)
 
     def scroll_to_bottom(self):
         """Smoothly scroll to the bottom of the scroll area."""
@@ -704,7 +773,6 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
 
     def format_user_mentions(self, text):
         """Convert @username mentions to clickable links in markdown."""
-        import re
         def replace_mention(match):
             username = match.group(1)
             return f"[ @{username} ](user:{username})"
@@ -733,22 +801,12 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
             UIUtil.apply_animation(self.scroll_area, "maximumHeight", 0, 800)
             self.collapse_button.setText("−")  # Change button to show collapse icon
 
-    def add_card_with_animation(self, card):
+    def add_card(self, card: 'FloatingCard'):
         """Add a card to the layout with a fade-in animation."""
         card.setGraphicsEffect(UIUtil.create_shadow_effect())
         card.setVisible(False)
-        self.scroll_layout.addWidget(card, alignment=QtCore.Qt.AlignTop)
+        self.scroll_layout.addWidget(card)
         card.setVisible(True)
-        UIUtil.apply_animation(card, "windowOpacity", 0.0, 1.0, duration=500)
-
-    def paintEvent(self, event):
-        """Override paintEvent to set a transparent background for the layout."""
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        brush = QtGui.QBrush(QtGui.QColor(255, 255, 255, 0))  # Fully transparent
-        painter.setBrush(brush)
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.drawRect(self.rect())
 
     def mousePressEvent(self, event):
         """Start dragging the entire layout when the mouse is pressed on the layout drag area."""
