@@ -350,6 +350,9 @@ class FloatingCard(QtWidgets.QWidget):
         self.comment_area.document().contentsChanged.connect(self.adjust_comment_area_size)
         self.main_layout.addWidget(self.comment_area)
 
+        # Connect the anchorClicked signal to handle user mentions
+        self.comment_area.anchorClicked.connect(self.handle_user_mentions)
+
         # Adjust card size based on content
         self.adjust_card_size()
 
