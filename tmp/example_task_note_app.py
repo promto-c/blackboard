@@ -1,25 +1,33 @@
-from PyQt5 import QtCore, QtGui, QtWidgets
+from typing import List
+
+import os
+import re
+
+from qtpy import QtCore, QtGui, QtWidgets
+
 from tablerqicon import TablerQIcon
-import os, re
+
+from blackboard.widgets.filter_widget import FilterSelectionBar
+
 
 # Define a consistent color palette
-PRIMARY_COLOR = "#1E1E1E"
-SECONDARY_COLOR = "#252526"
+PRIMARY_COLOR = "#222"
+SECONDARY_COLOR = "#333"
 ACCENT_COLOR = "#0A84FF"
-TEXT_COLOR = "#FFFFFF"
+TEXT_COLOR = "#FFF"
 HOVER_COLOR = "#3A3A3C"
-DISABLED_COLOR = "#555555"
+DISABLED_COLOR = "#555"
+
+# Updated status colors to include 'Completed'
 STATUS_COLOR = {
-    "To Do": "#FF9500",        # Orange
-    "In Progress": "#FFCC00",  # Yellow
-    "Done": "#34C759",         # Green
+    "To Do": "#C74",        # Orange
+    "In Progress": "#DB3",  # Yellow
+    "Done": "#6B5",         # Green
+    "Completed": "#299",    # Teal
 }
 
-# Define the order of statuses
-STATUS_ORDER = ["To Do", "In Progress", "Done"]
-
-
-import re
+# Updated status order to include 'Completed'
+STATUS_ORDER = ["To Do", "In Progress", "Done", "Completed"]
 
 def set_markdown_with_simple_line_breaks(content):
     """Set markdown content with line breaks replaced only for regular lines."""
@@ -32,13 +40,48 @@ def set_markdown_with_simple_line_breaks(content):
     )
     return content_with_line_breaks
 
+def format_user_mentions(text):
+    """Convert @username mentions to clickable links in markdown."""
+    def replace_mention(match):
+        username = match.group(1)
+        return f"[ @{username} ](user:{username})"
+    return re.sub(r'@(\w+)', replace_mention, text)
+
+class PlaceholderCard(QtWidgets.QWidget):
+    """Placeholder card shown when no cards match the current filter criteria."""
+
+    def __init__(self, parent=None, message="No cards to display"):
+        super().__init__(parent)
+
+        # Setup placeholder card UI
+        self.setStyleSheet(f"""
+            background-color: rgba(60, 60, 60, 150);
+            border: 2px dashed {DISABLED_COLOR};
+            border-radius: 15px;
+            color: #AAA;
+            font-size: 14px;
+            padding: 20px;
+        """)
+
+        # Main layout
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        # Message label
+        self.message_label = QtWidgets.QLabel(message, self)
+        self.main_layout.addWidget(self.message_label)
 
 class StatusNextStepWidget(QtWidgets.QWidget):
-    status_changed = QtCore.pyqtSignal(str)  # Signal emitted when status changes
+    status_changed = QtCore.Signal(str)  # Signal emitted when status changes
 
-    def __init__(self, current_status="To Do", parent=None):
-        super().__init__(parent)
+    def __init__(self, current_status="To Do", container: 'TransparentFloatingLayout' = None):
+        super().__init__(container)
+
+
+        self.container = container
+        
         self.current_status = current_status
+        self.clicked = False  # Track the clicked state
 
         # Setup parallel animation group for synchronized animations
         self.parallel_animation_group = QtCore.QParallelAnimationGroup()
@@ -50,6 +93,7 @@ class StatusNextStepWidget(QtWidgets.QWidget):
 
         # Create the status combobox
         self.status_combobox = QtWidgets.QComboBox()
+        self.status_combobox.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.status_combobox.addItems(STATUS_ORDER)
         self.status_combobox.setCurrentText(self.current_status)
         self.status_combobox.setFixedHeight(20)
@@ -65,7 +109,7 @@ class StatusNextStepWidget(QtWidgets.QWidget):
         self.next_step_button = QtWidgets.QPushButton()
         self.next_step_button.setFixedHeight(20)
         self.next_step_button.setFixedWidth(30)
-        self.next_step_button.setCursor(QtCore.Qt.PointingHandCursor)
+        self.next_step_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.next_step_button.setStyleSheet(self.get_button_style())
         self.next_step_button.clicked.connect(self.mark_as_next_status)
         self.main_layout.addWidget(self.next_step_button)
@@ -108,7 +152,7 @@ class StatusNextStepWidget(QtWidgets.QWidget):
         """Return the stylesheet for the button."""
         return f"""
             QPushButton {{
-                background-color: #0AA;
+                background-color: #299;
                 color: {TEXT_COLOR};
                 border: none;
                 border-radius: 10;
@@ -140,16 +184,26 @@ class StatusNextStepWidget(QtWidgets.QWidget):
 
     def mark_as_next_status(self):
         """Advance the task to the next status with a transition color animation."""
+        self.clicked = True  # Set clicked state to True
         next_status = self.get_next_status()
         if next_status:
+            # Check if the next status is in the currently active statuses in the parent
+            active_statuses = self.container.status_filter_widget.get_active_filters() or STATUS_ORDER
+
+            # Otherwise, animate the transition
+            self.status_combobox.setCurrentText(next_status)
+
+            if next_status in active_statuses:
+                self.animate_back()
+            else:
+                self.next_step_button.setText("")
+
             gradient_animation = QtCore.QVariantAnimation()
             gradient_animation.setDuration(300)
             gradient_animation.setStartValue(QtGui.QColor(STATUS_COLOR.get(self.current_status, SECONDARY_COLOR)))
             gradient_animation.setEndValue(QtGui.QColor(STATUS_COLOR.get(next_status, SECONDARY_COLOR)))
             gradient_animation.valueChanged.connect(self.apply_gradient_color)
-            gradient_animation.finished.connect(lambda: self.status_combobox.setCurrentText(next_status))
             gradient_animation.start()
-            self.active_animations.append(gradient_animation)  # Manage animation lifetime explicitly
 
     def apply_gradient_color(self, color):
         """Apply the gradient color to the combobox background."""
@@ -171,12 +225,42 @@ class StatusNextStepWidget(QtWidgets.QWidget):
             }}
         """)
 
+    def animate_back(self):
+        """Animate the button back to its original size and clear hover state.
+        """
+        self.next_step_button.setText("")
+        self.parallel_animation_group.clear()  # Clear existing animations
+
+        # Create animations to reset button size
+        shrink_button_animation = QtCore.QPropertyAnimation(self.next_step_button, b"minimumWidth")
+        shrink_button_animation.setDuration(300)
+        shrink_button_animation.setStartValue(self.next_step_button.width())
+        shrink_button_animation.setEndValue(30)
+        shrink_button_animation.setEasingCurve(QtCore.QEasingCurve.Type.InOutQuad)
+        self.parallel_animation_group.addAnimation(shrink_button_animation)
+
+        # Extend combobox animation back to original
+        extend_combobox_animation = QtCore.QPropertyAnimation(self.status_combobox, b"minimumWidth")
+        extend_combobox_animation.setDuration(300)
+        extend_combobox_animation.setStartValue(self.status_combobox.width())
+        extend_combobox_animation.setEndValue(150)
+        self.parallel_animation_group.addAnimation(extend_combobox_animation)
+
+        # Start the parallel animation group and reset click state
+        self.parallel_animation_group.finished.connect(self.reset_hover_state)
+        self.parallel_animation_group.start()
+
+    def reset_hover_state(self):
+        """Reset hover state to allow animations when hovering again."""
+        self.clicked = False  # Reset the clicked state
+
     def eventFilter(self, obj, event):
-        """Handle hover events for the next step button."""
-        if obj == self.next_step_button:
-            if event.type() == QtCore.QEvent.Enter and self.next_step_button.isEnabled():
+        """Handle hover events for the next step button.
+        """
+        if obj == self.next_step_button and not self.clicked:  # Only handle hover if not clicked
+            if event.type() == QtCore.QEvent.Type.Enter and self.next_step_button.isEnabled():
                 self.handle_hover_enter()
-            elif event.type() == QtCore.QEvent.Leave:
+            elif event.type() == QtCore.QEvent.Type.Leave:
                 self.handle_hover_leave()
         return super().eventFilter(obj, event)
 
@@ -190,7 +274,7 @@ class StatusNextStepWidget(QtWidgets.QWidget):
         expand_button_animation.setDuration(300)
         expand_button_animation.setStartValue(self.next_step_button.width())
         expand_button_animation.setEndValue(120)
-        expand_button_animation.setEasingCurve(QtCore.QEasingCurve.InOutQuad)
+        expand_button_animation.setEasingCurve(QtCore.QEasingCurve.Type.InOutQuad)
         self.parallel_animation_group.addAnimation(expand_button_animation)
 
         shorten_combobox_animation = QtCore.QPropertyAnimation(self.status_combobox, b"minimumWidth")
@@ -199,47 +283,20 @@ class StatusNextStepWidget(QtWidgets.QWidget):
         shorten_combobox_animation.setEndValue(max(80, self.status_combobox.width() - 70))
         self.parallel_animation_group.addAnimation(shorten_combobox_animation)
 
-        # Create animation for resizing the whole widget
-        expand_widget_animation = QtCore.QPropertyAnimation(self, b"minimumWidth")
-        expand_widget_animation.setDuration(300)
-        expand_widget_animation.setStartValue(self.width())
-        expand_widget_animation.setEndValue(self.width() + 70)
-        expand_widget_animation.setEasingCurve(QtCore.QEasingCurve.InOutQuad)
-        self.parallel_animation_group.addAnimation(expand_widget_animation)
-
         # Start the parallel animation group
         self.parallel_animation_group.start()
 
     def handle_hover_leave(self):
-        """Handle hover leave event to shrink the button and expand combobox."""
-        self.next_step_button.setText("")
-        self.parallel_animation_group.clear()  # Clear existing animations
+        """Handle hover leave event to shrink the button and expand combobox.
+        """
+        if self.clicked:
+            return
 
-        # Create animations for shrinking button and expanding combobox
-        shrink_button_animation = QtCore.QPropertyAnimation(self.next_step_button, b"minimumWidth")
-        shrink_button_animation.setDuration(300)
-        shrink_button_animation.setStartValue(self.next_step_button.width())
-        shrink_button_animation.setEndValue(30)
-        shrink_button_animation.setEasingCurve(QtCore.QEasingCurve.InOutQuad)
-        self.parallel_animation_group.addAnimation(shrink_button_animation)
+        self.animate_back()
 
-        extend_combobox_animation = QtCore.QPropertyAnimation(self.status_combobox, b"minimumWidth")
-        extend_combobox_animation.setDuration(300)
-        extend_combobox_animation.setStartValue(self.status_combobox.width())
-        extend_combobox_animation.setEndValue(150)
-        self.parallel_animation_group.addAnimation(extend_combobox_animation)
-
-        # Create animation for resizing the whole widget
-        shrink_widget_animation = QtCore.QPropertyAnimation(self, b"minimumWidth")
-        shrink_widget_animation.setDuration(300)
-        shrink_widget_animation.setStartValue(self.width())
-        shrink_widget_animation.setEndValue(self.width() - 70)
-        shrink_widget_animation.setEasingCurve(QtCore.QEasingCurve.InOutQuad)
-        self.parallel_animation_group.addAnimation(shrink_widget_animation)
-
-        # Start the parallel animation group
-        self.parallel_animation_group.start()
-
+    def showEvent(self, event):
+        self.animate_back()
+        super().showEvent(event)
 
 # Define a utility class for UI-related common methods
 class UIUtil:
@@ -272,71 +329,25 @@ class UIUtil:
         animation.setDuration(duration)
         animation.setStartValue(start_value)
         animation.setEndValue(end_value)
-        animation.setEasingCurve(QtCore.QEasingCurve.OutQuad)
+        animation.setEasingCurve(QtCore.QEasingCurve.Type.OutQuad)
         animation.start()
         # Keep a reference to prevent garbage collection
         widget.animation = animation
 
-class FloatingCard(QtWidgets.QWidget):
-    """Custom floating card widget designed for feedback or comments."""
+class AutoResizingTextBrowser(QtWidgets.QTextBrowser):
 
-    def __init__(self, parent=None, content="", attached_image_path=None):
+    MAX_HEIGHT = 300  # Set the maximum height as a class attribute
+
+    def __init__(self, parent=None):
+        """Initialize the auto-resizing text browser.
+
+        Args:
+            parent (Optional[QWidget]): The parent widget.
+        """
         super().__init__(parent)
-        self.attached_image_path = attached_image_path
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
-
-        # Apply shadow effect using utility method
-        self.setGraphicsEffect(UIUtil.create_shadow_effect())
-
-        # Main layout of the card
-        self.main_layout = QtWidgets.QVBoxLayout(self)
-        self.main_layout.setContentsMargins(10, 0, 10, 20)
-        self.main_layout.setSpacing(0)
-
-        # Set size policy to expand to the available width
-        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
-
-        # Header layout containing the drag area and the status/next step widget
-        header_widget = QtWidgets.QWidget(self)
-        header_layout = QtWidgets.QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(5, 5, 5, 5)
-        header_widget.setFixedHeight(30)
-        header_widget.setStyleSheet(f"""
-            background-color: {PRIMARY_COLOR}; 
-            border-top-left-radius: 15px; 
-            border-top-right-radius: 15px; 
-            color: {TEXT_COLOR};
-        """)
-
-        # Drag area
-        self.card_label = QtWidgets.QLabel("Task Note", header_widget)
-        self.card_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        header_layout.addWidget(self.card_label)
-
-        # Status and next step widget
-        self.status_widget = StatusNextStepWidget(current_status="To Do", parent=header_widget)
-        
-        header_layout.addStretch()
-        header_layout.addWidget(self.status_widget)
-
-        # Add header to main layout
-        self.main_layout.addWidget(header_widget)
-
-        # Comment Text Area with markdown support
-        self.comment_area = QtWidgets.QTextBrowser(self)
-
-        # Add attached image if present
-        if attached_image_path:
-            self.image_label = QtWidgets.QLabel(self)
-            self.image_label.setAlignment(QtCore.Qt.AlignCenter)
-            self.main_layout.addWidget(self.image_label)
-            self.update_image(attached_image_path)
-
-        content = set_markdown_with_simple_line_breaks(content)
-        self.comment_area.setMarkdown(content)
-        self.comment_area.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
-        self.comment_area.setStyleSheet(f"""
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
+        self.document().contentsChanged.connect(self.adjust_height_to_content)
+        self.setStyleSheet(f"""
             QTextBrowser {{
                 background-color: {SECONDARY_COLOR};
                 border: 1px solid gray;
@@ -346,91 +357,276 @@ class FloatingCard(QtWidgets.QWidget):
                 padding: 10px;
             }}
         """)
-        self.comment_area.setOpenLinks(False)
-        self.comment_area.document().contentsChanged.connect(self.adjust_comment_area_size)
+        self.setOpenLinks(False)
+
+    def sizeHint(self):
+        """Override sizeHint to provide the height based on the document content.
+        """
+        document_height = self._calculate_content_height()
+        return QtCore.QSize(self.viewport().width(), document_height)
+
+    def adjust_height_to_content(self):
+        """Adjust the height of the widget to fit the document content, respecting the maximum height.
+        """
+        height = self._calculate_content_height()
+        # Use min() to ensure the height does not exceed MAX_HEIGHT
+        self.setFixedHeight(min(height, self.MAX_HEIGHT))
+
+    def _calculate_content_height(self):
+        """Calculate the total height needed to display the document content.
+        """
+        # Get the document height, considering the current width of the QTextBrowser
+        document_width = self.viewport().width()
+        self.document().setTextWidth(document_width)  # Set text width to match the widget's width
+        document_height = int(self.document().size().height())  # Convert to integer
+        # Calculate additional margins if necessary
+        vertical_margins = self.contentsMargins().top() + self.contentsMargins().bottom()
+        return document_height + vertical_margins
+
+    def resizeEvent(self, event):
+        """Handle the widget's resize event.
+        """
+        super().resizeEvent(event)
+        # Adjust height when the width changes
+        self.adjust_height_to_content()
+
+class FloatingCard(QtWidgets.QWidget):
+    """Custom floating card widget designed for feedback or comments.
+    """
+
+    # Initialization and Setup
+    # ------------------------
+
+    # Signal emitted when the card's status changes
+    status_changed = QtCore.Signal(object, str, str)  # Emits self, previous_status, new_status
+
+    def __init__(self, parent=None, content="", attached_image_path=None):
+        super().__init__(parent)
+
+        # Store the arguments
+        self.attached_image_path = attached_image_path
+        self.content = content
+
+        # Initialize setup
+        self.__init_attributes()
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_attributes(self):
+        """Initialize the attributes.
+        """
+        self.current_status = "To Do"
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        # Set size policy to expand to the available width
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
+
+        # Apply shadow effect using utility method
+        self.setGraphicsEffect(UIUtil.create_shadow_effect())
+
+        # Set size policy to expand to the available width
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
+
+        # Create Layouts
+        # --------------
+        # Main layout of the card
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.setContentsMargins(5, 0, 5, 0)
+        self.main_layout.setSpacing(0)
+
+        # Header layout containing the title, status/next step widget, and close button
+        header_widget = QtWidgets.QWidget(self)
+        header_layout = QtWidgets.QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(10, 5, 10, 5)
+        header_widget.setFixedHeight(40)
+        header_widget.setStyleSheet(f"""
+            background-color: {PRIMARY_COLOR}; 
+            border-top-left-radius: 15px; 
+            border-top-right-radius: 15px; 
+            color: {TEXT_COLOR};
+        """)
+
+        # Title label
+        card_label = QtWidgets.QLabel("Task Note", header_widget)
+        card_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        header_layout.addWidget(card_label)
+
+        # Spacer
+        header_layout.addStretch()
+
+        # Status and next step widget
+        self.status_widget = StatusNextStepWidget(current_status=self.current_status, container=self.parent())
+        header_layout.addWidget(self.status_widget)
+
+        # Add header to main layout
+        self.main_layout.addWidget(header_widget)
+
+        # Comment Text Area with markdown support
+        self.comment_area = AutoResizingTextBrowser(self)
+
+        # Add attached image if present
+        if self.attached_image_path:
+            self.image_label = QtWidgets.QLabel(self)
+            self.image_label.setAlignment(QtCore.Qt.AlignCenter)
+            self.main_layout.addWidget(self.image_label)
+            self.set_image(self.attached_image_path)
+
+        content = set_markdown_with_simple_line_breaks(self.content)
+        self.comment_area.setMarkdown(content)
+
         self.main_layout.addWidget(self.comment_area)
 
-        # Adjust card size based on content
-        self.adjust_card_size()
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
+        # Connect the anchorClicked signal to handle user mentions
+        self.comment_area.anchorClicked.connect(self._handle_user_mentions)
 
-    def update_image(self, image_path):
+        # Connect the status_changed signal
+        self.status_widget.status_changed.connect(self.on_status_changed)
+
+    def on_status_changed(self, new_status):
+        """Handle when status is changed."""
+        previous_status = self.current_status
+        self.current_status = new_status
+        self.status_changed.emit(self, previous_status, new_status)
+
+    def set_image(self, image_path):
         """Update the image label with a scaled version of the image to fit the card width."""
         pixmap = QtGui.QPixmap(image_path)
         if not pixmap.isNull():
-            # Scale the image to fit the card width
-            card_width = self.width() - 20  # Adjust for margins
-            # Use correct enum types for AspectRatioMode and TransformationMode
             scaled_pixmap = pixmap.scaled(
-                card_width, 
-                pixmap.height(),  # Use the original height for scaling (scaled proportionally)
-                QtCore.Qt.AspectRatioMode.KeepAspectRatio,  # Correct enum for aspect ratio
-                QtCore.Qt.TransformationMode.SmoothTransformation  # Correct enum for smooth transformation
+                # TODO: Set to appropriate size
+                340, 
+                pixmap.height(),
+                QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+                QtCore.Qt.TransformationMode.SmoothTransformation
             )
             self.image_label.setPixmap(scaled_pixmap)
-            self.adjust_card_size()
 
-
-    def adjust_card_size(self):
-        """Adjust the card size based on its content."""
-        # Calculate the height of the text area based on the content
-        document_height = self.comment_area.document().size().height()
-        
-        # Calculate additional height if an image is attached
-        image_height = 0
-        if self.attached_image_path and hasattr(self, 'image_label'):
-            image_height = self.image_label.pixmap().height() if self.image_label.pixmap() else 0
-            image_height += 20  # Add padding for spacing
-
-        # Calculate the total height required for the card
-        total_height = 60 + image_height + int(document_height) + 40  # Add additional margins and header height
-        self.setMinimumHeight(total_height)
-
-    def adjust_comment_area_size(self):
-        """Adjust the height of the comment area based on its content."""
-        document_height = self.comment_area.document().size().height()
-        self.comment_area.setFixedHeight(int(document_height) + 20)
-        self.adjust_card_size()
-
-    def resizeEvent(self, event):
-        """Handle the resize event to update image size and adjust card size."""
-        if self.attached_image_path:
-            self.update_image(self.attached_image_path)
-        self.adjust_card_size()
-        super().resizeEvent(event)
-
-    def handle_user_mentions(self, url):
+    def _handle_user_mentions(self, url):
         """Handle clicks on user mentions."""
         user = url.toString().lstrip("user:")
         QtWidgets.QMessageBox.information(self, "User Mention", f"You clicked on @{user}")
 
+    def animate_out(self, direction='right'):
+        """Animate the card sliding out in the specified direction and remove it from the layout.
+
+        Args:
+            direction (str): Direction to animate the card ('left' or 'right').
+        """
+        # Disable the card during animation
+        self.setEnabled(False)
+
+        if self.status_widget.parallel_animation_group.state() == QtCore.QAbstractAnimation.State.Running:
+            # Stop the current animation and re-calculate based on new size
+            self.status_widget.parallel_animation_group.stop()
+
+        # Animation to slide the card out to the specified direction
+        self.animation = QtCore.QPropertyAnimation(self, b"pos")
+        self.animation.setDuration(300)
+        start_pos = self.pos()
+
+        # Determine the end position based on the direction
+        offset = 500 if direction == 'right' else -500  # Move 500 pixels left or right
+        end_pos = self.pos() + QtCore.QPoint(offset, 0)  # Slide left or right
+
+        self.animation.setStartValue(start_pos)
+        self.animation.setEndValue(end_pos)
+        self.animation.setEasingCurve(QtCore.QEasingCurve.Type.InCubic)
+        self.animation.finished.connect(self.on_animation_finished)
+        self.animation.start()
+
+    def on_animation_finished(self):
+        """Handle the cleanup after the animation finishes."""
+        # Remove the card from its parent layout
+        self.hide()
+        self.setEnabled(True)
+
+    def get_status(self):
+        return self.status_widget.status_combobox.currentText()
 
 class TransparentFloatingLayout(QtWidgets.QWidget):
     """Main widget holding a transparent scrollable layout with feedback cards, drag functionality, and filter buttons."""
 
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Feedback and Comment System")
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
-        self.setStyleSheet(f"""
-            QWidget {{
-                background-color: {PRIMARY_COLOR};
-                color: {TEXT_COLOR};
-            }}
-        """)
+    WINDOW_FLAGS = QtCore.Qt.WindowType.FramelessWindowHint | QtCore.Qt.WindowType.WindowStaysOnTopHint
 
+    def __init__(self, window_title: str = "Feedback and Comment System", parent = None):
+        super().__init__(parent, self.WINDOW_FLAGS)
+
+        # Store the arguments
+        self.window_title = window_title
+
+        # Initialize setup
+        self.__init_attributes()
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_attributes(self):
+        """Initialize the attributes.
+        """
         # Enable dragging and closing on the entire layout
         self.is_dragging = False
-        self.offset = None
+        self._widget_position_offset = None
+        self.visible_cards = []
 
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        self.setWindowTitle(self.window_title)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
+
+        # Apply shadow effect using utility method
+        self.setGraphicsEffect(UIUtil.create_shadow_effect())
+        self.resize(400, 800)
+
+        # Create Layouts
+        # --------------
         # Main layout for the entire widget
         self.main_layout = QtWidgets.QVBoxLayout(self)
-        self.main_layout.setAlignment(QtCore.Qt.AlignTop)
+        self.main_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
         self.main_layout.setSpacing(10)
         self.main_layout.setContentsMargins(10, 10, 10, 10)
 
+        # Create Widgets
+        # --------------
+        self.header_widget = self._create_header()
+        self.status_filter_widget = self._create_filter_widget()
+        self.scroll_area = self._create_scroll_area()
+        self.input_bar = self._create_input_bar()
+
+        # Add Widgets to Layouts
+        # ----------------------
+        self.main_layout.addWidget(self.header_widget)
+        self.main_layout.addWidget(self.status_filter_widget)
+        self.main_layout.addWidget(self.scroll_area)
+        self.main_layout.addWidget(self.input_bar)
+
+        # Initialize UI resizing
+        self.adjust_input_height()
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
+        # Connect signals to slots
+        self.collapse_button.clicked.connect(self.toggle_card_area)
+        self.layout_close_button.clicked.connect(self.close)
+
+        self.attach_button.clicked.connect(self.attach_screenshot)
+        self.new_task_input.textChanged.connect(self.adjust_input_height)
+        self.new_task_input.textChanged.connect(self.toggle_add_button_state)
+        self.add_button.clicked.connect(self.add_new_task)
+
+        # Add keyboard shortcuts for common actions
+        QtWidgets.QShortcut("Ctrl+Return", self.new_task_input, self.add_new_task)
+        QtWidgets.QShortcut("Ctrl+Enter", self.new_task_input, self.add_new_task)
+
+    def _create_header(self) -> QtWidgets.QWidget:
         # Header widget with drag area and close button for the entire layout
         header_widget = QtWidgets.QWidget(self)
+        # header_widget.setCursor(QtCore.Qt.CursorShape.OpenHandCursor)
         header_layout = QtWidgets.QHBoxLayout(header_widget)
         header_layout.setContentsMargins(10, 5, 10, 5)
         header_widget.setFixedHeight(40)
@@ -441,15 +637,32 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         """)
 
         # Header widget with application title
-        self.app_title = QtWidgets.QLabel("Feedback & Comments", header_widget)
-        self.app_title.setStyleSheet("font-size: 16px; color: #FFFFFF;")
-        header_layout.addWidget(self.app_title)
+        app_title = QtWidgets.QLabel("Feedback & Comments", header_widget)
+        app_title.setStyleSheet("font-size: 16px; color: #FFFFFF;")
+        header_layout.addWidget(app_title)
 
         # Spacer to push buttons to the right
         header_layout.addStretch()
 
+        # Toggle background button
+        self.toggle_bg_button = QtWidgets.QPushButton(TablerQIcon.background, '', header_widget)
+        self.toggle_bg_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self.toggle_bg_button.setFixedSize(20, 20)
+        self.toggle_bg_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                font-size: 16px;
+                color: {TEXT_COLOR};
+            }}
+            QPushButton:hover {{
+                color: cyan;
+            }}
+        """)
+
         # Collapse/Expand button
         self.collapse_button = QtWidgets.QPushButton("−", header_widget)
+        self.collapse_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.collapse_button.setFixedSize(20, 20)
         self.collapse_button.setStyleSheet(f"""
             QPushButton {{
@@ -462,11 +675,10 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
                 color: cyan;
             }}
         """)
-        header_layout.addWidget(self.collapse_button, alignment=QtCore.Qt.AlignRight)
-        self.collapse_button.clicked.connect(self.toggle_card_area)
 
         # Close button for the entire layout
         self.layout_close_button = QtWidgets.QPushButton("✕", header_widget)
+        self.layout_close_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.layout_close_button.setFixedSize(20, 20)
         self.layout_close_button.setStyleSheet(f"""
             QPushButton {{
@@ -479,94 +691,117 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
                 color: red;
             }}
         """)
-        self.layout_close_button.clicked.connect(self.close)
-        header_layout.addWidget(self.layout_close_button, alignment=QtCore.Qt.AlignRight)
 
-        # Add header to the main layout
-        self.main_layout.addWidget(header_widget)
+        # Add Widgets to Layouts
+        # ----------------------
+        header_layout.addWidget(self.toggle_bg_button)
+        header_layout.addWidget(self.collapse_button)
+        header_layout.addWidget(self.layout_close_button)
 
-        # Create a second line for the filter buttons
-        self.filter_widget = QtWidgets.QWidget(self)
-        filter_layout = QtWidgets.QHBoxLayout(self.filter_widget)
-        filter_layout.setContentsMargins(10, 5, 10, 5)
-        self.filter_widget.setFixedHeight(40)
-        self.filter_widget.setStyleSheet(f"""
-            background-color: rgba(60, 60, 60, 200);
-            border-radius: 10px;
-            color: {TEXT_COLOR};
+        return header_widget
+
+    def _create_filter_widget(self) -> 'FilterSelectionBar':
+        status_filter_widget = FilterSelectionBar(self)
+        status_filter_widget.add_filters(STATUS_ORDER)
+        status_filter_widget.set_filter_checked("To Do")
+        status_filter_widget.set_filter_checked("In Progress")
+        status_filter_widget.filter_changed.connect(self.filter_cards)
+        status_filter_widget.filters_cleared.connect(self.filter_cards)
+
+        widget = QtWidgets.QFrame()
+        layout = QtWidgets.QHBoxLayout(widget)
+        layout.addWidget(status_filter_widget)
+
+        widget.get_active_filters = status_filter_widget.get_active_filters
+        widget.set_filter_checked = status_filter_widget.set_filter_checked
+        widget.clear_filters = status_filter_widget.clear_filters
+
+        layout.setContentsMargins(10, 5, 10, 5)
+        widget.setFixedHeight(40)
+        widget.setStyleSheet(f"""
+            QFrame {{
+                background-color: #333;
+                border-radius: 10px;
+                color: {TEXT_COLOR};
+            }}
+            QToolButton {{
+                background-color: #333;
+                border-radius: 10px;
+                border: 1px solid gray;
+                color: {TEXT_COLOR};
+                padding: 1 6;
+            }}
+            QToolButton:hover {{
+                background-color: rgba(90, 90, 90, 200);
+            }}
+            QToolButton:checked {{
+                background-color: rgba(100, 100, 100, 200);
+                border: 1px solid cyan;
+            }}
         """)
 
-        # Filter buttons (e.g., show "To Do", "In Progress", or "Done" cards)
-        self.filter_group = QtWidgets.QButtonGroup()
-        self.filter_buttons = {}
-        for status in ["All"] + STATUS_ORDER:
-            button = QtWidgets.QPushButton(status, self.filter_widget)
-            button.setCheckable(True)
-            button.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: rgba(70, 70, 70, 200);
-                    border: 1px solid gray;
-                    color: {TEXT_COLOR};
-                }}
-                QPushButton:hover {{
-                    background-color: rgba(90, 90, 90, 200);
-                }}
-                QPushButton:checked {{
-                    background-color: rgba(100, 100, 100, 200);
-                    border: 1px solid cyan;
-                }}
-            """)
-            button.clicked.connect(self.on_filter_button_clicked)
-            filter_layout.addWidget(button)
-            self.filter_buttons[status] = button
-            self.filter_group.addButton(button)
-        self.filter_buttons["All"].setChecked(True)  # Default to show all cards
+        # Add a new clear filters button
+        clear_filters_button = QtWidgets.QPushButton(TablerQIcon.filter_x, '', widget)
+        clear_filters_button.setFixedWidth(32)
+        clear_filters_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        clear_filters_button.setToolTip("Clear Filters")
+        clear_filters_button.setStyleSheet(f"""
+            QPushButton {{
+                border: none;
+                background: transparent;
+                border-radius: 10px;
+                padding: 2px 0px;
+            }}
+            QPushButton:hover {{
+                background-color: #D54;
+            }}
+            QPushButton:pressed {{
+                background-color: #222;
+            }}
+        """)
+        clear_filters_button.clicked.connect(status_filter_widget.clear_filters)
 
-        # Make filter buttons single-select by default
-        self.filter_group.setExclusive(True)
+        layout.addWidget(clear_filters_button)
 
-        # Add the filter widget to the main layout
-        self.main_layout.addWidget(self.filter_widget)
+        return widget
 
+    def _create_scroll_area(self) -> QtWidgets.QScrollArea:
         # Scrollable area for feedback cards
-        self.scroll_area = QtWidgets.QScrollArea(self)
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.scroll_area.setStyleSheet("background: transparent; border: none;")  # Transparent scroll area background
+        scroll_area = QtWidgets.QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setStyleSheet("background: transparent; border: none;")  # Transparent scroll area background
 
         # Container for scrollable area
         self.scroll_content = QtWidgets.QWidget()
         self.scroll_layout = QtWidgets.QVBoxLayout(self.scroll_content)
-        self.scroll_layout.setAlignment(QtCore.Qt.AlignTop)  # Align cards to the top
-        self.scroll_layout.setSpacing(10)
+        self.scroll_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)  # Align cards to the top
+        self.scroll_layout.setSpacing(20)
         self.scroll_layout.setContentsMargins(0, 0, 0, 0)
+        # Set size policy to expand to the available width
+        # scroll_area.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
 
-        # Set transparent background for scroll content
-        self.scroll_content.setStyleSheet("background: transparent;")
+        # Placeholder card for when no cards match the current filter
+        self.placeholder_card = PlaceholderCard(self, "No cards match the selected filters.")
+        self.scroll_layout.addWidget(self.placeholder_card)
 
-        # Add a few floating cards below the header inside the scrollable area
-        card_count = 5
-        for i in range(card_count):
-            content = f"This is a comment or feedback. Mentioning @user{i}."
-            card = FloatingCard(self, content=content)
-            self.add_card_with_animation(card)
+        scroll_area.setWidget(self.scroll_content)
 
-        self.scroll_area.setWidget(self.scroll_content)
-        self.main_layout.addWidget(self.scroll_area)
+        return scroll_area
 
-        # Sticky bar at the bottom for new task and attachment
-        sticky_bar = QtWidgets.QWidget(self)
-        sticky_layout = QtWidgets.QHBoxLayout(sticky_bar)
+    def _create_input_bar(self):
+        # Input bar at the bottom for new task and attachment
+        input_bar = QtWidgets.QWidget(self)
+        sticky_layout = QtWidgets.QHBoxLayout(input_bar)
         sticky_layout.setContentsMargins(10, 5, 10, 5)
-        sticky_bar.setStyleSheet(f"""
+        input_bar.setStyleSheet(f"""
             background-color: {PRIMARY_COLOR};
             border-radius: 10px;
             color: {TEXT_COLOR};
         """)
 
         # Attach image button
-        self.attach_button = QtWidgets.QToolButton(sticky_bar)
+        self.attach_button = QtWidgets.QToolButton(input_bar)
         self.attach_button.setIcon(TablerQIcon.image_in_picture)
         self.attach_button.setToolTip("Attach Image")
         self.attach_button.setStyleSheet(f"""
@@ -575,13 +810,13 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
                 border: none;
             }}
         """)
-        self.attach_button.clicked.connect(self.attach_screenshot)
+
         sticky_layout.addWidget(self.attach_button)
 
         # Input field for new task or comment
-        self.new_task_input = QtWidgets.QPlainTextEdit(sticky_bar)
+        self.new_task_input = QtWidgets.QPlainTextEdit(input_bar)
         self.new_task_input.setPlaceholderText("Add a new task or comment... Use @username to mention someone.")
-        self.new_task_input.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        self.new_task_input.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
         self.new_task_input.setStyleSheet(f"""
             QPlainTextEdit {{
                 background-color: {SECONDARY_COLOR};
@@ -590,12 +825,11 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
                 padding: 5px;
             }}
         """)
-        self.new_task_input.textChanged.connect(self.adjust_input_height)
-        self.new_task_input.textChanged.connect(self.toggle_add_button_state)  # Enable/disable button on text change
+
         sticky_layout.addWidget(self.new_task_input)
 
         # Add button for adding new task or comment with icon
-        self.add_button = QtWidgets.QToolButton(sticky_bar)
+        self.add_button = QtWidgets.QToolButton(input_bar)
         self.add_button.setIcon(TablerQIcon.plus)
         self.add_button.setToolTip("Add Task")
         self.add_button.setEnabled(False)  # Disable add button initially
@@ -613,48 +847,15 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
                 color: {DISABLED_COLOR};
             }}
         """)
-        self.add_button.clicked.connect(self.add_new_task)
+
         sticky_layout.addWidget(self.add_button)
 
-        self.main_layout.addWidget(sticky_bar)
-
-        self.resize(400, 800)
-
-        # Apply shadow effect using utility method
-        self.setGraphicsEffect(UIUtil.create_shadow_effect())
-
-        # Add keyboard shortcuts for common actions
-        self.add_task_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Return"), self)
-        self.add_task_shortcut.activated.connect(self.add_new_task)
-        self.attach_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+O"), self)
-        self.attach_shortcut.activated.connect(self.attach_screenshot)
-
-        self.adjust_input_height()
-
-    def on_filter_button_clicked(self):
-        """Handle filter button click to clear other selections if not in multi-select mode."""
-        if self.filter_group.exclusive():
-            for status, button in self.filter_buttons.items():
-                if button != self.sender():
-                    button.setChecked(False)
-        self.filter_cards()
-
-    def keyPressEvent(self, event):
-        """Handle Shift key press to enable multi-selection for filters."""
-        if event.key() == QtCore.Qt.Key_Shift:
-            self.filter_group.setExclusive(False)
-
-    def keyReleaseEvent(self, event):
-        """Handle Shift key release to revert to single-selection for filters."""
-        if event.key() == QtCore.Qt.Key_Shift:
-            self.filter_group.setExclusive(True)
+        return input_bar
 
     def toggle_add_button_state(self):
         """Enable or disable the Add button based on whether the input field is empty."""
-        if self.new_task_input.toPlainText().strip():
-            self.add_button.setEnabled(True)
-        else:
-            self.add_button.setEnabled(False)
+        state = bool(self.new_task_input.toPlainText().strip())
+        self.add_button.setEnabled(state)
 
     def adjust_input_height(self):
         """Adjust the height of the input field based on content."""
@@ -674,19 +875,38 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
             self.attached_image_path = file_path
             self.new_task_input.setPlainText(f"Attached Screenshot: {os.path.basename(file_path)}\n{self.new_task_input.toPlainText()}")
 
-    def add_new_task(self):
+    def add_new_task(self, message: str = None, attached_files: List[str] = None):
         """Add a new task or comment as a floating card."""
-        new_task_text = self.new_task_input.toPlainText().strip()
-        if new_task_text:
-            # Handle user mentions by converting @username to clickable links
-            formatted_text = self.format_user_mentions(new_task_text)
-            new_card = FloatingCard(self, content=formatted_text, attached_image_path=getattr(self, 'attached_image_path', None))
-            self.add_card_with_animation(new_card)
-            self.new_task_input.clear()  # Clear the input field after adding
-            self.attached_image_path = None  # Reset the attached image path
+        new_task_text = message or self.new_task_input.toPlainText().strip()
 
-            # Scroll to the bottom of the scroll area
-            QtCore.QTimer.singleShot(0, self.scroll_to_bottom)
+        if not new_task_text:
+            return
+
+        # Ensure "To Do" status is visible in the filter
+        self.ensure_status_visible("To Do")
+
+        # Handle user mentions by converting @username to clickable links
+        formatted_text = format_user_mentions(new_task_text)
+        new_card = FloatingCard(self, content=formatted_text, attached_image_path=getattr(self, 'attached_image_path', None))
+        self.add_card(new_card)
+        self.new_task_input.clear()  # Clear the input field after adding
+        self.attached_image_path = None  # Reset the attached image path
+
+        # Hide placeholder card since a new card is added
+        self.placeholder_card.setVisible(False)
+
+        # Scroll to the bottom of the scroll area
+        QtCore.QTimer.singleShot(0, self.scroll_to_bottom)
+
+    def ensure_status_visible(self, status):
+        """Ensure that the given status is visible by modifying the filter if necessary.
+
+        Args:
+            status (str): The status to ensure visibility.
+        """
+        active_statuses = self.status_filter_widget.get_active_filters() or STATUS_ORDER
+        if status not in active_statuses:
+            self.status_filter_widget.set_filter_checked(status)
 
     def scroll_to_bottom(self):
         """Smoothly scroll to the bottom of the scroll area."""
@@ -695,79 +915,99 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         scroll_animation.setDuration(500)
         scroll_animation.setStartValue(scroll_bar.value())
         scroll_animation.setEndValue(scroll_bar.maximum())
-        scroll_animation.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        scroll_animation.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
         scroll_animation.start()
         self.scroll_animation = scroll_animation  # Keep a reference to prevent garbage collection
 
-    def format_user_mentions(self, text):
-        """Convert @username mentions to clickable links in markdown."""
-        import re
-        def replace_mention(match):
-            username = match.group(1)
-            return f"[ @{username} ](user:{username})"
-        return re.sub(r'@(\w+)', replace_mention, text)
-
     def filter_cards(self):
         """Filter cards based on the selected filter button."""
-        selected_status = [status for status, button in self.filter_buttons.items() if button.isChecked()]
-        if "All" in selected_status or not selected_status:
-            selected_status = STATUS_ORDER  # Show all cards if 'All' is selected or none selected
+        # Get the statuses of all checked filters
+        selected_status = self.status_filter_widget.get_active_filters() or STATUS_ORDER
+
+        self.visible_cards.clear()
+
+        # Iterate through all cards and update visibility based on the selected filters
         for i in range(self.scroll_layout.count()):
             card = self.scroll_layout.itemAt(i).widget()
-            card_status = card.status_widget.status_combobox.currentText()
-            card.setVisible(card_status in selected_status)
+
+            # Skip placeholder card when filtering
+            if isinstance(card, PlaceholderCard):
+                continue
+
+            # Get the card's status and determine visibility
+            card.setVisible(card.get_status() in selected_status)
+            if card.isVisible():
+                self.visible_cards.append(card)
+
+        # Show placeholder card if no other cards are visible
+        self.placeholder_card.setVisible(not self.visible_cards)
 
     def toggle_card_area(self):
         """Toggle the visibility of the card area (expand/collapse)."""
         if self.scroll_area.isVisible():
             UIUtil.apply_animation(self.scroll_area, "maximumHeight", self.scroll_area.height(), 0)
-            self.filter_widget.setVisible(False)
+            self.status_filter_widget.setVisible(False)
             self.scroll_area.setVisible(False)
             self.collapse_button.setText("+")  # Change button to show expand icon
         else:
-            self.filter_widget.setVisible(True)
+            self.status_filter_widget.setVisible(True)
             self.scroll_area.setVisible(True)
             UIUtil.apply_animation(self.scroll_area, "maximumHeight", 0, 800)
             self.collapse_button.setText("−")  # Change button to show collapse icon
 
-    def add_card_with_animation(self, card):
+    def add_card(self, card: 'FloatingCard'):
         """Add a card to the layout with a fade-in animation."""
         card.setGraphicsEffect(UIUtil.create_shadow_effect())
         card.setVisible(False)
-        self.scroll_layout.addWidget(card, alignment=QtCore.Qt.AlignTop)
+        self.scroll_layout.addWidget(card)
+        self.visible_cards.append(card)
         card.setVisible(True)
-        UIUtil.apply_animation(card, "windowOpacity", 0.0, 1.0, duration=500)
+        # Connect to card's status_changed signal
+        card.status_changed.connect(self.update_card_visibility)
 
-    def paintEvent(self, event):
-        """Override paintEvent to set a transparent background for the layout."""
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        brush = QtGui.QBrush(QtGui.QColor(255, 255, 255, 0))  # Fully transparent
-        painter.setBrush(brush)
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.drawRect(self.rect())
+    def update_card_visibility(self, card: 'FloatingCard', previous_status, new_status):
+        """Handle when a card's status is changed.
+        """
+        selected_status = self.status_filter_widget.get_active_filters() or STATUS_ORDER
 
-    def mousePressEvent(self, event):
+        if card.isVisible() and new_status not in selected_status:
+            # Card should be hidden, animate it out to left or right
+            direction = "right" if STATUS_ORDER.index(new_status) > STATUS_ORDER.index(previous_status) else "left"
+            card.animate_out(direction)
+            self.visible_cards.remove(card)
+
+        if not self.visible_cards:
+            self.placeholder_card.setVisible(True)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent):
         """Start dragging the entire layout when the mouse is pressed on the layout drag area."""
-        if event.button() == QtCore.Qt.LeftButton and self.app_title.geometry().contains(event.pos()):
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self.header_widget.geometry().contains(event.pos()):
             self.is_dragging = True
-            self.offset = event.pos()
+            self._widget_position_offset = event.pos()
 
-    def mouseMoveEvent(self, event):
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
         """Handle dragging of the entire layout."""
         if self.is_dragging:
-            self.move(self.mapToParent(event.pos() - self.offset))
+            self.move(self.mapToParent(event.pos() - self._widget_position_offset))
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
         """End dragging when the mouse is released."""
-        if event.button() == QtCore.Qt.LeftButton:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self.is_dragging = False
-            self.offset = None
+            self._widget_position_offset = None
+
 
 if __name__ == "__main__":
     from blackboard.theme import set_theme
     app = QtWidgets.QApplication([])
     set_theme(app)
     window = TransparentFloatingLayout()
+
+    # NOTE: Example: Add a few floating cards below the header inside the scrollable area
+    card_count = 4
+    for i in range(card_count):
+        content = f"This is a comment or feedback. Mentioning @user{i}."
+        window.add_new_task(content)
+
     window.show()
-    app.exec_()
+    app.exec()
