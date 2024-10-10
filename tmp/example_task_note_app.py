@@ -1,25 +1,23 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 from tablerqicon import TablerQIcon
-import os, re
+import os
+import re
 
 # Define a consistent color palette
-PRIMARY_COLOR = "#1E1E1E"
-SECONDARY_COLOR = "#252526"
+PRIMARY_COLOR = "#222"
+SECONDARY_COLOR = "#333"
 ACCENT_COLOR = "#0A84FF"
-TEXT_COLOR = "#FFFFFF"
+TEXT_COLOR = "#FFF"
 HOVER_COLOR = "#3A3A3C"
-DISABLED_COLOR = "#555555"
+DISABLED_COLOR = "#555"
 STATUS_COLOR = {
-    "To Do": "#FF9500",        # Orange
-    "In Progress": "#FFCC00",  # Yellow
-    "Done": "#34C759",         # Green
+    "To Do": "#F90",        # Orange
+    "In Progress": "#FC0",  # Yellow
+    "Done": "#3C5",         # Green
 }
 
 # Define the order of statuses
 STATUS_ORDER = ["To Do", "In Progress", "Done"]
-
-
-import re
 
 def set_markdown_with_simple_line_breaks(content):
     """Set markdown content with line breaks replaced only for regular lines."""
@@ -36,9 +34,14 @@ def set_markdown_with_simple_line_breaks(content):
 class StatusNextStepWidget(QtWidgets.QWidget):
     status_changed = QtCore.pyqtSignal(str)  # Signal emitted when status changes
 
-    def __init__(self, current_status="To Do", parent=None):
-        super().__init__(parent)
+    def __init__(self, current_status="To Do", container: 'TransparentFloatingLayout' = None):
+        super().__init__(container)
+
+
+        self.container = container
+        
         self.current_status = current_status
+        self.clicked = False  # Track the clicked state
 
         # Setup parallel animation group for synchronized animations
         self.parallel_animation_group = QtCore.QParallelAnimationGroup()
@@ -140,16 +143,26 @@ class StatusNextStepWidget(QtWidgets.QWidget):
 
     def mark_as_next_status(self):
         """Advance the task to the next status with a transition color animation."""
+        self.clicked = True  # Set clicked state to True
         next_status = self.get_next_status()
         if next_status:
+            # Check if the next status is in the currently visible statuses in the parent
+            visible_statuses = self.container.get_visible_statuses()
+
+            # Otherwise, animate the transition
+            self.status_combobox.setCurrentText(next_status)
+
+            if next_status in visible_statuses:
+                self.animate_back()
+            else:
+                self.next_step_button.setText("")
+
             gradient_animation = QtCore.QVariantAnimation()
             gradient_animation.setDuration(300)
             gradient_animation.setStartValue(QtGui.QColor(STATUS_COLOR.get(self.current_status, SECONDARY_COLOR)))
             gradient_animation.setEndValue(QtGui.QColor(STATUS_COLOR.get(next_status, SECONDARY_COLOR)))
             gradient_animation.valueChanged.connect(self.apply_gradient_color)
-            gradient_animation.finished.connect(lambda: self.status_combobox.setCurrentText(next_status))
             gradient_animation.start()
-            self.active_animations.append(gradient_animation)  # Manage animation lifetime explicitly
 
     def apply_gradient_color(self, color):
         """Apply the gradient color to the combobox background."""
@@ -171,9 +184,39 @@ class StatusNextStepWidget(QtWidgets.QWidget):
             }}
         """)
 
+    def animate_back(self):
+        """Animate the button back to its original size and clear hover state.
+        """
+        self.next_step_button.setText("")
+        self.parallel_animation_group.clear()  # Clear existing animations
+
+        # Create animations to reset button size
+        shrink_button_animation = QtCore.QPropertyAnimation(self.next_step_button, b"minimumWidth")
+        shrink_button_animation.setDuration(300)
+        shrink_button_animation.setStartValue(self.next_step_button.width())
+        shrink_button_animation.setEndValue(30)
+        shrink_button_animation.setEasingCurve(QtCore.QEasingCurve.InOutQuad)
+        self.parallel_animation_group.addAnimation(shrink_button_animation)
+
+        # Extend combobox animation back to original
+        extend_combobox_animation = QtCore.QPropertyAnimation(self.status_combobox, b"minimumWidth")
+        extend_combobox_animation.setDuration(300)
+        extend_combobox_animation.setStartValue(self.status_combobox.width())
+        extend_combobox_animation.setEndValue(150)
+        self.parallel_animation_group.addAnimation(extend_combobox_animation)
+
+        # Start the parallel animation group and reset click state
+        self.parallel_animation_group.finished.connect(self.reset_hover_state)
+        self.parallel_animation_group.start()
+
+    def reset_hover_state(self):
+        """Reset hover state to allow animations when hovering again."""
+        self.clicked = False  # Reset the clicked state
+
     def eventFilter(self, obj, event):
-        """Handle hover events for the next step button."""
-        if obj == self.next_step_button:
+        """Handle hover events for the next step button.
+        """
+        if obj == self.next_step_button and not self.clicked:  # Only handle hover if not clicked
             if event.type() == QtCore.QEvent.Enter and self.next_step_button.isEnabled():
                 self.handle_hover_enter()
             elif event.type() == QtCore.QEvent.Leave:
@@ -199,47 +242,20 @@ class StatusNextStepWidget(QtWidgets.QWidget):
         shorten_combobox_animation.setEndValue(max(80, self.status_combobox.width() - 70))
         self.parallel_animation_group.addAnimation(shorten_combobox_animation)
 
-        # Create animation for resizing the whole widget
-        expand_widget_animation = QtCore.QPropertyAnimation(self, b"minimumWidth")
-        expand_widget_animation.setDuration(300)
-        expand_widget_animation.setStartValue(self.width())
-        expand_widget_animation.setEndValue(self.width() + 70)
-        expand_widget_animation.setEasingCurve(QtCore.QEasingCurve.InOutQuad)
-        self.parallel_animation_group.addAnimation(expand_widget_animation)
-
         # Start the parallel animation group
         self.parallel_animation_group.start()
 
     def handle_hover_leave(self):
-        """Handle hover leave event to shrink the button and expand combobox."""
-        self.next_step_button.setText("")
-        self.parallel_animation_group.clear()  # Clear existing animations
+        """Handle hover leave event to shrink the button and expand combobox.
+        """
+        if self.clicked:
+            return
 
-        # Create animations for shrinking button and expanding combobox
-        shrink_button_animation = QtCore.QPropertyAnimation(self.next_step_button, b"minimumWidth")
-        shrink_button_animation.setDuration(300)
-        shrink_button_animation.setStartValue(self.next_step_button.width())
-        shrink_button_animation.setEndValue(30)
-        shrink_button_animation.setEasingCurve(QtCore.QEasingCurve.InOutQuad)
-        self.parallel_animation_group.addAnimation(shrink_button_animation)
+        self.animate_back()
 
-        extend_combobox_animation = QtCore.QPropertyAnimation(self.status_combobox, b"minimumWidth")
-        extend_combobox_animation.setDuration(300)
-        extend_combobox_animation.setStartValue(self.status_combobox.width())
-        extend_combobox_animation.setEndValue(150)
-        self.parallel_animation_group.addAnimation(extend_combobox_animation)
-
-        # Create animation for resizing the whole widget
-        shrink_widget_animation = QtCore.QPropertyAnimation(self, b"minimumWidth")
-        shrink_widget_animation.setDuration(300)
-        shrink_widget_animation.setStartValue(self.width())
-        shrink_widget_animation.setEndValue(self.width() - 70)
-        shrink_widget_animation.setEasingCurve(QtCore.QEasingCurve.InOutQuad)
-        self.parallel_animation_group.addAnimation(shrink_widget_animation)
-
-        # Start the parallel animation group
-        self.parallel_animation_group.start()
-
+    def showEvent(self, event):
+        self.animate_back()
+        super().showEvent(event)
 
 # Define a utility class for UI-related common methods
 class UIUtil:
@@ -288,7 +304,20 @@ class AutoResizingTextBrowser(QtWidgets.QTextBrowser):
             parent (Optional[QWidget]): The parent widget.
         """
         super().__init__(parent)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
         self.document().contentsChanged.connect(self.adjust_height_to_content)
+
+        self.setStyleSheet(f"""
+            QTextBrowser {{
+                background-color: {SECONDARY_COLOR};
+                border: 1px solid gray;
+                color: {TEXT_COLOR};
+                border-bottom-left-radius: 15px;
+                border-bottom-right-radius: 15px;
+                padding: 10px;
+            }}
+        """)
+        self.setOpenLinks(False)
 
     def sizeHint(self):
         """Override sizeHint to provide the height based on the document content.
@@ -327,12 +356,17 @@ class FloatingCard(QtWidgets.QWidget):
 
     # Initialization and Setup
     # ------------------------
+
+    # Signal emitted when the card's status changes
+    status_changed = QtCore.pyqtSignal(object, str, str)  # Emits self, previous_status, new_status
+
     def __init__(self, parent=None, content="", attached_image_path=None):
         super().__init__(parent)
 
         # Store the arguments
         self.attached_image_path = attached_image_path
         self.content = content
+        self.current_status = "To Do"  # Initialize current status
 
         # Initialize setup
         self.__init_ui()
@@ -356,14 +390,14 @@ class FloatingCard(QtWidgets.QWidget):
         # --------------
         # Main layout of the card
         self.main_layout = QtWidgets.QVBoxLayout(self)
-        self.main_layout.setContentsMargins(10, 0, 10, 20)
+        self.main_layout.setContentsMargins(5, 0, 5, 20)
         self.main_layout.setSpacing(0)
 
-        # Header layout containing the drag area and the status/next step widget
+        # Header layout containing the title, status/next step widget, and close button
         header_widget = QtWidgets.QWidget(self)
         header_layout = QtWidgets.QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(5, 5, 5, 5)
-        header_widget.setFixedHeight(30)
+        header_layout.setContentsMargins(10, 5, 10, 5)
+        header_widget.setFixedHeight(40)
         header_widget.setStyleSheet(f"""
             background-color: {PRIMARY_COLOR}; 
             border-top-left-radius: 15px; 
@@ -371,21 +405,23 @@ class FloatingCard(QtWidgets.QWidget):
             color: {TEXT_COLOR};
         """)
 
+        # Title label
         card_label = QtWidgets.QLabel("Task Note", header_widget)
         card_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         header_layout.addWidget(card_label)
 
-        # Status and next step widget
-        self.status_widget = StatusNextStepWidget(current_status="To Do", parent=header_widget)
-        
+        # Spacer
         header_layout.addStretch()
+
+        # Status and next step widget
+        self.status_widget = StatusNextStepWidget(current_status=self.current_status, container=self.parent())
         header_layout.addWidget(self.status_widget)
 
         # Add header to main layout
         self.main_layout.addWidget(header_widget)
 
         # Comment Text Area with markdown support
-        self.comment_area = QtWidgets.QTextBrowser(self)
+        self.comment_area = AutoResizingTextBrowser(self)
 
         # Add attached image if present
         if self.attached_image_path:
@@ -396,23 +432,8 @@ class FloatingCard(QtWidgets.QWidget):
 
         content = set_markdown_with_simple_line_breaks(self.content)
         self.comment_area.setMarkdown(content)
-        self.comment_area.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
-        self.comment_area.setStyleSheet(f"""
-            QTextBrowser {{
-                background-color: {SECONDARY_COLOR};
-                border: 1px solid gray;
-                color: {TEXT_COLOR};
-                border-bottom-left-radius: 15px;
-                border-bottom-right-radius: 15px;
-                padding: 10px;
-            }}
-        """)
-        self.comment_area.setOpenLinks(False)
-        self.comment_area.document().contentsChanged.connect(self.adjust_comment_area_size)
-        self.main_layout.addWidget(self.comment_area)
 
-        # Adjust card size based on content
-        self.adjust_card_size()
+        self.main_layout.addWidget(self.comment_area)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
@@ -420,56 +441,66 @@ class FloatingCard(QtWidgets.QWidget):
         # Connect the anchorClicked signal to handle user mentions
         self.comment_area.anchorClicked.connect(self._handle_user_mentions)
 
+        # Connect the status_changed signal
+        self.status_widget.status_changed.connect(self.on_status_changed)
+
+    def on_status_changed(self, new_status):
+        """Handle when status is changed."""
+        previous_status = self.current_status
+        self.current_status = new_status
+        self.status_changed.emit(self, previous_status, new_status)
+
     def update_image(self, image_path):
         """Update the image label with a scaled version of the image to fit the card width."""
         pixmap = QtGui.QPixmap(image_path)
         if not pixmap.isNull():
-            # Scale the image to fit the card width
-            card_width = self.width() - 20  # Adjust for margins
-            # Use correct enum types for AspectRatioMode and TransformationMode
             scaled_pixmap = pixmap.scaled(
-                card_width, 
-                pixmap.height(),  # Use the original height for scaling (scaled proportionally)
-                QtCore.Qt.AspectRatioMode.KeepAspectRatio,  # Correct enum for aspect ratio
-                QtCore.Qt.TransformationMode.SmoothTransformation  # Correct enum for smooth transformation
+                # TODO: Set to appropriate size
+                340, 
+                pixmap.height(),
+                QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+                QtCore.Qt.TransformationMode.SmoothTransformation
             )
             self.image_label.setPixmap(scaled_pixmap)
-            self.adjust_card_size()
-
-
-    def adjust_card_size(self):
-        """Adjust the card size based on its content."""
-        # Calculate the height of the text area based on the content
-        document_height = self.comment_area.document().size().height()
-        
-        # Calculate additional height if an image is attached
-        image_height = 0
-        if self.attached_image_path and hasattr(self, 'image_label'):
-            image_height = self.image_label.pixmap().height() if self.image_label.pixmap() else 0
-            image_height += 20  # Add padding for spacing
-
-        # Calculate the total height required for the card
-        total_height = 60 + image_height + int(document_height) + 40  # Add additional margins and header height
-        self.setMinimumHeight(total_height)
-
-    def adjust_comment_area_size(self):
-        """Adjust the height of the comment area based on its content."""
-        document_height = self.comment_area.document().size().height()
-        self.comment_area.setFixedHeight(int(document_height) + 20)
-        self.adjust_card_size()
-
-    def resizeEvent(self, event):
-        """Handle the resize event to update image size and adjust card size."""
-        if self.attached_image_path:
-            self.update_image(self.attached_image_path)
-        self.adjust_card_size()
-        super().resizeEvent(event)
 
     def _handle_user_mentions(self, url):
         """Handle clicks on user mentions."""
         user = url.toString().lstrip("user:")
         QtWidgets.QMessageBox.information(self, "User Mention", f"You clicked on @{user}")
 
+    def animate_out(self, direction='right'):
+        """Animate the card sliding out in the specified direction and remove it from the layout.
+
+        Args:
+            direction (str): Direction to animate the card ('left' or 'right').
+        """
+        # Disable the card during animation
+        self.setEnabled(False)
+
+        if self.status_widget.parallel_animation_group.state() == QtCore.QAbstractAnimation.Running:
+            # Stop the current animation and re-calculate based on new size
+            self.status_widget.parallel_animation_group.stop()
+
+        # Animation to slide the card out to the specified direction
+        self.animation = QtCore.QPropertyAnimation(self, b"pos")
+        self.animation.setDuration(300)
+        start_pos = self.pos()
+
+        # Determine the end position based on the direction
+        offset = 500 if direction == 'right' else -500  # Move 500 pixels left or right
+        end_pos = self.pos() + QtCore.QPoint(offset, 0)  # Slide left or right
+
+        self.animation.setStartValue(start_pos)
+        self.animation.setEndValue(end_pos)
+        self.animation.setEasingCurve(QtCore.QEasingCurve.Type.InCubic)
+        self.animation.finished.connect(self.on_animation_finished)
+        self.animation.start()
+
+    def on_animation_finished(self):
+        """Handle the cleanup after the animation finishes."""
+        # Remove the card from its parent layout
+        self.hide()
+        self.setEnabled(True)
 
 class TransparentFloatingLayout(QtWidgets.QWidget):
     """Main widget holding a transparent scrollable layout with feedback cards, drag functionality, and filter buttons."""
@@ -617,7 +648,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         for i in range(card_count):
             content = f"This is a comment or feedback. Mentioning @user{i}."
             card = FloatingCard(self, content=content)
-            self.add_card_with_animation(card)
+            self.add_card(card)
 
         self.scroll_area.setWidget(self.scroll_content)
         self.main_layout.addWidget(self.scroll_area)
@@ -750,6 +781,9 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         if not new_task_text:
             return
 
+        # Ensure "To Do" status is visible in the filter
+        self.ensure_status_visible("To Do")
+
         # Handle user mentions by converting @username to clickable links
         formatted_text = self.format_user_mentions(new_task_text)
         new_card = FloatingCard(self, content=formatted_text, attached_image_path=getattr(self, 'attached_image_path', None))
@@ -759,6 +793,21 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
 
         # Scroll to the bottom of the scroll area
         QtCore.QTimer.singleShot(0, self.scroll_to_bottom)
+
+    def ensure_status_visible(self, status):
+        """Ensure that the given status is visible by modifying the filter if necessary.
+
+        Args:
+            status (str): The status to ensure visibility.
+        """
+        visible_statuses = self.get_visible_statuses()
+        if status not in visible_statuses:
+            self.filter_group.setExclusive(False)
+            # Automatically select the given status if not currently visible
+            if status in self.filter_buttons:
+                self.filter_buttons[status].setChecked(True)
+                self.filter_cards()  # Refresh the filter to display cards with the new status
+            self.filter_group.setExclusive(True)
 
     def scroll_to_bottom(self):
         """Smoothly scroll to the bottom of the scroll area."""
@@ -807,6 +856,31 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         card.setVisible(False)
         self.scroll_layout.addWidget(card)
         card.setVisible(True)
+        # Connect to card's status_changed signal
+        card.status_changed.connect(self.on_card_status_changed)
+
+    def get_visible_statuses(self):
+        """Return a list of statuses that are currently visible based on the filter."""
+        selected_status = [status for status, button in self.filter_buttons.items() if button.isChecked()]
+        if "All" in selected_status or not selected_status:
+            return STATUS_ORDER  # Return all statuses if 'All' is selected or none is selected
+        return selected_status
+
+    def on_card_status_changed(self, card: 'FloatingCard', previous_status, new_status):
+        """Handle when a card's status is changed.
+        """
+        selected_status = self.get_visible_statuses()
+
+        is_currently_visible = card.isVisible()
+        should_be_visible = new_status in selected_status
+
+        if is_currently_visible and not should_be_visible:
+            # Card should be hidden, animate it out to left or right
+            direction = "right" if STATUS_ORDER.index(new_status) > STATUS_ORDER.index(previous_status) else "left"
+            card.animate_out(direction)
+        else:
+            # No change in visibility
+            pass
 
     def mousePressEvent(self, event):
         """Start dragging the entire layout when the mouse is pressed on the layout drag area."""
