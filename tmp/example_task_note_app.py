@@ -375,8 +375,6 @@ class FloatingCard(QtWidgets.QWidget):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint)
         # Set size policy to expand to the available width
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
 
@@ -546,6 +544,21 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         # Spacer to push buttons to the right
         header_layout.addStretch()
 
+        # Toggle background button
+        self.toggle_bg_button = QtWidgets.QPushButton(TablerQIcon.background, '', header_widget)
+        self.toggle_bg_button.setFixedSize(20, 20)
+        self.toggle_bg_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                font-size: 16px;
+                color: {TEXT_COLOR};
+            }}
+            QPushButton:hover {{
+                color: cyan;
+            }}
+        """)
+
         # Collapse/Expand button
         self.collapse_button = QtWidgets.QPushButton("−", header_widget)
         self.collapse_button.setFixedSize(20, 20)
@@ -560,8 +573,6 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
                 color: cyan;
             }}
         """)
-        header_layout.addWidget(self.collapse_button, alignment=QtCore.Qt.AlignRight)
-        self.collapse_button.clicked.connect(self.toggle_card_area)
 
         # Close button for the entire layout
         self.layout_close_button = QtWidgets.QPushButton("✕", header_widget)
@@ -577,11 +588,6 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
                 color: red;
             }}
         """)
-        self.layout_close_button.clicked.connect(self.close)
-        header_layout.addWidget(self.layout_close_button, alignment=QtCore.Qt.AlignRight)
-
-        # Add header to the main layout
-        self.main_layout.addWidget(header_widget)
 
         # Create a second line for the filter buttons
         self.filter_widget = QtWidgets.QWidget(self)
@@ -623,6 +629,15 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         # Make filter buttons single-select by default
         self.filter_group.setExclusive(True)
 
+        # Add Widgets to Layouts
+        # ----------------------
+        header_layout.addWidget(self.toggle_bg_button)
+        header_layout.addWidget(self.collapse_button)
+        header_layout.addWidget(self.layout_close_button)
+
+        # Add header to the main layout
+        self.main_layout.addWidget(header_widget)
+
         # Add the filter widget to the main layout
         self.main_layout.addWidget(self.filter_widget)
 
@@ -643,7 +658,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         # Set transparent background for scroll content
         self.scroll_content.setStyleSheet("background: transparent;")
 
-        # Add a few floating cards below the header inside the scrollable area
+        # NOTE: Example: Add a few floating cards below the header inside the scrollable area
         card_count = 4
         for i in range(card_count):
             content = f"This is a comment or feedback. Mentioning @user{i}."
@@ -719,6 +734,10 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
 
         # Apply shadow effect using utility method
         self.setGraphicsEffect(UIUtil.create_shadow_effect())
+        self.adjust_input_height()
+
+        self.collapse_button.clicked.connect(self.toggle_card_area)
+        self.layout_close_button.clicked.connect(self.close)
 
         self.attach_button.clicked.connect(self.attach_screenshot)
         self.new_task_input.textChanged.connect(self.adjust_input_height)
@@ -728,8 +747,6 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         # Add keyboard shortcuts for common actions
         self.add_task_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Return"), self)
         self.add_task_shortcut.activated.connect(self.add_new_task)
-
-        self.adjust_input_height()
 
     def on_filter_button_clicked(self):
         """Handle filter button click to clear other selections if not in multi-select mode."""
