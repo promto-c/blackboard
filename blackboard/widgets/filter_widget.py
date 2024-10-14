@@ -120,34 +120,8 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         """
         self.orientationChanged.connect(self._update_ext_icon)
 
-    def _customize_toolbar_components(self):
-        """Customize the toolbar components.
-        """
-        self.qt_toolbar_ext_button = self.findChild(QtWidgets.QToolButton, 'qt_toolbar_ext_button')
-        self.qt_toolbar_ext_button.setMinimumSize(20, 20)
-
-    def _move_ext_button(self):
-        """Move the toolbar extension button based on orientation.
-        """
-        if self.qt_toolbar_ext_button.isHidden():
-            return
-
-        if self.orientation() == QtCore.Qt.Vertical:
-            # Move button to the bottom of the toolbar in vertical orientation
-            new_y = self.height() - self.qt_toolbar_ext_button.height()
-            if self.qt_toolbar_ext_button.y() != new_y:
-                self.qt_toolbar_ext_button.move(self.qt_toolbar_ext_button.x(), new_y)
-        else:
-            # Move button to the right end in horizontal orientation
-            new_x = self.width() - self.qt_toolbar_ext_button.width()
-            if self.qt_toolbar_ext_button.x() != new_x:
-                self.qt_toolbar_ext_button.move(new_x, self.qt_toolbar_ext_button.y())
-
-    def _update_ext_icon(self, _orientation=None):
-        """Update the icon of the toolbar extension button.
-        """
-        self.qt_toolbar_ext_button.setIcon(TablerQIcon.chevron_down)
-
+    # Public Methods
+    # --------------
     def add_filter(self, name: str):
         """Add a new checkable filter action to the toolbar.
 
@@ -166,13 +140,6 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         self._actions[name] = action  # Store the action
 
         self.addAction(action)  # Add the action to the toolbar
-
-    def _apply_filter_action(self, filter_name: str, check_state: bool):
-        """Apply the filter action logic, including exclusive selection if Ctrl is pressed."""
-        if QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.ControlModifier:
-            self.apply_exclusive_filter(filter_name)
-        else:
-            self.filter_changed.emit(filter_name, check_state)
 
     def add_filters(self, names: list[str]):
         """Add multiple checkable filter actions to the toolbar.
@@ -247,7 +214,16 @@ class FilterSelectionBar(QtWidgets.QToolBar):
 
         self.filter_changed.emit(filter_name, checked)
 
-    def get_filter_names(self) -> list[str]:
+    def apply_exclusive_filter(self, filter_name: str):
+        """Apply the selected filter exclusively by clearing others.
+
+        Args:
+            filter_name: The name of the filter to apply exclusively.
+        """
+        self.clear_filters()
+        self.set_filter_checked(filter_name, checked=True)
+
+    def get_filter_names(self) -> List[str]:
         """Retrieve a list of all filter names.
 
         Returns:
@@ -263,7 +239,7 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         """
         return {name: action.isChecked() for name, action in self._actions.items()}
 
-    def get_active_filters(self) -> list[str]:
+    def get_active_filters(self) -> List[str]:
         """Retrieve a list of all checked (active) filters.
 
         Returns:
@@ -271,6 +247,55 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         """
         return [name for name, action in self._actions.items() if action.isChecked()]
 
+    # Class Properties
+    # ----------------
+    @property
+    def filter_names(self) -> List[str]:
+        return self.get_filter_names()
+
+    @property
+    def active_filters(self) -> List[str]:
+        return self.get_active_filters()
+
+    # Private Methods
+    # ---------------
+    def _customize_toolbar_components(self):
+        """Customize the toolbar components.
+        """
+        self.qt_toolbar_ext_button = self.findChild(QtWidgets.QToolButton, 'qt_toolbar_ext_button')
+        self.qt_toolbar_ext_button.setMinimumSize(20, 20)
+
+    def _move_ext_button(self):
+        """Move the toolbar extension button based on orientation.
+        """
+        if self.qt_toolbar_ext_button.isHidden():
+            return
+
+        if self.orientation() == QtCore.Qt.Vertical:
+            # Move button to the bottom of the toolbar in vertical orientation
+            new_y = self.height() - self.qt_toolbar_ext_button.height()
+            if self.qt_toolbar_ext_button.y() != new_y:
+                self.qt_toolbar_ext_button.move(self.qt_toolbar_ext_button.x(), new_y)
+        else:
+            # Move button to the right end in horizontal orientation
+            new_x = self.width() - self.qt_toolbar_ext_button.width()
+            if self.qt_toolbar_ext_button.x() != new_x:
+                self.qt_toolbar_ext_button.move(new_x, self.qt_toolbar_ext_button.y())
+
+    def _update_ext_icon(self, _orientation=None):
+        """Update the icon of the toolbar extension button.
+        """
+        self.qt_toolbar_ext_button.setIcon(TablerQIcon.chevron_down)
+
+    def _apply_filter_action(self, filter_name: str, check_state: bool):
+        """Apply the filter action logic, including exclusive selection if Ctrl is pressed."""
+        if QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.ControlModifier:
+            self.apply_exclusive_filter(filter_name)
+        else:
+            self.filter_changed.emit(filter_name, check_state)
+
+    # Overridden Methods
+    # ------------------
     def paintEvent(self, event):
         """Handle the paint event for the toolbar.
 
@@ -279,15 +304,6 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         """
         super().paintEvent(event)
         self._move_ext_button()
-
-    def apply_exclusive_filter(self, filter_name: str):
-        """Apply the selected filter exclusively by clearing others.
-
-        Args:
-            filter_name: The name of the filter to apply exclusively.
-        """
-        self.clear_filters()
-        self.set_filter_checked(filter_name, checked=True)
 
 # TODO: Add support to set column name mapping to filter widget
 class FilterBarWidget(QtWidgets.QWidget):

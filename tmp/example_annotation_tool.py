@@ -58,8 +58,11 @@ class ToolMode(Enum):
 
 
 class DrawingLabel(QtWidgets.QWidget):
-    def __init__(self):
-        super().__init__()
+    # Define the signal
+    drawing_changed = QtCore.pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.image: QtGui.QPixmap = QtGui.QPixmap()
         self.last_point: QtCore.QPoint = QtCore.QPoint()
         self.current_tool: ToolMode = ToolMode.NONE
@@ -74,7 +77,7 @@ class DrawingLabel(QtWidgets.QWidget):
         # Tool settings
         self.pen_color: QtGui.QColor = QtGui.QColor(QtCore.Qt.GlobalColor.red)
         self.pen_width: int = 3
-        self.smooth_line_color: QtGui.QColor = QtGui.QColor(2, 255, 1)  # Customizable smooth line color
+        # self.smooth_line_color: QtGui.QColor = QtGui.QColor(2, 255, 1)  # Customizable smooth line color
         self.text_color: QtGui.QColor = QtGui.QColor(0, 0, 0)  # Text color
 
     def set_pixmap(self, pixmap: QtGui.QPixmap):
@@ -147,6 +150,10 @@ class DrawingLabel(QtWidgets.QWidget):
                 self.rectangles.append(QtCore.QRect(self.rectangle_start, self.rectangle_end))
             elif self.current_tool == ToolMode.FREEHAND:
                 self.smooth_drawn_line()
+
+            # Emit the signal when the drawing changes
+            self.drawing_changed.emit()
+
             self.update()
 
     def erase_drawing(self, point: QtCore.QPoint):
@@ -155,6 +162,7 @@ class DrawingLabel(QtWidgets.QWidget):
             for pt in obj.points:
                 if (pt - point).manhattanLength() < 10:  # Threshold to detect proximity
                     self.drawing_objects.remove(obj)
+                    self.drawing_changed.emit()  # Emit the signal after erasing
                     self.update()
                     return
 
@@ -172,7 +180,7 @@ class DrawingLabel(QtWidgets.QWidget):
 
         # Store the smoothed line as a DrawingObject
         smooth_points = [QtCore.QPointF(x, y) for x, y in zip(x_fine, y_fine)]
-        self.drawing_objects.append(DrawingObject(smooth_points, self.smooth_line_color, self.pen_width))
+        self.drawing_objects.append(DrawingObject(smooth_points, self.pen_color, self.pen_width))
 
         self.update()
 
@@ -210,7 +218,8 @@ class DrawingLabel(QtWidgets.QWidget):
     def finish_text_editing(self, event):
         # Commit text when focus is lost
         self.commit_text()
-        QtWidgets.QTextEdit.focusOutEvent(self.text_editor, event)
+        if self.text_editor is not None:
+            self.text_editor.focusOutEvent(event)
 
     def commit_text(self):
         if self.text_editor:
@@ -266,8 +275,8 @@ class ScreenshotWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Floating Action Button Example")
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setWindowFlags(QtCore.Qt.WindowType.FramelessWindowHint | QtCore.Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("background-color: #444; border-radius: 30;")
         self.setWindowOpacity(0.8)
 
@@ -370,6 +379,8 @@ class ScreenshotWidget(QtWidgets.QWidget):
 
     def take_screenshot(self):
         screen = QtGui.QGuiApplication.primaryScreen()
+        # Hide before capture
+        self.hide()
         screenshot = screen.grabWindow(0)
         self.switch_to_annotation_mode(screenshot)
 
@@ -383,10 +394,19 @@ class ScreenshotWidget(QtWidgets.QWidget):
 
     def capture_selected_area(self):
         selected_rect = self.capture_window.get_selected_rect()
-        if not selected_rect.isNull():
-            screen = QtGui.QGuiApplication.primaryScreen()
-            screenshot = screen.grabWindow(0, selected_rect.x(), selected_rect.y(), selected_rect.width(), selected_rect.height())
-            self.switch_to_annotation_mode(screenshot)
+        if selected_rect.isNull():
+            return
+
+        # Hide the widget before capturing
+        self.hide()
+        self._capture_area(selected_rect)
+
+    def _capture_area(self, selected_rect: QtCore.QRect):
+        screen = QtGui.QGuiApplication.primaryScreen()
+        screenshot = screen.grabWindow(
+            0, selected_rect.x(), selected_rect.y(), selected_rect.width(), selected_rect.height()
+        )
+        self.switch_to_annotation_mode(screenshot)
 
     def switch_to_annotation_mode(self, screenshot: QtGui.QPixmap):
         self.annotate_window = AnnotateWindow()
@@ -407,7 +427,6 @@ class AnnotateWindow(QtWidgets.QMainWindow):
     def __init_ui(self):
         # Toolbar setup
         toolbar = QtWidgets.QToolBar("Annotation Tools", self)
-        toolbar.setMovable(False)
         self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, toolbar)
 
         # Add Freehand Tool with TablerQIcon
@@ -443,8 +462,11 @@ class AnnotateWindow(QtWidgets.QMainWindow):
         toolbar.addAction(save_action)
 
         # Drawing Area
-        self.drawing_label = DrawingLabel()
+        self.drawing_label = DrawingLabel(self)
         self.setCentralWidget(self.drawing_label)
+
+        # Connect the signal from DrawingLabel to update the object list
+        self.drawing_label.drawing_changed.connect(self.update_object_list)
 
         # Object List Widget
         self.object_list_widget = QtWidgets.QTreeWidget()
@@ -490,7 +512,9 @@ class AnnotateWindow(QtWidgets.QMainWindow):
 
 
 if __name__ == '__main__':
+    from blackboard.theme import set_theme
     app = QtWidgets.QApplication(sys.argv)
+    set_theme(app, 'dark')
     main_window = ScreenshotWidget()
     main_window.show()
     sys.exit(app.exec_())
