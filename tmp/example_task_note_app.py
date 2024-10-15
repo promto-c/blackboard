@@ -561,28 +561,36 @@ class StatusNextStepWidget(QtWidgets.QWidget):
         """)
 
     def animate_back(self):
-        """Animate the button back to its original size and clear hover state.
-        """
-        self.next_step_button.setText("")
+        """Animate the button back to its original size and clear hover state."""
+        self.next_step_button.setText("")  # Clear button text
         self.parallel_animation_group.clear()  # Clear existing animations
 
-        # Create animations to reset button size
-        shrink_button_animation = QtCore.QPropertyAnimation(self.next_step_button, b"minimumWidth")
-        shrink_button_animation.setDuration(300)
-        shrink_button_animation.setStartValue(self.next_step_button.width())
-        shrink_button_animation.setEndValue(30)
-        shrink_button_animation.setEasingCurve(QtCore.QEasingCurve.Type.InOutQuad)
+        # Create animation to shrink the button width
+        shrink_button_animation = UIUtil.apply_animation(
+            widget=self.next_step_button,
+            property_name="minimumWidth",
+            start_value=self.next_step_button.width(),
+            end_value=30,
+            duration=300,
+            easing_curve=QtCore.QEasingCurve.Type.InOutQuad
+        )
         self.parallel_animation_group.addAnimation(shrink_button_animation)
 
-        # Extend combobox animation back to original
-        extend_combobox_animation = QtCore.QPropertyAnimation(self.status_combobox, b"minimumWidth")
-        extend_combobox_animation.setDuration(300)
-        extend_combobox_animation.setStartValue(self.status_combobox.width())
-        extend_combobox_animation.setEndValue(150)
+        # Create animation to extend the combobox width back to original
+        extend_combobox_animation = UIUtil.apply_animation(
+            widget=self.status_combobox,
+            property_name="minimumWidth",
+            start_value=self.status_combobox.width(),
+            end_value=120,
+            duration=300,
+            easing_curve=QtCore.QEasingCurve.Type.InOutQuad
+        )
         self.parallel_animation_group.addAnimation(extend_combobox_animation)
 
-        # Start the parallel animation group and reset click state
+        # Connect to the finished signal to reset hover state
         self.parallel_animation_group.finished.connect(self.reset_hover_state)
+
+        # Start the parallel animation group
         self.parallel_animation_group.start()
 
     def reset_hover_state(self):
@@ -594,40 +602,43 @@ class StatusNextStepWidget(QtWidgets.QWidget):
         """
         if obj == self.next_step_button and not self.clicked:  # Only handle hover if not clicked
             if event.type() == QtCore.QEvent.Type.Enter and self.next_step_button.isEnabled():
-                self.handle_hover_enter()
-            elif event.type() == QtCore.QEvent.Type.Leave:
-                self.handle_hover_leave()
+                self.expand_button_on_hover()
+            elif event.type() == QtCore.QEvent.Type.Leave and not self.clicked:
+                self.animate_back()
         return super().eventFilter(obj, event)
 
-    def handle_hover_enter(self):
-        """Handle hover enter event to expand the button and contract combobox."""
+    def expand_button_on_hover(self):
+        """Expand the button and contract the combobox on hover."""
+        # Update the button text to indicate the next status
         self.next_step_button.setText(f"Mark as '{self.get_next_status()}'")
-        self.parallel_animation_group.clear()  # Clear existing animations
 
-        # Create animations for expanding button and contracting combobox
-        expand_button_animation = QtCore.QPropertyAnimation(self.next_step_button, b"minimumWidth")
-        expand_button_animation.setDuration(300)
-        expand_button_animation.setStartValue(self.next_step_button.width())
-        expand_button_animation.setEndValue(120)
-        expand_button_animation.setEasingCurve(QtCore.QEasingCurve.Type.InOutQuad)
+        # Clear existing animations in the parallel group
+        self.parallel_animation_group.clear()
+
+        # Create animation to expand the button width
+        expand_button_animation = UIUtil.apply_animation(
+            widget=self.next_step_button,
+            property_name="minimumWidth",
+            start_value=self.next_step_button.width(),
+            end_value=120,
+            duration=300,
+            easing_curve=QtCore.QEasingCurve.Type.InOutQuad
+        )
         self.parallel_animation_group.addAnimation(expand_button_animation)
 
-        shorten_combobox_animation = QtCore.QPropertyAnimation(self.status_combobox, b"minimumWidth")
-        shorten_combobox_animation.setDuration(300)
-        shorten_combobox_animation.setStartValue(self.status_combobox.width())
-        shorten_combobox_animation.setEndValue(max(80, self.status_combobox.width() - 70))
+        # Create animation to shorten the combobox width
+        shorten_combobox_animation = UIUtil.apply_animation(
+            widget=self.status_combobox,
+            property_name="minimumWidth",
+            start_value=self.status_combobox.width(),
+            end_value=30,
+            duration=300,
+            easing_curve=QtCore.QEasingCurve.Type.InOutQuad
+        )
         self.parallel_animation_group.addAnimation(shorten_combobox_animation)
 
         # Start the parallel animation group
         self.parallel_animation_group.start()
-
-    def handle_hover_leave(self):
-        """Handle hover leave event to shrink the button and expand combobox.
-        """
-        if self.clicked:
-            return
-
-        self.animate_back()
 
     def showEvent(self, event):
         self.animate_back()
@@ -658,22 +669,42 @@ class UIUtil:
         return shadow
 
     @staticmethod
-    def apply_animation(widget, property_name, start_value, end_value, duration=300):
-        """Apply a simple property animation to a widget."""
+    def apply_animation(widget: QtWidgets.QWidget, property_name: str, start_value: QtCore.QVariant, end_value: QtCore.QVariant,
+                        duration: int = 300, easing_curve: QtCore.QEasingCurve = None) -> QtCore.QPropertyAnimation:
+        """Applies a simple property animation to a widget.
+
+        Args:
+            widget: The widget to animate.
+            property_name: The property of the widget to animate.
+            start_value: The starting value of the animation.
+            end_value: The ending value of the animation.
+            duration: The duration of the animation in milliseconds.
+            easing_curve: The easing curve to apply to the animation.
+
+        Returns:
+            The QPropertyAnimation object created for the animation.
+        """
+        # Create the QPropertyAnimation object, set its duration, and configure
+        # the start and end values for the given property of the widget.
         animation = QtCore.QPropertyAnimation(widget, property_name.encode())
         animation.setDuration(duration)
         animation.setStartValue(start_value)
         animation.setEndValue(end_value)
-        animation.setEasingCurve(QtCore.QEasingCurve.Type.OutQuad)
-        animation.start()
-        # Keep a reference to prevent garbage collection
-        widget.animation = animation
 
+        # Set an easing curve if provided, which defines the rate of change during the animation.
+        if easing_curve:
+            animation.setEasingCurve(easing_curve)
+
+        # Start the animation.
+        animation.start()
+
+        # Assign the animation to the widget to prevent it from being garbage collected.
+        widget._animation = animation
+
+        # Return the animation object.
         return animation
 
-class AutoResizingTextBrowser(QtWidgets.QTextBrowser):
-
-    MAX_HEIGHT = 300  # Set the maximum height as a class attribute
+class FlexTextBrowser(QtWidgets.QTextBrowser):
 
     STYLE_SHEET = '''
         QTextBrowser {
@@ -685,13 +716,15 @@ class AutoResizingTextBrowser(QtWidgets.QTextBrowser):
         }
     '''
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, max_height: int = 300):
         """Initialize the auto-resizing text browser.
 
         Args:
             parent (Optional[QWidget]): The parent widget.
+            max_height (int): The maximum height the widget can expand to.
         """
         super().__init__(parent)
+        self.max_height = max_height
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
         self.document().contentsChanged.connect(self.adjust_height_to_content)
         self.setStyleSheet(self.STYLE_SHEET)
@@ -702,7 +735,7 @@ class AutoResizingTextBrowser(QtWidgets.QTextBrowser):
     def adjust_height_to_content(self):
         """Adjust the height of the widget to fit the document content, respecting the maximum height.
         """
-        self.setFixedHeight(min(self._calculate_content_height(), self.MAX_HEIGHT))
+        self.setFixedHeight(min(self._calculate_content_height(), self.max_height))
 
     # Private Methods
     # ---------------
@@ -730,6 +763,62 @@ class AutoResizingTextBrowser(QtWidgets.QTextBrowser):
     def sizeHint(self):
         """Override sizeHint to provide the height based on the document content.
         """
+        document_height = self._calculate_content_height()
+        return QtCore.QSize(self.viewport().width(), document_height)
+
+class FlexPlainTextEdit(QtWidgets.QPlainTextEdit):
+
+    STYLE_SHEET = '''
+        QPlainTextEdit {
+            background-color: #222;
+            border: 1px solid gray;
+            padding: 5px;
+        }
+    '''
+
+    def __init__(self, parent=None, max_height: int = 300):
+        """Initialize the flexible plain text edit.
+
+        Args:
+            parent (Optional[QWidget]): The parent widget.
+            max_height (int): The maximum height the widget can expand to.
+        """
+        super().__init__(parent)
+        self.max_height = max_height
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
+        self.document().contentsChanged.connect(self.adjust_height_to_content)
+        self.setStyleSheet(self.STYLE_SHEET)
+
+    # Public Methods
+    # --------------
+    def adjust_height_to_content(self):
+        """Adjust the height of the widget to fit the document content, respecting the maximum height."""
+        self.setFixedHeight(min(self._calculate_content_height(), self.max_height))
+
+    # Private Methods
+    # ---------------
+    def _calculate_content_height(self):
+        """Calculate the total height needed to display the document content."""
+        block_count = self.document().blockCount()
+        # Get line height using font metrics
+        line_height = QtGui.QFontMetrics(self.font()).height()
+        # Calculate the new height and set it
+        document_height = block_count * line_height
+        
+        # vertical_margins = self.contentsMargins().top() + self.contentsMargins().bottom()
+        vertical_margins = 20
+
+        return document_height + vertical_margins
+
+    # Overridden Methods
+    # ------------------
+    def resizeEvent(self, event):
+        """Handle the widget's resize event."""
+        super().resizeEvent(event)
+        self.adjust_height_to_content()
+
+    def sizeHint(self):
+        """Override sizeHint to provide the height based on the document content."""
         document_height = self._calculate_content_height()
         return QtCore.QSize(self.viewport().width(), document_height)
 
@@ -806,7 +895,7 @@ class FloatingCard(QtWidgets.QWidget):
         self.main_layout.addWidget(header_widget)
 
         # Comment Text Area with markdown support
-        self.comment_area = AutoResizingTextBrowser(self)
+        self.comment_area = FlexTextBrowser(self)
 
         # Add attached image if present
         if self.attached_image_path:
@@ -1009,9 +1098,6 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         self.main_layout.addWidget(self.scroll_area)
         self.main_layout.addWidget(self.input_bar)
 
-        # Initialize UI resizing
-        self.adjust_input_height()
-
         # Attach the resize-move handler
         self.resize_move_handler = ResizeHandler(self)
 
@@ -1026,7 +1112,6 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         self.status_filter_widget.filters_cleared.connect(self.filter_cards)
 
         self.attach_button.clicked.connect(self.attach_screenshot)
-        self.new_task_input.textChanged.connect(self.adjust_input_height)
         self.new_task_input.textChanged.connect(self.toggle_add_button_state)
         self.add_button.clicked.connect(self.add_new_task)
 
@@ -1034,6 +1119,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         QtWidgets.QShortcut("Ctrl+Return", self.new_task_input, self.add_new_task)
         QtWidgets.QShortcut("Ctrl+Enter", self.new_task_input, self.add_new_task)
 
+    # TODO: Implement as class CardArea(QtWidgets.QScrollArea)
     def _create_scroll_area(self) -> QtWidgets.QScrollArea:
         # Scrollable area for feedback cards
         scroll_area = QtWidgets.QScrollArea(self)
@@ -1088,16 +1174,8 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         sticky_layout.addWidget(self.attach_button)
 
         # Input field for new task or comment
-        self.new_task_input = QtWidgets.QPlainTextEdit(input_bar)
+        self.new_task_input = FlexPlainTextEdit(input_bar)
         self.new_task_input.setPlaceholderText("Add a new task or comment... Use @username to mention someone.")
-        self.new_task_input.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
-        self.new_task_input.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: #222;
-                border: 1px solid gray;
-                padding: 5px;
-            }
-        """)
 
         sticky_layout.addWidget(self.new_task_input)
 
@@ -1115,15 +1193,6 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         """Enable or disable the Add button based on whether the input field is empty."""
         state = bool(self.new_task_input.toPlainText().strip())
         self.add_button.setEnabled(state)
-
-    def adjust_input_height(self):
-        """Adjust the height of the input field based on content."""
-        document_height = self.new_task_input.document().blockCount()
-        # Get line height using font metrics
-        line_height = QtGui.QFontMetrics(self.new_task_input.font()).height()
-        # Calculate the new height and set it
-        new_height = int(min(100, document_height * line_height + 20))
-        self.new_task_input.setFixedHeight(new_height)
 
     def attach_screenshot(self):
         """Open a file dialog to select a screenshot file."""
@@ -1168,18 +1237,24 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
             self.status_filter_widget.set_filter_checked(status)
 
     def scroll_to_bottom(self):
-        """Smoothly scroll to the bottom of the scroll area."""
+        """Smoothly animate scrolling to the bottom of the scroll area.
+        """
+        # Get the vertical scroll bar of the scroll area
         scroll_bar = self.scroll_area.verticalScrollBar()
-        scroll_animation = QtCore.QPropertyAnimation(scroll_bar, b"value")
-        scroll_animation.setDuration(500)
-        scroll_animation.setStartValue(scroll_bar.value())
-        scroll_animation.setEndValue(scroll_bar.maximum())
-        scroll_animation.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
-        scroll_animation.start()
-        self.scroll_animation = scroll_animation  # Keep a reference to prevent garbage collection
+
+        # Use UIUtil to create and start the scroll animation
+        UIUtil.apply_animation(
+            widget=scroll_bar,
+            property_name="value",
+            start_value=scroll_bar.value(),
+            end_value=scroll_bar.maximum(),
+            duration=500,
+            easing_curve=QtCore.QEasingCurve.Type.OutCubic
+        )
 
     def filter_cards(self):
-        """Filter cards based on the selected filter button."""
+        """Filter cards based on the selected filter button.
+        """
         # Get the statuses of all checked filters
         selected_status = self.status_filter_widget.active_filters or STATUS_ORDER
 
@@ -1202,7 +1277,8 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         self.placeholder_card.setVisible(not self.visible_cards)
 
     def toggle_card_area(self):
-        """Toggle the visibility of the card area (expand/collapse)."""
+        """Toggle the visibility of the card area (expand/collapse).
+        """
         if self.scroll_area.isVisible():
             # Collapse the card area
             self.header_widget.collapse_button.setText("+")  # Change button to show expand icon
@@ -1219,7 +1295,8 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
             self.animate_window_geometry(collapse=False)
 
     def animate_window_geometry(self, collapse):
-        """Animate the geometry of the main window to collapse or expand."""
+        """Animate the geometry of the main window to collapse or expand.
+        """
         # Get the current geometry of the main window
         start_geometry = self.geometry()
 
@@ -1242,25 +1319,27 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
             target_height
         )
 
-        # Animate the main window's geometry
-        self.geometry_animation = QtCore.QPropertyAnimation(self, b"geometry")
-        self.geometry_animation.setDuration(300)
-        self.geometry_animation.setStartValue(start_geometry)
-        self.geometry_animation.setEndValue(target_geometry)
-        self.geometry_animation.setEasingCurve(QtCore.QEasingCurve.Type.InOutQuad)
+        # Use UIUtil to apply the geometry animation
+        self.geometry_animation = UIUtil.apply_animation(
+            widget=self,
+            property_name="geometry",
+            start_value=start_geometry,
+            end_value=target_geometry,
+            duration=300,
+            easing_curve=QtCore.QEasingCurve.Type.InOutQuad
+        )
 
-        # Connect to the animation's finished signal
+        # Connect to the animation's finished signal if collapsing
         if collapse:
             self.geometry_animation.finished.connect(self.collapse)
-
-        self.geometry_animation.start()
 
     def collapse(self):
         self.status_filter_widget.setVisible(False)
         self.scroll_area.setVisible(False)
 
     def add_card(self, card: 'FloatingCard'):
-        """Add a card to the layout with a fade-in animation."""
+        """Add a card to the layout with a fade-in animation.
+        """
         card.setGraphicsEffect(UIUtil.create_shadow_effect())
         card.setVisible(False)
         self.scroll_layout.addWidget(card)
