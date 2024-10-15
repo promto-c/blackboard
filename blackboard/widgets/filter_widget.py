@@ -263,7 +263,9 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         """Customize the toolbar components.
         """
         self.qt_toolbar_ext_button = self.findChild(QtWidgets.QToolButton, 'qt_toolbar_ext_button')
-        self.qt_toolbar_ext_button.setMinimumSize(20, 20)
+        self.qt_toolbar_ext_button.setStyleSheet('padding: 0;')
+        self.qt_toolbar_ext_button.setFixedSize(20, 20)
+        self.qt_toolbar_ext_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
 
     def _move_ext_button(self):
         """Move the toolbar extension button based on orientation.
