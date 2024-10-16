@@ -461,7 +461,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self._primary_key = None
         self._row_height = self.DEFAULT_ROW_HEIGHT
         self._current_column_index = 0
-        self._item_widget_connections: List[QtWidgets.QWidget] = []
 
         self._id_to_tree_item: Dict[Any, QtWidgets.QTreeWidgetItem] = {}
 
@@ -1378,12 +1377,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             self._current_task = None
 
         self._id_to_tree_item.clear()
-
-        # NOTE: Disconnect all stored signal connections
-        for  connection in self._item_widget_connections:
-            self.header().sectionResized.disconnect(connection)
-        self._item_widget_connections.clear()
-
         super().clear()
 
     def scrollContentsBy(self, dx: int, dy: int):
@@ -1397,11 +1390,9 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     def setItemWidget(self, item: QtWidgets.QTreeWidgetItem, column: int, widget: QtWidgets.QWidget):
         """Add a widget to an item and tracking the new one for position updates.
         """
-        # NOTE: This ensures that the layout of the `TagListView` is updated dynamically when the section is resized
+        # NOTE: Workaround to manually forward mouse events from the TagListView to the QTreeWidget's viewport
         if isinstance(widget, widgets.TagListView):
             widget.viewport().installEventFilter(self)
-            connection = self.header().sectionResized.connect(widget.model().layoutChanged.emit)
-            self._item_widget_connections.append(connection)
 
         super().setItemWidget(item, column, widget)
 

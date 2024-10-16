@@ -47,6 +47,7 @@ class TagListView(MomentumScrollListView):
         """
         self.setEditTriggers(QtWidgets.QListView.EditTrigger.NoEditTriggers)
         self.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
+        self.setResizeMode(QtWidgets.QListView.ResizeMode.Adjust)
 
         self.setDragDropMode(QtWidgets.QListView.DragDropMode.NoDragDrop)
         self.setMouseTracking(True)
