@@ -21,171 +21,27 @@ DEFAULT_STATUS_COLOR = "#333"
 
 STATUS_ORDER = ["To Do", "In Progress", "Done", "Completed"]
 
-class ResizeHandle(QtWidgets.QWidget):
 
-    MARGIN = 10
+class ResizeHandler(QtWidgets.QWidget):
 
-    """A handle that can represent any edge or corner."""
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.hide()
-        self.edge = None  # The current edge or corner this handle represents
-
-    def update_position(self, edge):
-        """Update position and appearance based on the edge, incorporating sizing logic."""
-        self.edge = edge
-        w, h = self.parent().width(), self.parent().height()
-        m = self.MARGIN
-
-        # Calculate sizes using the same logic
-        corner_size = min(w // 4, h // 4, 100)
-        handle_size_w = w // 3
-        handle_size_h = h // 3
-
-        if edge == QtCore.Qt.Edge.LeftEdge:
-            self.setGeometry(0, handle_size_h, m, handle_size_h)
-        elif edge == QtCore.Qt.Edge.RightEdge:
-            self.setGeometry(w - m, handle_size_h, m, handle_size_h)
-        elif edge == QtCore.Qt.Edge.TopEdge:
-            self.setGeometry(handle_size_w, 0, handle_size_w, m)
-        elif edge == QtCore.Qt.Edge.BottomEdge:
-            self.setGeometry(handle_size_w, h - m, handle_size_w, m)
-        elif edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.TopEdge):
-            self.setGeometry(0, 0, corner_size, corner_size)
-        elif edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.TopEdge):
-            self.setGeometry(w - corner_size, 0, corner_size, corner_size)
-        elif edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.BottomEdge):
-            self.setGeometry(0, h - corner_size, corner_size, corner_size)
-        elif edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.BottomEdge):
-            self.setGeometry(w - corner_size, h - corner_size, corner_size, corner_size)
-        else:
-            self.hide()
-
-        self.update()
-
-    def paintEvent(self, event):
-        """Custom paint to draw handles with round line caps and rounded corners."""
-        if not self.edge:
-            return
-
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
-        m = self.MARGIN // 2
-        rect = self.rect()
-
-        # Set up the pen with round cap
-        pen = QtGui.QPen()
-        pen.setWidth(self.MARGIN)
-        pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
-
-        # Create gradient based on the edge or corner
-        gradient = self._create_gradient(rect)
-
-        if gradient:
-            gradient.setColorAt(0, QtGui.QColor(255, 255, 255, 60))
-            gradient.setColorAt(1, QtGui.QColor(255, 255, 255, 0))
-            pen.setBrush(gradient)
-        else:
-            pen.setBrush(QtGui.QColor(255, 255, 255, 60))
-
-        painter.setPen(pen)
-        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-
-        # Check if the edge is an edge or a corner
-        if self.edge in (
-            QtCore.Qt.Edge.LeftEdge,
-            QtCore.Qt.Edge.RightEdge,
-            QtCore.Qt.Edge.TopEdge,
-            QtCore.Qt.Edge.BottomEdge,
-        ):
-            path = self._generate_edge_path(rect, m)
-        else:
-            path = self._generate_corner_path(rect, m)
-
-        # Draw the cached path
-        painter.drawPath(path)
-
-    def _create_gradient(self, rect):
-        """Create gradient based on the edge or corner."""
-        gradient = None
-        if self.edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.TopEdge):
-            gradient = QtGui.QLinearGradient(0, 0, rect.width(), rect.height())
-        elif self.edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.TopEdge):
-            gradient = QtGui.QLinearGradient(rect.width(), 0, 0, rect.height())
-        elif self.edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.BottomEdge):
-            gradient = QtGui.QLinearGradient(0, rect.height(), rect.width(), 0)
-        elif self.edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.BottomEdge):
-            gradient = QtGui.QLinearGradient(rect.width(), rect.height(), 0, 0)
-        return gradient
-
-    def _generate_edge_path(self, rect, m):
-        """Generate and return the path for an edge."""
-        path = QtGui.QPainterPath()
-        if self.edge == QtCore.Qt.Edge.LeftEdge:
-            path.moveTo(rect.width() - m, m)
-            path.lineTo(rect.width() - m, rect.height() - m)
-        elif self.edge == QtCore.Qt.Edge.RightEdge:
-            path.moveTo(m, m)
-            path.lineTo(m, rect.height() - m)
-        elif self.edge == QtCore.Qt.Edge.TopEdge:
-            path.moveTo(m, rect.height() - m)
-            path.lineTo(rect.width() - m, rect.height() - m)
-        elif self.edge == QtCore.Qt.Edge.BottomEdge:
-            path.moveTo(m, m)
-            path.lineTo(rect.width() - m, m)
-
-        return path
-
-    def _generate_corner_path(self, rect, m):
-        """Generate and return the path for a corner."""
-        path = QtGui.QPainterPath()
-        radius = self.MARGIN * 2  # Adjust the radius for the rounded corner
-
-        if self.edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.TopEdge):
-            # Top-left corner
-            path.moveTo(m, rect.height() - m)
-            path.lineTo(m, m + radius)
-            path.quadTo(m, m, m + radius, m)
-            path.lineTo(rect.width() - m, m)
-        elif self.edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.TopEdge):
-            # Top-right corner
-            path.moveTo(rect.width() - m, rect.height() - m)
-            path.lineTo(rect.width() - m, m + radius)
-            path.quadTo(rect.width() - m, m, rect.width() - m - radius, m)
-            path.lineTo(m, m)
-        elif self.edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.BottomEdge):
-            # Bottom-left corner
-            path.moveTo(m, m)
-            path.lineTo(m, rect.height() - m - radius)
-            path.quadTo(m, rect.height() - m, m + radius, rect.height() - m)
-            path.lineTo(rect.width() - m, rect.height() - m)
-        elif self.edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.BottomEdge):
-            # Bottom-right corner
-            path.moveTo(rect.width() - m, m)
-            path.lineTo(rect.width() - m, rect.height() - m - radius)
-            path.quadTo(
-                rect.width() - m, rect.height() - m, rect.width() - m - radius, rect.height() - m
-            )
-            path.lineTo(m, rect.height() - m)
-
-        return path
-
-class ResizeHandler(QtCore.QObject):
-
+    WINDOW_FLAGS = QtCore.Qt.WindowType.FramelessWindowHint | QtCore.Qt.WindowType.WindowStaysOnTopHint
     MARGIN = 10  # Size for resize handles
 
-    def __init__(self, widget):
-        super().__init__()
+    def __init__(self, widget: QtWidgets.QWidget, allowed_edges=None):
+        super().__init__(widget, self.WINDOW_FLAGS)
         self.widget = widget
         self.is_resizing = False
         self.current_edge = None
         self.mouse_pos = None
 
-        self.widget.setMouseTracking(True)
+        # Store the allowed edges (default: all edges enabled)
+        self.allowed_edges = allowed_edges or (
+            QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.RightEdge |
+            QtCore.Qt.Edge.TopEdge | QtCore.Qt.Edge.BottomEdge
+        )
 
-        # Initialize the single handle
-        self.handle = ResizeHandle(self.widget)
+        self.widget.setMouseTracking(True)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
         # Install event filter on the widget
         self.widget.installEventFilter(self)
@@ -214,7 +70,7 @@ class ResizeHandler(QtCore.QObject):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self.is_resizing = False
             self.current_edge = None
-            self.handle.hide()
+            self.hide()
             self.widget.unsetCursor()
 
     def mouse_move_event(self, event):
@@ -222,6 +78,113 @@ class ResizeHandler(QtCore.QObject):
             self.resize_window(event.globalPos())
         else:
             self.update_cursor_and_handle(event.pos())
+
+    def paintEvent(self, event):
+        """Custom paint to draw handles with round line caps and rounded corners."""
+        if not self.current_edge:
+            return
+
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        m = self.MARGIN // 2
+        rect = self.rect()
+
+        # Set up the pen with round cap
+        pen = QtGui.QPen()
+        pen.setWidth(self.MARGIN)
+        pen.setCapStyle(QtCore.Qt.PenCapStyle.RoundCap)
+
+        # Create gradient based on the edge or corner
+        gradient = self._create_gradient(rect)
+
+        if gradient:
+            gradient.setColorAt(0, QtGui.QColor(255, 255, 255, 60))
+            gradient.setColorAt(1, QtGui.QColor(255, 255, 255, 0))
+            pen.setBrush(gradient)
+        else:
+            pen.setBrush(QtGui.QColor(255, 255, 255, 60))
+
+        painter.setPen(pen)
+        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
+
+        # Check if the edge is an edge or a corner
+        if self.current_edge in (
+            QtCore.Qt.Edge.LeftEdge,
+            QtCore.Qt.Edge.RightEdge,
+            QtCore.Qt.Edge.TopEdge,
+            QtCore.Qt.Edge.BottomEdge,
+        ):
+            path = self._generate_edge_path(rect, m)
+        else:
+            path = self._generate_corner_path(rect, m)
+
+        # Draw the cached path
+        painter.drawPath(path)
+
+    def _create_gradient(self, rect):
+        """Create gradient based on the edge or corner."""
+        gradient = None
+        if self.current_edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.TopEdge):
+            gradient = QtGui.QLinearGradient(0, 0, rect.width(), rect.height())
+        elif self.current_edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.TopEdge):
+            gradient = QtGui.QLinearGradient(rect.width(), 0, 0, rect.height())
+        elif self.current_edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.BottomEdge):
+            gradient = QtGui.QLinearGradient(0, rect.height(), rect.width(), 0)
+        elif self.current_edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.BottomEdge):
+            gradient = QtGui.QLinearGradient(rect.width(), rect.height(), 0, 0)
+        return gradient
+
+    def _generate_edge_path(self, rect, m):
+        """Generate and return the path for an edge."""
+        path = QtGui.QPainterPath()
+        if self.current_edge == QtCore.Qt.Edge.LeftEdge:
+            path.moveTo(rect.width() - m, m)
+            path.lineTo(rect.width() - m, rect.height() - m)
+        elif self.current_edge == QtCore.Qt.Edge.RightEdge:
+            path.moveTo(m, m)
+            path.lineTo(m, rect.height() - m)
+        elif self.current_edge == QtCore.Qt.Edge.TopEdge:
+            path.moveTo(m, rect.height() - m)
+            path.lineTo(rect.width() - m, rect.height() - m)
+        elif self.current_edge == QtCore.Qt.Edge.BottomEdge:
+            path.moveTo(m, m)
+            path.lineTo(rect.width() - m, m)
+
+        return path
+
+    def _generate_corner_path(self, rect, m):
+        """Generate and return the path for a corner."""
+        path = QtGui.QPainterPath()
+        radius = self.MARGIN * 2  # Adjust the radius for the rounded corner
+
+        if self.current_edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.TopEdge):
+            # Top-left corner
+            path.moveTo(m, rect.height() - m)
+            path.lineTo(m, m + radius)
+            path.quadTo(m, m, m + radius, m)
+            path.lineTo(rect.width() - m, m)
+        elif self.current_edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.TopEdge):
+            # Top-right corner
+            path.moveTo(rect.width() - m, rect.height() - m)
+            path.lineTo(rect.width() - m, m + radius)
+            path.quadTo(rect.width() - m, m, rect.width() - m - radius, m)
+            path.lineTo(m, m)
+        elif self.current_edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.BottomEdge):
+            # Bottom-left corner
+            path.moveTo(m, m)
+            path.lineTo(m, rect.height() - m - radius)
+            path.quadTo(m, rect.height() - m, m + radius, rect.height() - m)
+            path.lineTo(rect.width() - m, rect.height() - m)
+        elif self.current_edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.BottomEdge):
+            # Bottom-right corner
+            path.moveTo(rect.width() - m, m)
+            path.lineTo(rect.width() - m, rect.height() - m - radius)
+            path.quadTo(
+                rect.width() - m, rect.height() - m, rect.width() - m - radius, rect.height() - m
+            )
+            path.lineTo(m, rect.height() - m)
+
+        return path
 
     def resize_window(self, global_pos):
         dx = global_pos.x() - self.mouse_pos.x()
@@ -247,47 +210,77 @@ class ResizeHandler(QtCore.QObject):
         self.widget.setGeometry(x, y, max(w, self.widget.minimumWidth()), max(h, self.widget.minimumHeight()))
 
         # Update handle position during resizing
-        if self.handle.isVisible():
-            self.handle.update_position(self.current_edge)
+        if self.isVisible():
+            self.update_position()
 
     def update_cursor_and_handle(self, pos):
-        edge = self.detect_edge(pos)
-        self.current_edge = edge
+        self.current_edge = self.detect_edge(pos)
 
-        if edge:
-            self.handle.update_position(edge)
-            self.handle.show()
-            self.update_cursor_shape(edge)
+        if self.current_edge:
+            self.update_position()
+            self.show()
+            self.update_cursor_shape()
         else:
-            self.handle.hide()
+            self.hide()
             self.widget.unsetCursor()
 
-    def update_cursor_shape(self, edge):
+    def update_position(self):
+        """Update position and appearance based on the edge, incorporating sizing logic."""
+        w, h = self.widget.width(), self.widget.height()
+        m = self.MARGIN
+
+        # Calculate sizes using the same logic
+        corner_size = min(w // 4, h // 4, 100)
+        handle_size_w = w // 3
+        handle_size_h = h // 3
+
+        if self.current_edge == QtCore.Qt.Edge.LeftEdge:
+            self.setGeometry(0, handle_size_h, m, handle_size_h)
+        elif self.current_edge == QtCore.Qt.Edge.RightEdge:
+            self.setGeometry(w - m, handle_size_h, m, handle_size_h)
+        elif self.current_edge == QtCore.Qt.Edge.TopEdge:
+            self.setGeometry(handle_size_w, 0, handle_size_w, m)
+        elif self.current_edge == QtCore.Qt.Edge.BottomEdge:
+            self.setGeometry(handle_size_w, h - m, handle_size_w, m)
+        elif self.current_edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.TopEdge):
+            self.setGeometry(0, 0, corner_size, corner_size)
+        elif self.current_edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.TopEdge):
+            self.setGeometry(w - corner_size, 0, corner_size, corner_size)
+        elif self.current_edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.BottomEdge):
+            self.setGeometry(0, h - corner_size, corner_size, corner_size)
+        elif self.current_edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.BottomEdge):
+            self.setGeometry(w - corner_size, h - corner_size, corner_size, corner_size)
+        else:
+            self.hide()
+
+    def update_cursor_shape(self):
         """Set the cursor shape based on the edge."""
-        if edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.TopEdge) or \
-           edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.BottomEdge):
+        if self.current_edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.TopEdge) or \
+           self.current_edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.BottomEdge):
             self.widget.setCursor(QtCore.Qt.CursorShape.SizeFDiagCursor)
-        elif edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.TopEdge) or \
-             edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.BottomEdge):
+        elif self.current_edge == (QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.TopEdge) or \
+             self.current_edge == (QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.BottomEdge):
             self.widget.setCursor(QtCore.Qt.CursorShape.SizeBDiagCursor)
-        elif edge & QtCore.Qt.Edge.LeftEdge or edge & QtCore.Qt.Edge.RightEdge:
+        elif self.current_edge & QtCore.Qt.Edge.LeftEdge or self.current_edge & QtCore.Qt.Edge.RightEdge:
             self.widget.setCursor(QtCore.Qt.CursorShape.SizeHorCursor)
-        elif edge & QtCore.Qt.Edge.TopEdge or edge & QtCore.Qt.Edge.BottomEdge:
+        elif self.current_edge & QtCore.Qt.Edge.TopEdge or self.current_edge & QtCore.Qt.Edge.BottomEdge:
             self.widget.setCursor(QtCore.Qt.CursorShape.SizeVerCursor)
 
     def detect_edge(self, pos):
+        """Detects which edge or corner the mouse is hovering over.
+        """
         rect = self.widget.rect()
         margin = self.MARGIN
         edge = 0
 
-        if pos.x() <= margin:
+        if pos.x() <= margin and self.allowed_edges & QtCore.Qt.Edge.LeftEdge:
             edge |= QtCore.Qt.Edge.LeftEdge
-        elif pos.x() >= rect.width() - margin:
+        elif pos.x() >= rect.width() - margin and self.allowed_edges & QtCore.Qt.Edge.RightEdge:
             edge |= QtCore.Qt.Edge.RightEdge
 
-        if pos.y() <= margin:
+        if pos.y() <= margin and self.allowed_edges & QtCore.Qt.Edge.TopEdge:
             edge |= QtCore.Qt.Edge.TopEdge
-        elif pos.y() >= rect.height() - margin:
+        elif pos.y() >= rect.height() - margin and self.allowed_edges & QtCore.Qt.Edge.BottomEdge:
             edge |= QtCore.Qt.Edge.BottomEdge
 
         return edge if edge != 0 else None
@@ -1098,8 +1091,11 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         self.main_layout.addWidget(self.scroll_area)
         self.main_layout.addWidget(self.input_bar)
 
+        # Store the allowed edges (default: all edges enabled)
+        allowed_edges = QtCore.Qt.Edge.LeftEdge | QtCore.Qt.Edge.RightEdge | QtCore.Qt.Edge.BottomEdge
+
         # Attach the resize-move handler
-        self.resize_move_handler = ResizeHandler(self)
+        self._resize_handler = ResizeHandler(self, allowed_edges)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
