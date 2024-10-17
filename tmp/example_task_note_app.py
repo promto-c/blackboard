@@ -285,16 +285,79 @@ class ResizeHandler(QtWidgets.QWidget):
 
         return edge if edge != 0 else None
 
-def set_markdown_with_simple_line_breaks(content):
-    """Set markdown content with line breaks replaced only for regular lines."""
-    # Regular expression to find new lines not preceded by Markdown symbols (like lists or headers)
-    # This pattern looks for a new line that is not preceded by list markers, headers, or other markdown constructs.
-    content_with_line_breaks = re.sub(
-        r'(?<![-*#>\d\.\s])\n(?![-*#>\d\.\s])',  # Negative lookbehind and lookahead to avoid Markdown symbols
-        "<br />",  # Replace with HTML line break
-        content
-    )
-    return content_with_line_breaks
+def process_markdown(content):
+    """
+    Processes the markdown content by removing leading/trailing spaces from
+    non-markdown lines and appending two spaces for line breaks, while preserving
+    code blocks and skipping markdown-specific lines.
+
+    Args:
+        content (str): The markdown content to process.
+
+    Returns:
+        str: Processed markdown content with line breaks.
+
+    Examples:
+        >>> content = '''
+        ... # Header
+        ... Plain text
+        ... ```code block```
+        ... - List item
+        ... More plain text
+        ... '''
+        >>> process_markdown(content)
+        '# Header\\nPlain text  \\n```code block```  \\n- List item\\nMore plain text'
+        
+        >>> content = '''
+        ... Simple text
+        ... with newlines
+        ... ```
+        ... multiline code block
+        ... ```
+        ... '''
+        >>> process_markdown(content)
+        'Simple text  \\nwith newlines  \\n```\\nmultiline code block\\n```'
+    """
+    # Regular expression to find code blocks (multiline or inline)
+    code_block_pattern = r'```.*?```|`.*?`'
+    
+    # Find all code blocks (both multiline and inline)
+    code_blocks = re.findall(code_block_pattern, content, re.DOTALL)
+    
+    # Replace code blocks with placeholders
+    for i, block in enumerate(code_blocks):
+        content = content.replace(block, f"CODE_BLOCK_{i}")
+    
+    # Process lines outside of code blocks, skipping markdown-specific lines
+    def process_lines_outside_codeblocks(text):
+        lines = text.split("\n")
+        processed_lines = []
+        
+        # Define regex patterns to match markdown lines (headers, lists, blockquotes)
+        markdown_line_pattern = re.compile(r'^\s*(#|\*|\-|\d+\.)|^\s*>')
+        
+        for line in lines:
+            # Skip markdown lines like headers, lists, blockquotes
+            if markdown_line_pattern.match(line):
+                processed_lines.append(line)
+            else:
+                # For plain text, strip leading/trailing spaces and add   
+                stripped_line = line.strip()
+                if stripped_line:
+                    processed_lines.append(stripped_line + "  ")
+                else:
+                    processed_lines.append("\n")  # Preserve empty lines
+        
+        return "\n".join(processed_lines)
+
+    # Apply the line processing
+    content_with_line_breaks = process_lines_outside_codeblocks(content)
+    
+    # Reinsert the code blocks
+    for i, block in enumerate(code_blocks):
+        content_with_line_breaks = content_with_line_breaks.replace(f"CODE_BLOCK_{i}", block)
+
+    return content_with_line_breaks.strip()
 
 def format_user_mentions(text):
     """Convert @username mentions to clickable links in markdown."""
@@ -769,15 +832,17 @@ class FlexPlainTextEdit(QtWidgets.QPlainTextEdit):
         }
     '''
 
-    def __init__(self, parent=None, max_height: int = 300):
+    def __init__(self, parent=None, max_height: int = 300, tab_size: int = 4):
         """Initialize the flexible plain text edit.
 
         Args:
             parent (Optional[QWidget]): The parent widget.
             max_height (int): The maximum height the widget can expand to.
+            tab_size (int): Number of spaces to insert for a tab.
         """
         super().__init__(parent)
         self.max_height = max_height
+        self.tab_size = tab_size
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
         self.document().contentsChanged.connect(self.adjust_height_to_content)
         self.setStyleSheet(self.STYLE_SHEET)
@@ -814,6 +879,23 @@ class FlexPlainTextEdit(QtWidgets.QPlainTextEdit):
         """Override sizeHint to provide the height based on the document content."""
         document_height = self._calculate_content_height()
         return QtCore.QSize(self.viewport().width(), document_height)
+
+    def keyPressEvent(self, event):
+        """Override keyPressEvent to insert spaces instead of a tab and align to a grid."""
+        if event.key() == QtCore.Qt.Key_Tab:
+            cursor = self.textCursor()
+            # Get the text from the start of the line to the current cursor position
+            cursor.select(QtGui.QTextCursor.LineUnderCursor)
+            line_text = cursor.selectedText()
+
+            # Count leading spaces in the current line
+            leading_spaces = len(line_text) - len(line_text.lstrip(' '))
+
+            # Calculate how many spaces to add to reach the next tab stop
+            spaces_to_next_tab_stop = self.tab_size - (leading_spaces % self.tab_size)
+            self.insertPlainText(' ' * spaces_to_next_tab_stop)
+        else:
+            super().keyPressEvent(event)
 
 class FloatingCard(QtWidgets.QWidget):
     """Custom floating card widget designed for feedback or comments.
@@ -897,7 +979,7 @@ class FloatingCard(QtWidgets.QWidget):
             self.main_layout.addWidget(self.image_label)
             self.set_image(self.attached_image_path)
 
-        content = set_markdown_with_simple_line_breaks(self.content)
+        content =   process_markdown(self.content)
         self.comment_area.setMarkdown(content)
 
         self.main_layout.addWidget(self.comment_area)
@@ -1377,6 +1459,9 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
 
 
 if __name__ == "__main__":
+    import doctest
+    doctest.testmod()
+
     from blackboard.theme import set_theme
     app = QtWidgets.QApplication([])
     set_theme(app)
