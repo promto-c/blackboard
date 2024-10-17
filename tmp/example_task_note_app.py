@@ -8,6 +8,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 from tablerqicon import TablerQIcon
 
 from blackboard.widgets.filter_widget import FilterSelectionBar
+from blackboard.widgets.momentum_scroll_widget import MomentumScrollArea
 
 
 STATUS_COLOR = {
@@ -1200,7 +1201,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
     # TODO: Implement as class CardArea(QtWidgets.QScrollArea)
     def _create_scroll_area(self) -> QtWidgets.QScrollArea:
         # Scrollable area for feedback cards
-        scroll_area = QtWidgets.QScrollArea(self)
+        scroll_area = MomentumScrollArea(self)
         scroll_area.setWidgetResizable(True)
         scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll_area.setStyleSheet("background: transparent; border: none;")  # Transparent scroll area background

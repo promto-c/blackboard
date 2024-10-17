@@ -181,3 +181,46 @@ class MomentumScrollTreeWidget(QtWidgets.QTreeWidget):
         # If not middle button, call the parent class method to handle the event
         else:
             super().mouseReleaseEvent(event)
+
+class MomentumScrollArea(QtWidgets.QScrollArea):
+    """A QScrollArea with momentum scrolling functionality."""
+
+    def __init__(self, parent=None):
+        """Initialize the MomentumScrollArea.
+
+        Args:
+            parent: The parent widget, if any.
+        """
+        super().__init__(parent)
+
+        # Initialize the MomentumScrollHandler
+        self.scroll_handler = MomentumScrollHandler(self)
+
+        # Set smooth scrolling modes for vertical and horizontal scroll bars
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent):
+        """Handle mouse press event."""
+        # Check if middle mouse button is pressed
+        if event.button() == QtCore.Qt.MouseButton.MiddleButton:
+            self.scroll_handler.handle_mouse_press(event)
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
+        """Handle mouse move event."""
+        is_success = self.scroll_handler.handle_mouse_move(event)
+
+        if is_success:
+            event.ignore()
+            return
+        
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
+        """Handle mouse release event."""
+        if event.button() == QtCore.Qt.MouseButton.MiddleButton:
+            self.scroll_handler.handle_mouse_release(event)
+        else:
+            super().mouseReleaseEvent(event)
