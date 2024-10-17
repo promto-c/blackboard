@@ -503,8 +503,15 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.set_row_height(self._row_height)
         self._create_header_menu()
 
+        self.overlay_layout = QtWidgets.QHBoxLayout(self)
+        self.overlay_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignBottom | QtCore.Qt.AlignmentFlag.AlignHCenter)
+        self.overlay_layout.setContentsMargins(16, 16, 16, 16)
+
         self.data_fetching_buttons = DataFetchingButtons(self)
         self.data_fetching_buttons.hide()
+
+        self.overlay_layout.addWidget(self.data_fetching_buttons)
+
         self.fetch_more_button = self.data_fetching_buttons.fetch_more_button
         self.fetch_all_button = self.data_fetching_buttons.fetch_all_button
         self.stop_fetch_button = self.data_fetching_buttons.stop_fetch_button
