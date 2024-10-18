@@ -68,17 +68,21 @@ class DrawingLabel(QtWidgets.QWidget):
         self.current_tool: ToolMode = ToolMode.NONE
         self.rectangle_start: QtCore.QPoint = QtCore.QPoint()
         self.rectangle_end: QtCore.QPoint = QtCore.QPoint()
-        self.rectangles: list[QtCore.QRect] = []  # Store all rectangles for re-drawing
-        self.control_points: list[QtCore.QPoint] = []  # Control points for smoothing
-        self.drawing_objects: list[DrawingObject] = []  # Store all drawing objects
-        self.text_items: list[tuple[QtCore.QPoint, str]] = []  # Store all text items
+        self.rectangles: list[QtCore.QRect] = []
+        self.control_points: list[QtCore.QPoint] = []
+        self.drawing_objects: list[DrawingObject] = []
+        self.text_items: list[tuple[QtCore.QPoint, str]] = []
         self.text_editor = None
-        self.text_font = QtGui.QFont('Arial', 12)  # Default font
-        # Tool settings
+        self.text_font = QtGui.QFont('Arial', 12)
         self.pen_color: QtGui.QColor = QtGui.QColor(QtCore.Qt.GlobalColor.red)
         self.pen_width: int = 3
-        # self.smooth_line_color: QtGui.QColor = QtGui.QColor(2, 255, 1)  # Customizable smooth line color
+        self.is_dragging: bool = False
+        self.start_drag_position: QtCore.QPoint = QtCore.QPoint()
+        self.initial_pen_width: int = self.pen_width
+        self.cursor_visible: bool = False
         self.text_color: QtGui.QColor = QtGui.QColor(0, 0, 0)  # Text color
+
+        self.setMouseTracking(True)  # Enable mouse tracking to get mouseMoveEvent even when no button is pressed
 
     def set_pixmap(self, pixmap: QtGui.QPixmap):
         self.image = pixmap.copy()
@@ -92,6 +96,16 @@ class DrawingLabel(QtWidgets.QWidget):
             self._draw_rectangles(painter)
             self._draw_drawing_objects(painter)
             self._draw_text_items(painter)
+
+        # Draw the preview cursor if it's visible
+        if self.cursor_visible and self.current_tool == ToolMode.FREEHAND:
+            painter.setPen(QtGui.QPen(self.pen_color, 1, QtCore.Qt.PenStyle.DashLine))
+            cursor_size = self.pen_width
+            cursor_center = self.start_drag_position if self.is_dragging else self.last_point
+            cursor_rect = QtCore.QRect(cursor_center.x() - cursor_size // 2,
+                                       cursor_center.y() - cursor_size // 2,
+                                       cursor_size, cursor_size)
+            painter.drawEllipse(cursor_rect)
 
     def _draw_background(self, painter: QtGui.QPainter):
         painter.drawPixmap(self.rect(), self.image)
@@ -120,21 +134,32 @@ class DrawingLabel(QtWidgets.QWidget):
 
     def mousePressEvent(self, event: QtGui.QMouseEvent):
         if event.button() == QtCore.Qt.MouseButton.LeftButton and not self.image.isNull():
-            if self.current_tool == ToolMode.RECTANGLE:
-                self.rectangle_start = event.pos()
-                self.rectangle_end = self.rectangle_start
-            elif self.current_tool == ToolMode.ERASER:
-                self.erase_drawing(event.pos())
-            elif self.current_tool == ToolMode.FREEHAND:
-                self.last_point = event.pos()
-                self.control_points = [event.pos()]
-            elif self.current_tool == ToolMode.TEXT:
-                self.add_text(event.pos())
+            if event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier:
+                # Start brush size adjustment
+                self.is_dragging = True
+                self.start_drag_position = event.pos()
+                self.initial_pen_width = self.pen_width  # Store the initial brush size
+            else:
+                if self.current_tool == ToolMode.RECTANGLE:
+                    self.rectangle_start = event.pos()
+                    self.rectangle_end = self.rectangle_start
+                elif self.current_tool == ToolMode.ERASER:
+                    self.erase_drawing(event.pos())
+                elif self.current_tool == ToolMode.FREEHAND:
+                    self.last_point = event.pos()
+                    self.control_points = [event.pos()]
+                elif self.current_tool == ToolMode.TEXT:
+                    self.add_text(event.pos())
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent):
-        if self.current_tool == ToolMode.RECTANGLE and (event.buttons() & QtCore.Qt.MouseButton.LeftButton):
-            self.rectangle_end = event.pos()
-            self.update()
+        self.last_point = event.pos()  # Update the last point for cursor preview
+
+        if self.is_dragging:
+            # Adjust brush size based on horizontal drag distance from the start position
+            delta_x = event.pos().x() - self.start_drag_position.x()
+            new_width = max(1, self.initial_pen_width + delta_x)
+            self.pen_width = new_width
+            self.update()  # Refresh to update the preview cursor
         elif self.current_tool == ToolMode.FREEHAND and (event.buttons() & QtCore.Qt.MouseButton.LeftButton) and not self.image.isNull():
             painter = QtGui.QPainter(self.image)
             pen = QtGui.QPen(self.pen_color, self.pen_width, QtCore.Qt.PenStyle.SolidLine, QtCore.Qt.PenCapStyle.RoundCap, QtCore.Qt.PenJoinStyle.RoundJoin)
@@ -143,9 +168,13 @@ class DrawingLabel(QtWidgets.QWidget):
             self.last_point = event.pos()
             self.control_points.append(event.pos())
             self.update()
+        else:
+            self.update()  # Ensure the cursor preview is updated when moving
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
-        if event.button() == QtCore.Qt.MouseButton.LeftButton:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self.is_dragging:
+            self.is_dragging = False  # End brush size adjustment
+        elif event.button() == QtCore.Qt.MouseButton.LeftButton:
             if self.current_tool == ToolMode.RECTANGLE:
                 self.rectangles.append(QtCore.QRect(self.rectangle_start, self.rectangle_end))
             elif self.current_tool == ToolMode.FREEHAND:
@@ -153,8 +182,15 @@ class DrawingLabel(QtWidgets.QWidget):
 
             # Emit the signal when the drawing changes
             self.drawing_changed.emit()
+        self.update()
 
-            self.update()
+    def enterEvent(self, event: QtCore.QEvent):
+        self.cursor_visible = True
+        self.update()
+
+    def leaveEvent(self, event: QtCore.QEvent):
+        self.cursor_visible = False
+        self.update()
 
     def erase_drawing(self, point: QtCore.QPoint):
         # Find and remove the drawing object closest to the given point
