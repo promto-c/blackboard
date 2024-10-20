@@ -496,17 +496,17 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         """
         self._sequence_range_column = column
 
-    def load_thumbnail(self, file_path: str, is_background_process: bool = True) -> QtGui.QPixmap:
+    def load_thumbnail(self, file_path: str, use_background_thread: bool = True) -> QtGui.QPixmap:
         """Load the thumbnail image.
 
         Args:
             file_path (str): The path to the file.
-            is_background_process (bool): Whether to load the thumbnail in the background. Defaults to True.
+            use_background_thread (bool): Whether to load the thumbnail using a background thread. Defaults to True.
 
         Returns:
             QtGui.QPixmap: The loaded thumbnail image.
         """
-        if is_background_process:
+        if use_background_thread:
             pixmap = self._load_thumbnail_using_worker(file_path)
         else:
             pixmap = ThumbnailUtils.get_pixmap_thumbnail(file_path, self.thumbnail_height)
@@ -595,7 +595,7 @@ class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
         # Restore the painter's state
         painter.restore()
 
-    def on_thumbnail_loaded(self, file_path, pixmap):
+    def on_thumbnail_loaded(self, file_path: str, pixmap: QtGui.QPixmap):
         """Handle the event when a thumbnail is loaded.
 
         Args:

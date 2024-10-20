@@ -188,15 +188,13 @@ class DataViewWidget(QtWidgets.QWidget):
         # ----------------------
         # Add [W1], [W2] to [L1]
         # Add left filter bar and right search edit to top bar layout
-        self.top_bar_area_layout.addWidget(self.filter_bar_widget)
-        self.top_bar_area_layout.addStretch()
-        self.top_bar_area_layout.addWidget(self.search_edit)
+        self.top_bar_area_layout.addWidget(self.filter_bar_widget, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
+        self.top_bar_area_layout.addWidget(self.search_edit, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
 
         # Add [W3], [W4] to [L2]
         # Add left general tool bar and right view tool bar
-        self.utility_area_layout.addWidget(self.general_tool_bar)
-        self.utility_area_layout.addStretch()
-        self.utility_area_layout.addWidget(self.view_tool_bar)
+        self.utility_area_layout.addWidget(self.general_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
+        self.utility_area_layout.addWidget(self.view_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
 
         # Add [W5] to [L3]
         # Add tree widget to main tree widget
@@ -206,7 +204,7 @@ class DataViewWidget(QtWidgets.QWidget):
         """Initialize signal-slot connections.
         """
         # Connect signals to slots
-        self.view_tool_bar.refresh_button.clicked.connect(self.activate_filter)
+        self.view_tool_bar.refresh_action.triggered.connect(self.activate_filter)
         bb.utils.KeyBinder.bind_key('Ctrl+F', self.tree_widget, self.search_edit.set_text_as_selection)
 
     # Public Methods
@@ -361,8 +359,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
 
         # Add Widgets to Layouts
         # ----------------------
-        layout.addStretch()
-        layout.addWidget(self.submit_button)
+        layout.addWidget(self.submit_button, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.

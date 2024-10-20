@@ -351,6 +351,7 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         """Initialize the UI of the widget.
         """
         self.setFixedHeight(24)
+        self.setIconSize(QtCore.QSize(20, 20))
         # Create Layouts
         # --------------
         self.layout().setContentsMargins(0, 0, 0, 0)
@@ -361,58 +362,59 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         spacer.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred)
         self.addWidget(spacer)
 
-        # Create Widgets
-        # --------------
-        self.fit_in_view_button = QtWidgets.QToolButton(self)
-        self.fit_in_view_button.setIcon(self.tabler_icon.arrow_autofit_content)
-        self.fit_in_view_button.setFixedSize(22, 22)
-        self.fit_in_view_button.setToolTip("Fit columns in view")  # Tooltip added
-
-        self.word_wrap_button = QtWidgets.QToolButton(self)
-        self.word_wrap_button.setCheckable(True)
-        self.word_wrap_button.setIcon(self.tabler_icon.text_wrap)
-        self.word_wrap_button.setFixedSize(22, 22)
-        self.word_wrap_button.setToolTip("Toggle word wrap")  # Tooltip added
-
-        self.set_uniform_row_height_button = QtWidgets.QToolButton(self)
-        self.set_uniform_row_height_button.setCheckable(True)
-        self.set_uniform_row_height_button.setIcon(self.tabler_icon.arrow_autofit_height)
-        self.set_uniform_row_height_button.setFixedSize(22, 22)
-        self.set_uniform_row_height_button.setToolTip("Toggle uniform row height")  # Tooltip added
-
-        self.uniform_row_height_spin_box = QtWidgets.QSpinBox(self)
-        self.uniform_row_height_spin_box.setRange(16, 200)
-        self.uniform_row_height_spin_box.setFixedHeight(20)
-        self.uniform_row_height_spin_box.setSingleStep(4)
-        self.uniform_row_height_spin_box.setValue(24)
-        self.uniform_row_height_spin_box.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self.uniform_row_height_spin_box.setToolTip("Set uniform row height")  # Tooltip added
-
-        self.refresh_button = QtWidgets.QToolButton(self)
-        self.refresh_button.setIcon(self.tabler_icon.refresh)
-        self.refresh_button.setFixedSize(22, 22)
-        self.refresh_button.setToolTip("Refresh tree")
-
         # Add Widgets to Layouts
         # ----------------------
-        self.addWidget(self.fit_in_view_button)
-        self.addWidget(self.word_wrap_button)
-        self.addWidget(self.set_uniform_row_height_button)
-        self.addWidget(self.uniform_row_height_spin_box)
-        self.addWidget(self.refresh_button)
+        self.fit_in_view_action = self.add_action(
+            icon=self.tabler_icon.arrow_autofit_content,
+            tooltip="Fit columns in view",
+        )
+        self.word_wrap_action = self.add_action(
+            icon=self.tabler_icon.text_wrap,
+            tooltip="Toggle word wrap",
+            checkable=True,
+        )
+        self.set_uniform_row_height_action = self.add_action(
+            icon=self.tabler_icon.arrow_autofit_height,
+            tooltip="Toggle uniform row height",
+            checkable=True,
+        )
+
+        self.uniform_row_height_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal, self)
+        self.uniform_row_height_slider.setRange(16, 200)
+        self.uniform_row_height_slider.setFixedHeight(20)
+        self.uniform_row_height_slider.setSingleStep(4)
+        self.uniform_row_height_slider.setValue(24)
+        self.uniform_row_height_slider.setToolTip("Set uniform row height")  # Tooltip added
+        self.addWidget(self.uniform_row_height_slider)
+
+        self.refresh_action = self.add_action(
+            icon=self.tabler_icon.refresh,
+            tooltip="Refresh",
+        )
+
+    def add_action(self, icon: QtGui.QIcon, tooltip: str, checkable: bool = False) -> QtGui.QAction:
+        """Adds an action to the toolbar."""
+        action = self.addAction(icon, '')
+        action.setToolTip(tooltip)
+        action.setCheckable(checkable)
+
+        # Access the widget for the action and set the cursor
+        self.widgetForAction(action).setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        
+        return action
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
         # Connect signals to slots
-        self.fit_in_view_button.clicked.connect(self.tree_widget.fit_column_in_view)
-        self.word_wrap_button.toggled.connect(self.tree_widget.setWordWrap)
-        self.set_uniform_row_height_button.toggled.connect(self.toggle_uniform_row_height)
-        self.uniform_row_height_spin_box.valueChanged.connect(self.tree_widget.set_row_height)
-        # self.refresh_button.clicked.connect(self.tree_widget.refresh)
+        self.fit_in_view_action.triggered.connect(self.tree_widget.fit_column_in_view)
+        self.word_wrap_action.toggled.connect(self.tree_widget.setWordWrap)
+        self.set_uniform_row_height_action.triggered.connect(self.toggle_uniform_row_height)
+        self.uniform_row_height_slider.valueChanged.connect(self.tree_widget.set_row_height)
+        # self.refresh_action.triggered.connect(self.tree_widget.refresh)
 
     def toggle_uniform_row_height(self, state: bool):
-        height = self.uniform_row_height_spin_box.value() if state else -1
+        height = self.uniform_row_height_slider.value() if state else -1
         self.tree_widget.set_row_height(height)
 
 class GroupableTreeWidget(MomentumScrollTreeWidget):
