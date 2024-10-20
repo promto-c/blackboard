@@ -62,6 +62,7 @@ class ThumbnailWidget(QtWidgets.QWidget):
         self.overlay_layout.addWidget(self.tool_bar)
 
         # Start loading thumbnail
+        # QtCore.QTimer.singleShot(0, self._load_thumbnail)
         self._load_thumbnail()
 
     # Public Methods
