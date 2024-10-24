@@ -13,7 +13,6 @@ class GallerySectionHeader(QtWidgets.QWidget):
     
     def __init__(self, group_name: str, parent: 'GalleryWidget' = None):
         super().__init__(parent)
-        self.parent = parent
         self.group_name = group_name
         self.collapsed = False
         
@@ -58,7 +57,7 @@ class GallerySectionHeader(QtWidgets.QWidget):
         """Toggle the collapse state of the section."""
         self.collapsed = not self.collapsed
         self.update_icon()
-        self.parent.toggle_section(self.group_name, self.collapsed)
+        self.parent().toggle_section(self.group_name, self.collapsed)
 
     def update_icon(self):
         """Update the icon based on the collapse state."""
@@ -104,9 +103,14 @@ class GalleryItemWidget(QtWidgets.QWidget):
 
         # Form-like widget to show data fields
         self.form_widget = QtWidgets.QWidget(self)
-        form_layout = QtWidgets.QFormLayout(self.form_widget)
+        self.form_layout = QtWidgets.QVBoxLayout(self.form_widget)
+        
+        self.field_widgets = {}
         for field, value in self.data_fields.items():
-            form_layout.addRow(field, QtWidgets.QLabel(value))
+            label = QtWidgets.QLabel(value)
+            label.setToolTip(field)
+            self.form_layout.addWidget(label)
+            self.field_widgets[field] = label
 
         self.content_area.addWidget(self.thumbnail_widget)
         self.content_area.addWidget(self.form_widget)
@@ -118,6 +122,11 @@ class GalleryItemWidget(QtWidgets.QWidget):
 
         self.set_view_mode()
         self.lock_splitter_handle()
+
+    def set_field_visibility(self, field, visible):
+        """Set the visibility of a specific field."""
+        if field in self.field_widgets:
+            self.field_widgets[field].setVisible(visible)
 
     def lock_splitter_handle(self):
         # Set handle width to zero to make it invisible
@@ -174,47 +183,27 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         # Get available fields from the gallery view
         fields = self.gallery_widget.get_available_fields()
 
-        # Group By Dropdown
-        self.group_by_dropdown = QtWidgets.QComboBox(self)
-        self.group_by_dropdown.addItems(fields)
-        self.group_by_dropdown.setToolTip("Group by field")
-        self.addWidget(self.group_by_dropdown)
+        # Sort
+        self.sort_rule_button = QtWidgets.QPushButton(TablerQIcon.arrows_sort, 'Sort', self)
+        self.sort_rule_button.setMinimumWidth(100)
+        self.sort_rule_menu = QtWidgets.QMenu(self.sort_rule_button)
+        self.sort_rule_button.setMenu(self.sort_rule_menu)
 
-        group_icon = QtWidgets.QLabel(self)
-        group_icon.setPixmap(TablerQIcon.layout_2.pixmap(20, 20))
-        self.addWidget(group_icon)
-
-        self.group_by_dropdown.currentTextChanged.connect(self.group_by_changed)
-
-        # Sort By Dropdown
-        self.sort_by_dropdown = QtWidgets.QComboBox(self)
-        self.sort_by_dropdown.addItems(fields)
-        self.sort_by_dropdown.setToolTip("Sort by field")
-        self.addWidget(self.sort_by_dropdown)
-
-        sort_icon = QtWidgets.QLabel(self)
-        sort_icon.setPixmap(TablerQIcon.sort_ascending.pixmap(20, 20))
-        self.addWidget(sort_icon)
-
-        self.sort_by_dropdown.currentTextChanged.connect(self.sort_by_changed)
-
-        # Ascending/Descending Toggle
-        self.sort_toggle = QtWidgets.QToolButton(self)
-        self.sort_toggle.setCheckable(True)
-        self.sort_toggle.setIcon(TablerQIcon.arrow_up)
-        self.sort_toggle.setToolTip("Toggle sort order (Ascending/Descending)")
-        self.sort_toggle.clicked.connect(self.toggle_sort_order)
-        
+        # Group
+        self.group_button = QtWidgets.QPushButton(TablerQIcon.layout_2, 'Group', self)
+        self.group_button.setMinimumWidth(100)
+        self.group_menu = QtWidgets.QMenu(self.group_button)
+        self.group_button.setMenu(self.group_menu)
 
         # Show/Hide Fields Button
-        self.field_toggle_button = QtWidgets.QToolButton(self)
-        self.field_toggle_button.setIcon(TablerQIcon.list)
-        self.field_toggle_button.setToolTip("Show/Hide Fields")
-        self.field_toggle_button.clicked.connect(self.show_field_settings)
+        self.fields_action = QtGui.QAction(TablerQIcon.list, 'Show/Hide Fields')
 
-        self.addWidget(self.sort_toggle)
+        self.addAction(self.fields_action)
         self.addSeparator()
-        self.addWidget(self.field_toggle_button)
+        self.addWidget(self.sort_rule_button)
+        self.addWidget(self.group_button)
+
+        self.fields_action.triggered.connect(self.show_field_settings)
 
     def group_by_changed(self, text):
         self.gallery_widget.set_group_by_field(text)
@@ -223,17 +212,9 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         # Implement sorting logic here
         pass
 
-    def toggle_sort_order(self):
-        if self.sort_toggle.isChecked():
-            self.sort_toggle.setIcon(TablerQIcon.arrow_down)
-            self.sort_toggle.setToolTip("Sort Descending")
-        else:
-            self.sort_toggle.setIcon(TablerQIcon.arrow_up)
-            self.sort_toggle.setToolTip("Sort Ascending")
-
     def show_field_settings(self):
         # Implement a dialog or dropdown for field visibility settings
-        pass
+        self.gallery_widget.open_visualize_settings()
 
 class GalleryViewToolBar(QtWidgets.QToolBar):
 
@@ -387,6 +368,7 @@ class GalleryWidget(MomentumScrollListWidget):
 
         # Initialize available fields as an empty list
         self.fields = []
+        self.visible_fields = {}
         self.groups = {}  # To track headers and items under each group
         self.group_by_field = None  # The field used for grouping items
 
@@ -529,10 +511,9 @@ class GalleryWidget(MomentumScrollListWidget):
 
         # Example field checkboxes
         self.field_checkboxes = {}
-        fields = ['Title', 'Description', 'Date', 'Author']  # Example fields
-        for field in fields:
+        for field in self.fields:
             checkbox = QtWidgets.QCheckBox(field)
-            checkbox.setChecked(True)
+            checkbox.setChecked(self.visible_fields.get(field, True))
             checkbox.stateChanged.connect(lambda state, field=field: self.toggle_field_visibility(field, state))
             field_toggle_layout.addWidget(checkbox)
             self.field_checkboxes[field] = checkbox
@@ -556,11 +537,30 @@ class GalleryWidget(MomentumScrollListWidget):
         # Refresh the view
         self.model().layoutChanged.emit()
 
+    def set_fields(self, fields):
+        """Set the available fields for grouping, sorting, and visibility.
+        
+        Args:
+            fields (list): A list of field names (strings) to be set as available fields.
+        """
+        self.fields = fields
+        # Initialize all fields as visible by default
+        self.visible_fields = {field: True for field in fields}
+
     def toggle_field_visibility(self, field, state):
         """Toggle visibility of a specific field."""
         visible = state == QtCore.Qt.Checked
-        print(f"Field '{field}' visibility set to: {visible}")
-        # Implement actual visibility logic based on your application
+        self.visible_fields[field] = visible
+
+        # Update all GalleryItemWidgets to reflect the new visibility state
+        for index in range(self.count()):
+            list_item = self.item(index)
+            item_widget = self.itemWidget(list_item)
+            if isinstance(item_widget, GalleryItemWidget):
+                item_widget.set_field_visibility(field, visible)
+
+        # Refresh the view
+        self.model().layoutChanged.emit()
 
     def update_button_background(self):
         """Update the background of the tool buttons based on the scroll position."""
@@ -846,8 +846,6 @@ if __name__ == "__main__":
     # Add items to the gallery based on metadata
     for metadata in vfx_shot_metadata:
         window.gallery_view_widget.add_item(metadata)
-
-    # self.set_group_by_field()
 
     window.show()
     sys.exit(app.exec_())
