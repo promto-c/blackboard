@@ -177,25 +177,43 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         # Group By Dropdown
         self.group_by_dropdown = QtWidgets.QComboBox(self)
         self.group_by_dropdown.addItems(fields)
-        self.group_by_dropdown.currentTextChanged.connect(self.group_by_changed)
+        self.group_by_dropdown.setToolTip("Group by field")
         self.addWidget(self.group_by_dropdown)
+
+        group_icon = QtWidgets.QLabel(self)
+        group_icon.setPixmap(TablerQIcon.layout_2.pixmap(20, 20))
+        self.addWidget(group_icon)
+
+        self.group_by_dropdown.currentTextChanged.connect(self.group_by_changed)
 
         # Sort By Dropdown
         self.sort_by_dropdown = QtWidgets.QComboBox(self)
         self.sort_by_dropdown.addItems(fields)
-        self.sort_by_dropdown.currentTextChanged.connect(self.sort_by_changed)
+        self.sort_by_dropdown.setToolTip("Sort by field")
         self.addWidget(self.sort_by_dropdown)
+
+        sort_icon = QtWidgets.QLabel(self)
+        sort_icon.setPixmap(TablerQIcon.sort_ascending.pixmap(20, 20))
+        self.addWidget(sort_icon)
+
+        self.sort_by_dropdown.currentTextChanged.connect(self.sort_by_changed)
 
         # Ascending/Descending Toggle
         self.sort_toggle = QtWidgets.QToolButton(self)
         self.sort_toggle.setCheckable(True)
-        self.sort_toggle.setText("Asc")
+        self.sort_toggle.setIcon(TablerQIcon.arrow_up)
+        self.sort_toggle.setToolTip("Toggle sort order (Ascending/Descending)")
         self.sort_toggle.clicked.connect(self.toggle_sort_order)
-        self.addWidget(self.sort_toggle)
+        
 
         # Show/Hide Fields Button
-        self.field_toggle_button = QtWidgets.QPushButton("Fields", self)
+        self.field_toggle_button = QtWidgets.QToolButton(self)
+        self.field_toggle_button.setIcon(TablerQIcon.list)
+        self.field_toggle_button.setToolTip("Show/Hide Fields")
         self.field_toggle_button.clicked.connect(self.show_field_settings)
+
+        self.addWidget(self.sort_toggle)
+        self.addSeparator()
         self.addWidget(self.field_toggle_button)
 
     def group_by_changed(self, text):
@@ -206,8 +224,12 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         pass
 
     def toggle_sort_order(self):
-        # Implement toggle for sort order (ascending/descending)
-        pass
+        if self.sort_toggle.isChecked():
+            self.sort_toggle.setIcon(TablerQIcon.arrow_down)
+            self.sort_toggle.setToolTip("Sort Descending")
+        else:
+            self.sort_toggle.setIcon(TablerQIcon.arrow_up)
+            self.sort_toggle.setToolTip("Sort Ascending")
 
     def show_field_settings(self):
         # Implement a dialog or dropdown for field visibility settings
@@ -279,7 +301,7 @@ class GalleryViewToolBar(QtWidgets.QToolBar):
         # Define view modes with icons and tooltips
         view_modes = {
             QtWidgets.QListWidget.ViewMode.IconMode: (self.tabler_icon.layout_grid, "Grid View"),
-            QtWidgets.QListWidget.ViewMode.ListMode: (self.tabler_icon.section, "List View"),
+            QtWidgets.QListWidget.ViewMode.ListMode: (self.tabler_icon.list_details, "List View"),
         }
 
         for mode, (icon, tooltip) in view_modes.items():
@@ -379,13 +401,15 @@ class GalleryWidget(MomentumScrollListWidget):
         # Layout for toolbars
         self.overlay_layout = QtWidgets.QHBoxLayout(self)
         self.overlay_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
-        self.overlay_layout.setContentsMargins(4, 4, 16, 4)
+        self.overlay_layout.setContentsMargins(8, 8, 16, 8)
 
         # Toolbars
+        self.general_tool_bar = QtWidgets.QToolBar(self)
         self.utility_tool_bar = GalleryViewToolBar(self)
         self.manipulation_tool_bar = GalleryManipulationToolBar(self)
 
         # Add toolbars
+        self.overlay_layout.addWidget(self.general_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
         self.overlay_layout.addWidget(self.manipulation_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
         self.overlay_layout.addWidget(self.utility_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
 
