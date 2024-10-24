@@ -410,7 +410,7 @@ class GalleryWidget(MomentumScrollListWidget):
 
         # Add toolbars
         self.overlay_layout.addWidget(self.general_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
-        self.overlay_layout.addWidget(self.manipulation_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        self.overlay_layout.addWidget(self.manipulation_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.overlay_layout.addWidget(self.utility_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
 
     def get_available_fields(self):
@@ -756,7 +756,85 @@ if __name__ == "__main__":
                 "Status": "Review",
             }
         },
+        {
+            'image_path': image_files[8],
+            'data_fields': {
+                "Shot Name": "shot_009",
+                "Description": "Car chase with motion blur effects.",
+                "Frame Range": "1500-1600",
+                "Artist": "Charlie Davis",
+                "Shot Type": "Compositing",
+                "Status": "Pending",
+            }
+        },
+        {
+            'image_path': image_files[9],
+            'data_fields': {
+                "Shot Name": "shot_010",
+                "Description": "Day-to-night color grading transformation.",
+                "Frame Range": "1601-1700",
+                "Artist": "Alice Smith",
+                "Shot Type": "Color Grading",
+                "Status": "In Progress",
+            }
+        },
+        {
+            'image_path': image_files[10],
+            'data_fields': {
+                "Shot Name": "shot_011",
+                "Description": "Explosion aftermath with dust and smoke simulation.",
+                "Frame Range": "1700-1800",
+                "Artist": "Bob Johnson",
+                "Shot Type": "FX",
+                "Status": "Pending",
+            }
+        },
+        {
+            'image_path': image_files[11],
+            'data_fields': {
+                "Shot Name": "shot_012",
+                "Description": "Green screen replacement with futuristic cityscape.",
+                "Frame Range": "1801-1900",
+                "Artist": "Charlie Davis",
+                "Shot Type": "Compositing",
+                "Status": "Complete",
+            }
+        },
+        {
+            'image_path': image_files[12],
+            'data_fields': {
+                "Shot Name": "shot_013",
+                "Description": "Spaceship takeoff with realistic exhaust flames.",
+                "Frame Range": "1900-2000",
+                "Artist": "Alice Smith",
+                "Shot Type": "FX",
+                "Status": "In Progress",
+            }
+        },
+        {
+            'image_path': image_files[13],
+            'data_fields': {
+                "Shot Name": "shot_014",
+                "Description": "Character shadow enhancement for evening scene.",
+                "Frame Range": "2001-2100",
+                "Artist": "Bob Johnson",
+                "Shot Type": "Compositing",
+                "Status": "Review",
+            }
+        },
+        {
+            'image_path': image_files[14],
+            'data_fields': {
+                "Shot Name": "shot_015",
+                "Description": "CG building destruction with camera shake effect.",
+                "Frame Range": "2101-2200",
+                "Artist": "Charlie Davis",
+                "Shot Type": "FX",
+                "Status": "Pending",
+            }
+        },
     ]
+
 
     # Initialize and show the gallery window
     window = GalleryWindow()
