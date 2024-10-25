@@ -8,11 +8,33 @@ from tablerqicon import TablerQIcon  # Importing TablerQIcon
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollListWidget
 from blackboard.widgets.thumbnail_widget import ThumbnailWidget
 
+@staticmethod
+def create_shadow_effect(blur_radius=30, x_offset=0, y_offset=4, color=QtGui.QColor(0, 0, 0, 150)):
+    """Create and return a shadow effect for the floating card or any widget.
+
+    Args:
+        blur_radius (int): The blur radius of the shadow.
+        x_offset (int): The horizontal offset of the shadow.
+        y_offset (int): The vertical offset of the shadow.
+        color (QColor): The color of the shadow effect.
+
+    Returns:
+        QGraphicsDropShadowEffect: Configured shadow effect.
+    """
+    shadow = QtWidgets.QGraphicsDropShadowEffect()
+    shadow.setBlurRadius(blur_radius)
+    shadow.setXOffset(x_offset)
+    shadow.setYOffset(y_offset)
+    shadow.setColor(color)
+    return shadow
+
 class GallerySectionHeader(QtWidgets.QWidget):
     """Section header widget for gallery groups."""
     
-    def __init__(self, group_name: str, parent: 'GalleryWidget' = None):
-        super().__init__(parent)
+    def __init__(self, group_name: str, gallery_widget: 'GalleryWidget' = None):
+        super().__init__(gallery_widget)
+
+        self.gallery_widget = gallery_widget
         self.group_name = group_name
         self.collapsed = False
         
@@ -57,7 +79,7 @@ class GallerySectionHeader(QtWidgets.QWidget):
         """Toggle the collapse state of the section."""
         self.collapsed = not self.collapsed
         self.update_icon()
-        self.parent().toggle_section(self.group_name, self.collapsed)
+        self.gallery_widget.toggle_section(self.group_name, self.collapsed)
 
     def update_icon(self):
         """Update the icon based on the collapse state."""
@@ -389,6 +411,9 @@ class GalleryWidget(MomentumScrollListWidget):
         self.general_tool_bar = QtWidgets.QToolBar(self)
         self.utility_tool_bar = GalleryViewToolBar(self)
         self.manipulation_tool_bar = GalleryManipulationToolBar(self)
+
+        self.utility_tool_bar.setGraphicsEffect(create_shadow_effect())
+        self.manipulation_tool_bar.setGraphicsEffect(create_shadow_effect())
 
         # Add toolbars
         self.overlay_layout.addWidget(self.general_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)

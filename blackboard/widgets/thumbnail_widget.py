@@ -10,7 +10,7 @@ from tablerqicon import TablerQIcon
 # Local Imports
 # -------------
 from blackboard.utils.thread_pool import ThreadPoolManager
-from blackboard.utils.qimage_utils import ThumbnailLoader
+from blackboard.utils.qimage_utils import ThumbnailLoader, ThumbnailUtils
 from blackboard.widgets.tool_bar import OverlayToolBar
 
 
@@ -72,7 +72,8 @@ class ThumbnailWidget(QtWidgets.QWidget):
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Image Viewer")
         dialog_layout = QtWidgets.QVBoxLayout(dialog)
-        pixmap = QtGui.QPixmap(self.file_path)
+        # pixmap = QtGui.QPixmap(self.file_path)
+        pixmap = ThumbnailUtils.get_pixmap_thumbnail(self.file_path, 1000)
         image_label = QtWidgets.QLabel()
         image_label.setPixmap(pixmap)
         image_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)

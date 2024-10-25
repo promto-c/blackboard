@@ -324,6 +324,9 @@ class ColumnManagementWidget(QtWidgets.QTreeWidget):
         self.sync_column_order()
 
 class TreeUtilityToolBar(QtWidgets.QToolBar):
+
+    DEFAULT_HEIGHT = 24
+    
     def __init__(self, tree_widget: 'GroupableTreeWidget'):
         # Initialize the super class
         super().__init__(parent=tree_widget)
@@ -350,8 +353,9 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setFixedHeight(24)
+        self.setFixedHeight(self.DEFAULT_HEIGHT)
         self.setIconSize(QtCore.QSize(20, 20))
+
         # Create Layouts
         # --------------
         self.layout().setContentsMargins(0, 0, 0, 0)
@@ -383,7 +387,7 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         self.uniform_row_height_slider.setRange(16, 200)
         self.uniform_row_height_slider.setFixedHeight(20)
         self.uniform_row_height_slider.setSingleStep(4)
-        self.uniform_row_height_slider.setValue(24)
+        self.uniform_row_height_slider.setValue(GroupableTreeWidget.DEFAULT_ROW_HEIGHT)
         self.uniform_row_height_slider.setToolTip("Set uniform row height")  # Tooltip added
         self.addWidget(self.uniform_row_height_slider)
 
@@ -1206,7 +1210,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     # TODO: Separate class
     # Generator
     # ---------
-    def set_generator(self, generator: Optional[Generator]):
+    def set_generator(self, generator: Optional[Generator], is_fetch_all: bool = False):
         """Set a new generator, clearing the existing task before setting the new generator.
 
         Args:
@@ -1222,10 +1226,13 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.has_more_items_to_fetch = True
         self._vertical_scroll_connection = self.verticalScrollBar().valueChanged.connect(self._check_scroll_position)
 
-        first_batch_size = self.calculate_dynamic_batch_size()
-
         self.data_fetching_buttons.show()
-        self._fetch_more_data(first_batch_size)
+
+        if is_fetch_all:
+            self._fetch_more_data()
+        else:
+            first_batch_size = self.calculate_dynamic_batch_size()
+            self._fetch_more_data(first_batch_size)
 
     def calculate_dynamic_batch_size(self) -> int:
         """Estimate the number of items that can fit in the current view.
@@ -1275,17 +1282,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.fetch_all_button.show()
         self.stop_fetch_button.hide()
         self._current_task = None
-
-    def position_fetch_more_button(self):
-        """Position the 'Fetch More' button."""
-        if self.data_fetching_buttons.isHidden():
-            return
-
-        # Position the Fetch More button at the center bottom of the tree widget
-        x = (self.width() - self.data_fetching_buttons.width()) / 2
-        y = self.height() - self.data_fetching_buttons.height() - 30
-
-        self.data_fetching_buttons.move(int(x), int(y))
 
     def _restore_color_adaptive_column(self, columns: List[int]):
         """Restore the color adaptive columns.

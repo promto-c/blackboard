@@ -197,13 +197,14 @@ class DataFetchingButtons(QtWidgets.QWidget):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setFixedWidth(170)
-        self.setMaximumWidth(170)
+        self.setFixedWidth(220)
+        self.setMaximumWidth(220)
 
         # Create Layouts
         # --------------
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
 
         # Create Widgets
         # --------------
@@ -233,14 +234,15 @@ class DataFetchingButtons(QtWidgets.QWidget):
         self.fetch_more_button.expand()
         self.fetch_all_button.collapse()
 
+        self.fetch_more_button.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+        self.fetch_all_button.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+        self.stop_fetch_button.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+
         # Add Widgets to Layouts
         # ----------------------
         layout.addWidget(self.fetch_more_button)
         layout.addWidget(self.fetch_all_button)
         layout.addWidget(self.stop_fetch_button)
-
-        if self.parent():
-            self.parent().installEventFilter(self)  # Install the event filter on the parent
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.

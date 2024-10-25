@@ -1115,7 +1115,10 @@ class DatabaseViewWidget(DataViewWidget):
         # Clear the tree widget and populate with new data
         self.tree_widget.clear()
         self.tree_widget.setHeaderLabels(all_fields)
-        self.tree_widget.set_generator(results)
+        if self.search_edit.is_active:
+            self.tree_widget.set_generator(results, is_fetch_all=True)
+        else:
+            self.tree_widget.set_generator(results)
 
 # Main Function
 # -------------

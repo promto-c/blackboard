@@ -104,6 +104,8 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         _is_active (bool): Indicates whether the search filter is currently applied.
         _all_match_items (set): A set of items that match the current search criteria.
         skip_columns (set): A set of column indices to skip during the search.
+        _history (list): A list that stores the search _history.
+        _history_index (int): The current index in the search _history for navigation.
     """
 
     FIXED_STRING_MATCH_FLAGS = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchFixedString
@@ -146,6 +148,8 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self._all_match_items = set()
         self._is_active = False
         self._is_searching = False
+        self._history = []
+        self._history_index = -1
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -190,9 +194,12 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.tree_widget.item_added.connect(self._filter_item)
         self.search_action.triggered.connect(self.activate)
 
+        # Bind keys using KeyBinder for _history navigation
         KeyBinder.bind_key('Enter', self, self.activate)
         KeyBinder.bind_key('Return', self, self.activate)
         KeyBinder.bind_key('Escape', self, self.clear)
+        KeyBinder.bind_key('Up', self, lambda: self._navigate_history(-1))
+        KeyBinder.bind_key('Down', self, lambda: self._navigate_history(1))
 
     # Public Methods
     # --------------
@@ -204,6 +211,32 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.setFocus()
         self.activate
 
+    def _navigate_history(self, direction: int):
+        """Navigate through the search _history using the up/down arrow keys."""
+        if not self._history:
+            return
+
+        if self._history_index == -1:
+            # If starting navigation, set _history_index to position beyond the end
+            self._history_index = len(self._history)
+
+        # Adjust the _history index
+        self._history_index += direction
+
+        # Clamp the _history index
+        if self._history_index < 0:
+            self._history_index = 0
+        elif self._history_index > len(self._history):
+            self._history_index = len(self._history)
+
+        if self._history_index == len(self._history):
+            # Beyond the last item, clear the line edit and reset _history_index
+            self.clear()
+            self._history_index = -1
+        else:
+            # Set the text to the _history item
+            self.setText(self._history[self._history_index])
+
     def activate(self):
         """Activate the search functionality.
         """
@@ -214,6 +247,12 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self._set_property_active(True)
         self._apply_search()
         self.activated.emit()
+
+        # Add to _history only if it's a new entry
+        current_text = self.text().strip()
+        if current_text and (not self._history or self._history[-1] != current_text):
+            self._history.append(current_text)
+            self._history_index = -1
 
         if self.tree_widget.has_more_items_to_fetch:
             self._is_searching = True
