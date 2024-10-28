@@ -706,7 +706,7 @@ class UIUtil:
     """Utility class for common UI methods."""
 
     @staticmethod
-    def create_shadow_effect(blur_radius=15, x_offset=0, y_offset=5, color=QtGui.QColor(0, 0, 0, 150)):
+    def create_shadow_effect(blur_radius=15, x_offset=0, y_offset=4, color=QtGui.QColor(0, 0, 0, 150)):
         """Create and return a shadow effect for the floating card or any widget.
 
         Args:
@@ -899,7 +899,7 @@ class FlexPlainTextEdit(QtWidgets.QPlainTextEdit):
             super().keyPressEvent(event)
 
 class FloatingCard(QtWidgets.QWidget):
-    """Custom floating card widget designed for feedback or comments.
+    """Custom floating card widget designed for feedback or comments with support for multiple image attachments.
     """
 
     # Initialization and Setup
@@ -908,11 +908,11 @@ class FloatingCard(QtWidgets.QWidget):
     # Signal emitted when the card's status changes
     status_changed = QtCore.Signal(object, str, str)  # Emits self, previous_status, new_status
 
-    def __init__(self, parent=None, content="", attached_image_path=None):
+    def __init__(self, parent=None, content="", attached_images=None):
         super().__init__(parent)
 
         # Store the arguments
-        self.attached_image_path = attached_image_path
+        self.attached_images = attached_images or []  # Support multiple image paths
         self.content = content
 
         # Initialize setup
@@ -944,7 +944,7 @@ class FloatingCard(QtWidgets.QWidget):
         self.main_layout.setContentsMargins(5, 0, 5, 0)
         self.main_layout.setSpacing(0)
 
-        # Header layout containing the title, status/next step widget, and close button
+        # Header layout containing the title and status widget
         header_widget = QtWidgets.QWidget(self)
         header_layout = QtWidgets.QHBoxLayout(header_widget)
         header_layout.setContentsMargins(10, 5, 10, 5)
@@ -963,27 +963,48 @@ class FloatingCard(QtWidgets.QWidget):
         # Spacer
         header_layout.addStretch()
 
-        # Status and next step widget
+        # Status widget
         self.status_widget = StatusNextStepWidget(current_status=self.current_status, container=self.parent())
         header_layout.addWidget(self.status_widget)
 
         # Add header to main layout
         self.main_layout.addWidget(header_widget)
 
+        # Add attached images if present
+        if self.attached_images:
+            self.image_layout = QtWidgets.QVBoxLayout()  # A layout to hold multiple images
+            self.image_layout.setContentsMargins(0, 0, 0, 0)
+            self.image_layout.setSpacing(0)
+
+            # Display each attached image as a thumbnail
+            for image_path in self.attached_images:
+                self.add_image_thumbnail(image_path)
+
+            # Add the image layout to the main layout
+            self.main_layout.addLayout(self.image_layout)
+
         # Comment Text Area with markdown support
         self.comment_area = FlexTextBrowser(self)
-
-        # Add attached image if present
-        if self.attached_image_path:
-            self.image_label = QtWidgets.QLabel(self)
-            self.image_label.setAlignment(QtCore.Qt.AlignCenter)
-            self.main_layout.addWidget(self.image_label)
-            self.set_image(self.attached_image_path)
-
-        content =   process_markdown(self.content)
+        content = process_markdown(self.content)
         self.comment_area.setMarkdown(content)
-
         self.main_layout.addWidget(self.comment_area)
+
+    def add_image_thumbnail(self, image_path):
+        """Add a scaled image thumbnail to the card."""
+        image_label = QtWidgets.QLabel(self)
+        image_label.setAlignment(QtCore.Qt.AlignCenter)
+        pixmap = QtGui.QPixmap(image_path)
+        
+        if not pixmap.isNull():
+            scaled_pixmap = pixmap.scaled(
+                340, 
+                pixmap.height(),
+                QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+                QtCore.Qt.TransformationMode.SmoothTransformation
+            )
+            image_label.setPixmap(scaled_pixmap)
+            image_label.setToolTip(os.path.basename(image_path))  # Tooltip with file name
+            self.image_layout.addWidget(image_label)  # Add to image layout
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
@@ -999,19 +1020,6 @@ class FloatingCard(QtWidgets.QWidget):
         previous_status = self.current_status
         self.current_status = new_status
         self.status_changed.emit(self, previous_status, new_status)
-
-    def set_image(self, image_path):
-        """Update the image label with a scaled version of the image to fit the card width."""
-        pixmap = QtGui.QPixmap(image_path)
-        if not pixmap.isNull():
-            scaled_pixmap = pixmap.scaled(
-                # TODO: Set to appropriate size
-                340, 
-                pixmap.height(),
-                QtCore.Qt.AspectRatioMode.KeepAspectRatio,
-                QtCore.Qt.TransformationMode.SmoothTransformation
-            )
-            self.image_label.setPixmap(scaled_pixmap)
 
     def _handle_user_mentions(self, url):
         """Handle clicks on user mentions."""
@@ -1053,6 +1061,8 @@ class FloatingCard(QtWidgets.QWidget):
         self.setEnabled(True)
 
     def get_status(self):
+        """Retrieve the current status of the card.
+        """
         return self.status_widget.status_combobox.currentText()
 
 class FloatingHeaderWidget(QtWidgets.QFrame):
@@ -1141,6 +1151,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         self.is_dragging = False
         self._widget_position_offset = None
         self.visible_cards = []
+        self.attached_images = []
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -1190,7 +1201,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         self.status_filter_widget.filter_changed.connect(self.filter_cards)
         self.status_filter_widget.filters_cleared.connect(self.filter_cards)
 
-        self.attach_button.clicked.connect(self.attach_screenshot)
+        self.attach_button.clicked.connect(self.attach_image)
         self.new_task_input.textChanged.connect(self.toggle_add_button_state)
         self.add_button.clicked.connect(self.add_new_task)
 
@@ -1230,27 +1241,26 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         sticky_layout.setContentsMargins(10, 5, 10, 5)
         input_bar.setStyleSheet("""
             QFrame {
-                background-color: #222;
                 border-radius: 10px;
             }
-            QToolButton {
-                background-color: transparent;
-                border: none;
-            }
-            QToolButton:hover {
-                background-color: #444;
-            }
-            QToolButton:disabled {
-                color: #555;
-            }
         """)
+
+        # Attachment preview layout for displaying attached images
+        self.attachment_preview_layout = QtWidgets.QHBoxLayout(self.scroll_area)
+        self.attachment_preview_layout.setContentsMargins(0, 0, 0, 0)
+        self.attachment_preview_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignBottom | QtCore.Qt.AlignmentFlag.AlignLeft)
 
         # Attach image button
         self.attach_button = QtWidgets.QToolButton(input_bar)
         self.attach_button.setIcon(TablerQIcon.image_in_picture)
         self.attach_button.setToolTip("Attach Image")
 
+        self.screenshot_btn = QtWidgets.QToolButton(input_bar)
+        self.screenshot_btn.setIcon(TablerQIcon.screenshot)
+        self.screenshot_btn.setToolTip("Screen Shot")
+
         sticky_layout.addWidget(self.attach_button)
+        sticky_layout.addWidget(self.screenshot_btn)
 
         # Input field for new task or comment
         self.new_task_input = FlexPlainTextEdit(input_bar)
@@ -1268,33 +1278,96 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
 
         return input_bar
 
-    def toggle_add_button_state(self):
-        """Enable or disable the Add button based on whether the input field is empty."""
-        state = bool(self.new_task_input.toPlainText().strip())
-        self.add_button.setEnabled(state)
-
-    def attach_screenshot(self):
-        """Open a file dialog to select a screenshot file."""
+    def attach_image(self):
         file_dialog = QtWidgets.QFileDialog()
-        file_path, _ = file_dialog.getOpenFileName(self, "Attach Screenshot", "", "Images (*.png *.jpg *.bmp)")
-        if file_path:
-            # Append the screenshot information to the new task input field
-            self.attached_image_path = file_path
-            self.new_task_input.setPlainText(f"Attached Screenshot: {os.path.basename(file_path)}\n{self.new_task_input.toPlainText()}")
+        file_path, _ = file_dialog.getOpenFileName(self, "Attach Image", "", "Images (*.png *.jpg *.bmp)")
+        if not file_path:
+            return
 
-    def add_new_task(self, message: str = None, attached_files: List[str] = None):
+        # Display thumbnail in attachment preview layout
+        thumbnail_label = QtWidgets.QLabel()
+        pixmap = QtGui.QPixmap(file_path).scaled(50, 50, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        thumbnail_label.setPixmap(pixmap)
+        thumbnail_label.setToolTip(os.path.basename(file_path))
+
+        # Add close button to remove thumbnail
+        close_button = QtWidgets.QPushButton("×")
+        close_button.setFixedSize(20, 20)
+        close_button.clicked.connect(lambda: self.remove_attachment(thumbnail_label, file_path))
+
+        thumbnail_layout = QtWidgets.QVBoxLayout()
+        thumbnail_layout.addWidget(close_button, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        thumbnail_layout.addWidget(thumbnail_label)
+
+        self.attachment_preview_layout.addLayout(thumbnail_layout)
+
+        # Track attached image path
+        self.attached_images.append(file_path)
+
+        self.toggle_add_button_state()
+
+    def remove_attachment(self, thumbnail_label, file_path):
+        """Remove the attachment thumbnail and its associated file path.
+        """
+        # Find the thumbnail's parent layout (it contains the thumbnail and close button)
+        for i in range(self.attachment_preview_layout.count()):
+            item = self.attachment_preview_layout.itemAt(i)
+            if item.layout() and thumbnail_label in [item.layout().itemAt(j).widget() for j in range(item.layout().count())]:
+                # Clear all widgets in this sub-layout
+                for j in reversed(range(item.layout().count())):
+                    widget = item.layout().itemAt(j).widget()
+                    if widget:
+                        widget.deleteLater()
+                # Remove the layout itself from attachment_preview_layout
+                self.attachment_preview_layout.takeAt(i).layout().deleteLater()
+                break
+
+        # Remove the file path from attached_images if it exists
+        if file_path in self.attached_images:
+            self.attached_images.remove(file_path)
+
+        # Update add button state after removal
+        self.toggle_add_button_state()
+
+    def toggle_add_button_state(self):
+        """Enable or disable the Add button based on input field text or attached images."""
+        has_text = bool(self.new_task_input.toPlainText().strip())
+        has_images = bool(self.attached_images)
+        self.add_button.setEnabled(has_text or has_images)
+
+    def clear_layout(self, layout):
+        """Remove all widgets from the given layout.
+        """
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+            else:
+                # Handle nested layouts if necessary
+                self.clear_layout(item.layout())
+
+    def add_new_task(self, message: str = None):
         """Add a new task or comment as a floating card."""
         new_task_text = message or self.new_task_input.toPlainText().strip()
 
-        if not new_task_text:
+        # Proceed only if there’s text or images to add
+        if not new_task_text and not self.attached_images:
             return
+
+        # Handle user mentions by converting @username to clickable links
+        formatted_text = format_user_mentions(new_task_text)
+
+        # Create a new FloatingCard with attachments
+        new_card = FloatingCard(self, content=formatted_text, attached_images=self.attached_images)
+        
+        # Reset attachments for the next task
+        self.clear_layout(self.attachment_preview_layout)  # Clear attachment previews
+        self.attached_images.clear()
 
         # Ensure "To Do" status is visible in the filter
         self.ensure_status_visible("To Do")
 
-        # Handle user mentions by converting @username to clickable links
-        formatted_text = format_user_mentions(new_task_text)
-        new_card = FloatingCard(self, content=formatted_text, attached_image_path=getattr(self, 'attached_image_path', None))
         self.add_card(new_card)
         self.new_task_input.clear()  # Clear the input field after adding
         self.attached_image_path = None  # Reset the attached image path

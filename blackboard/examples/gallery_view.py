@@ -287,7 +287,7 @@ class GalleryViewToolBar(QtWidgets.QToolBar):
 
     def add_action(self, icon: QtGui.QIcon, tooltip: str, checkable: bool = False) -> QtGui.QAction:
         """Adds an action to the toolbar."""
-        action = self.addAction(icon, '')
+        action = self.addAction(icon, tooltip)
         action.setToolTip(tooltip)
         action.setCheckable(checkable)
 
@@ -380,6 +380,23 @@ class GalleryWidget(MomentumScrollListWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+
+        # Initialize setup
+        self.__init_attributes()
+        self.__init_ui()
+
+    def __init_attributes(self):
+        """Initialize the attributes.
+        """
+        # Initialize available fields as an empty list
+        self.fields = []
+        self.visible_fields = {}
+        self.groups = {}  # To track headers and items under each group
+        self.group_by_field = None  # The field used for grouping items
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
         self.setViewMode(QtWidgets.QListWidget.IconMode)
         self.setResizeMode(QtWidgets.QListWidget.Adjust)
         self.setMovement(QtWidgets.QListWidget.Movement.Static)
@@ -388,26 +405,20 @@ class GalleryWidget(MomentumScrollListWidget):
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
 
-        # Initialize available fields as an empty list
-        self.fields = []
-        self.visible_fields = {}
-        self.groups = {}  # To track headers and items under each group
-        self.group_by_field = None  # The field used for grouping items
-
         # Create the spacer item
         self.spacer_item = QtWidgets.QListWidgetItem()
-        self.spacer_item.setFlags(QtCore.Qt.NoItemFlags)  # Make it non-selectable
+        self.spacer_item.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
         self.insertItem(0, self.spacer_item)
 
         # Set the custom item delegate
         self.setItemDelegate(InvisibleItemDelegate(self))
 
-        # Layout for toolbars
+        # Configure overlay layout
         self.overlay_layout = QtWidgets.QHBoxLayout(self)
         self.overlay_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
         self.overlay_layout.setContentsMargins(8, 8, 16, 8)
 
-        # Toolbars
+        # Initialize and add toolbars
         self.general_tool_bar = QtWidgets.QToolBar(self)
         self.utility_tool_bar = GalleryViewToolBar(self)
         self.manipulation_tool_bar = GalleryManipulationToolBar(self)
@@ -586,46 +597,6 @@ class GalleryWidget(MomentumScrollListWidget):
 
         # Refresh the view
         self.model().layoutChanged.emit()
-
-    def update_button_background(self):
-        """Update the background of the tool buttons based on the scroll position."""
-        scroll_position = self.verticalScrollBar().value()
-
-        if scroll_position == 0:
-            # When at the top, set buttons to have transparent background
-            self.set_button_transparent()
-        else:
-            # When scrolled down, set a solid background for better visibility
-            self.set_button_solid_background()
-
-    def set_button_transparent(self):
-        """Set the buttons to have a transparent background."""
-        for button in [self.toggle_view_button, self.refresh_button, self.settings_button, self.visualize_button]:
-            button.setStyleSheet('''
-                QPushButton#tool_button {
-                    border: none;
-                    background: transparent;
-                    padding: 5px;
-                }
-                QPushButton#tool_button:hover {
-                    background-color: rgba(127, 127, 127, 1.0);
-                }
-            ''')
-
-    def set_button_solid_background(self):
-        """Set the buttons to have a solid background."""
-        for button in [self.toggle_view_button, self.refresh_button, self.settings_button, self.visualize_button]:
-            button.setStyleSheet('''
-                QPushButton#tool_button {
-                    border: none;
-                    background-color: rgba(127, 127, 127, 0.6);
-                    padding: 5px;
-                    border-radius: 5px;
-                }
-                QPushButton#tool_button:hover {
-                    background-color: rgba(127, 127, 127, 1.0);
-                }
-            ''')
 
     def setViewMode(self, mode: QtWidgets.QListWidget.ViewMode):
         """Override setViewMode to update item widgets."""
