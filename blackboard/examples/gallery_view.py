@@ -7,8 +7,9 @@ from tablerqicon import TablerQIcon  # Importing TablerQIcon
 
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollListWidget
 from blackboard.widgets.thumbnail_widget import ThumbnailWidget
+from blackboard.widgets.sort_rule_widget import SortRuleWidget
 
-@staticmethod
+
 def create_shadow_effect(blur_radius=30, x_offset=0, y_offset=4, color=QtGui.QColor(0, 0, 0, 150)):
     """Create and return a shadow effect for the floating card or any widget.
 
@@ -293,7 +294,7 @@ class GalleryViewToolBar(QtWidgets.QToolBar):
 
         # Access the widget for the action and set the cursor
         self.widgetForAction(action).setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        
+
         return action
 
     def add_view_mode_actions(self) -> None:
