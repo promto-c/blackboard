@@ -215,19 +215,20 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
             self.lineEdit().setCursorPosition(new_cursor_position)
 
     def eventFilter(self, source: QtWidgets.QLineEdit, event: QtCore.QEvent):
-        """Filters events for the line edit of the spin box, handling middle mouse button interactions.
+        """Filters events for the line edit of the spin box, handling both middle mouse and Alt+left button drag interactions.
         """
         # Check if the event source is the line edit of the spin box
         if source == self.lineEdit():
-            # Handle middle mouse button press
-            if event.type() == QtCore.QEvent.MouseButtonPress and event.buttons() == QtCore.Qt.MiddleButton:
-                # Store the initial mouse press position and the spin box's current value
+            # Alt+Left Mouse Button or Middle Mouse Button press to start drag
+            if event.type() == QtCore.QEvent.Type.MouseButtonPress and (
+                    (event.buttons() == QtCore.Qt.MouseButton.LeftButton and QtWidgets.QApplication.keyboardModifiers() == QtCore.Qt.KeyboardModifier.AltModifier) or
+                    (event.buttons() == QtCore.Qt.MouseButton.MiddleButton)):
                 self._mouse_press_pos = event.globalPos()
                 self._mouse_press_value = self.value()
                 return True
-            
-            # Handle mouse move events, but only if the middle mouse button was previously pressed
-            elif event.type() == QtCore.QEvent.MouseMove and self._mouse_press_pos is not None:
+
+            # Alt+Left Drag or Middle Mouse Drag adjustment
+            elif event.type() == QtCore.QEvent.Type.MouseMove and self._mouse_press_pos is not None:
                 # Calculate the horizontal movement from the initial mouse press position, 
                 # apply a sensitivity factor, and adjust the spin box's value accordingly
                 delta = event.globalPos() - self._mouse_press_pos
@@ -235,28 +236,33 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
                 new_value = self._mouse_press_value + delta_x * self.singleStep()
                 self.setValue(new_value)
                 return True
-            
-            # Handle middle mouse button release
-            elif event.type() == QtCore.QEvent.MouseButtonRelease:
-                # Reset the stored mouse press position to None, indicating the end of the drag operation
+
+            # Release mouse button to end drag
+            elif event.type() == QtCore.QEvent.Type.MouseButtonRelease:
                 self._mouse_press_pos = None
                 return True
 
         return super().eventFilter(source, event)
 
 class DoubleSpinBoxWidget(QtWidgets.QWidget):
-    """
+    """A widget that combines a QPushButton and a customized QDoubleSpinBox for
+    controlled number input with toggling functionality. The QPushButton can toggle
+    the spin box value between a default and the last modified value.
     """
     # Initialization and Setup
     # ------------------------
     def __init__(self, default_value: float = 0.0, min_value: float = 0.0, max_value: float = 99.99, single_step: float = 0.1, 
                  icon: QtGui.QIcon = None, parent: QtWidgets.QWidget = None):
-        """Initialize the widget and set up the UI, signal connections, and icon.
+        """Initialize the widget with the given default value, min/max range, step size, and icon.
 
         Args:
-            ...
+            default_value (float): The initial default value of the spin box.
+            min_value (float): Minimum allowed value for the spin box.
+            max_value (float): Maximum allowed value for the spin box.
+            single_step (float): Increment/decrement step size for the spin box.
+            icon (QtGui.QIcon): Icon to display on the button.
+            parent (QtWidgets.QWidget, optional): Parent widget.
         """
-        # Initialize the super class
         super().__init__(parent)
 
         # Store the arguments
@@ -272,7 +278,7 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
         self.__init_signal_connections()
 
     def __init_ui(self):
-        """Set up the UI for the widget, including creating widgets, layouts, and setting the icons for the widgets.
+        """Initialize the UI of the widget.
         """
         self.setMaximumHeight(22)
 
@@ -285,8 +291,8 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
         # Create Widgets
         # --------------
         # Create button
-        self.button = QtWidgets.QPushButton(self._icon, self)
-        
+        self.button = QtWidgets.QPushButton(self._icon, self) if self._icon else QtWidgets.QPushButton(self)
+
         # Create spin box
         self.spin_box = AdaptivePaddedDoubleSpinBox(
             default_value=self._default_value, 
@@ -311,10 +317,10 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
     # Public Methods
     # --------------
     def set_default_value(self, value: float):
-        """Dedicated method to set the default value, with added type checking for float.
+        """Set the default value with validation.
 
         Args:
-            value: New value to set for default_value, expected to be a float.
+            value (float): New default value.
 
         Raises:
             TypeError: If the provided value is not a float.
@@ -324,8 +330,8 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
         self._default_value = value
 
     def toggle_value(self):
-        # If the current state is default, set to the last value
-        # Else, set to the default value
+        """Toggle between the default value and the most recent non-default value in the spin box.
+        """
         if self.spin_box.value() == self._default_value:
             self.spin_box.setValue(self._recent_value)
         else:
@@ -346,14 +352,36 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
     # Private Methods
     # ---------------
     def _update_button_and_last_value(self, value: float):
-        # Update the last value whenever the spin box value changes
+        """Update the recent value when the spin box value changes, keeping track of the last set value.
+        """
         if value != self._default_value:
             self._recent_value = value
 
     # Overridden Methods
     # ------------------
     def icon(self) -> QtGui.QIcon:
-        self.button.icon()
+        """Return the icon currently set on the button.
+        """
+        return self.button.icon()
 
     def setIcon(self, icon: QtGui.QIcon):
+        """Set a new icon for the button.
+        """
         self.button.setIcon(icon)
+
+    def setEnabled(self, enabled: bool):
+        """Enable or disable the button and spin box simultaneously.
+
+        Args:
+            enabled (bool): Whether to enable or disable the widget components.
+        """
+        self.button.setEnabled(enabled)
+        self.spin_box.setEnabled(enabled)
+
+    def setDisabled(self, disabled: bool):
+        """Disable or enable the button and spin box simultaneously.
+
+        Args:
+            disabled (bool): Whether to disable or enable the widget components.
+        """
+        self.setEnabled(not disabled)
