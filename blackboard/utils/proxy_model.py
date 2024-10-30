@@ -13,12 +13,18 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, source_model: QtCore.QAbstractItemModel = None, parent=None, show_only_checked: bool = False, show_only_leaves: bool = False):
+    def __init__(self, source_model: QtCore.QAbstractItemModel = None, parent: QtWidgets.QWidget = None, show_only_checked: bool = False, show_only_leaves: bool = False):
         super().__init__(parent)
         self.show_only_checked = show_only_checked
         self.show_only_leaves = show_only_leaves
         self._flat_map = list()
         self._is_show_checkbox = True
+
+        self.parent_widget = parent
+
+        # Install event filter on the parent widget if it exists
+        if isinstance(parent, QtWidgets.QWidget):
+            parent.installEventFilter(self)
 
         if source_model is not None:
             self.setSourceModel(source_model)
@@ -65,7 +71,10 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
         # Insert the new indices at the found position
         self._flat_map[insert_position:insert_position] = new_indices
-        self._sort()
+
+        if self.parent_widget and not self.parent_widget.isHidden():
+            self._sort()
+
         self.layoutChanged.emit()
 
     def _on_rows_removed(self, parent, first, last):
@@ -88,7 +97,9 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
         self._flat_map = new_flat_map
 
-        self._sort()
+        if self.parent_widget and not self.parent_widget.isHidden():
+            self._sort()
+
         self.layoutChanged.emit()
 
     def _update_flat_map(self, top_left: QtCore.QModelIndex, bottom_right: QtCore.QModelIndex, roles: List[QtCore.Qt.ItemDataRole]):
@@ -240,7 +251,19 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
         # Sort the flat map using the defined key function and the specified order
         self._flat_map.sort(key=sort_key, reverse=(self.sortOrder() == QtCore.Qt.DescendingOrder))
 
+    def eventFilter(self, source, event):
+        """Override the eventFilter method to handle events from the parent widget."""
+        # Check if the event is a show event
+        if event.type() == QtCore.QEvent.Show and source == self.parent_widget:
+            self._sort()
+            return True  # Event is handled
+
+        # Call the base class method for default event handling
+        return super().eventFilter(source, event)
+
 class CheckableProxyModel(QtCore.QSortFilterProxyModel):
+    """A proxy model to support checkable items and additional rows.
+    """
 
     # Initialization and Setup
     # ------------------------
@@ -346,6 +369,8 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
     #         return self.createIndex(row, column, self._additional_rows[row - source_row_count])
 
     def appendRow(self, item: Union[str, List[str]]):
+        """Append an additional row to the model.
+        """
         if isinstance(item, str):
             self._additional_rows.append([item])
         elif isinstance(item, list):

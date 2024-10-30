@@ -20,7 +20,29 @@ from blackboard import widgets
 
 # Class Definitions
 # -----------------
-class AssetViewWidget(widgets.DatabaseViewWidget):
+class PopupMenu(widgets.ContextMenu):
+
+    def __init__(self, button: Optional[QtWidgets.QPushButton] = None):
+        """Initialize the popup menu and set up drag-resize functionality.
+
+        Args:
+            button (Optional[QtWidgets.QPushButton]): Optional button to position the menu relative to.
+        """
+        super().__init__()
+
+        # Store the arguments
+        self.button = button
+
+    def showEvent(self, event: QtGui.QShowEvent):
+        """Override show event to modify the position of the menu popup.
+        """
+        if self.button:
+            # Adjust the position
+            pos = self.button.mapToGlobal(QtCore.QPoint(0, self.button.height()))
+            self.move(pos)
+        super().showEvent(event)
+
+class AssetViewWidget(widgets.DataViewWidget):
 
     LABEL = 'Asset View'
     FILE_PATH_COLUMN_NAME = 'file_path'
@@ -36,11 +58,12 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         """Initialize the UI of the widget.
         """
         self.__init_context_menu()
+        self.__init_toolbar_buttons()
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
-        self.tree_widget.customContextMenuRequested.connect(self.show_context_menu)
+        self.tree_widget.customContextMenuRequested.connect(self._show_context_menu)
         self.tree_widget.drag_started.connect(self._drag_data)
 
         # Key Binds
@@ -50,7 +73,6 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
 
     def __init_context_menu(self):
         self.menu = widgets.ContextMenu()
-        self.menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
         open_section = self.menu.addSection('Open')
         open_action = open_section.addAction("Open")
@@ -75,23 +97,49 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         copy_relative_path_action.triggered.connect(self.copy_relative_path)
         copy_selected_cell_action.triggered.connect(self.tree_widget.copy_selected_cells)
 
+    def __init_toolbar_buttons(self):
+        """Initialize the toolbar buttons.
+        """
+        # Initialize the 'Drag Options' button
+        self.drag_options_button = QtWidgets.QPushButton(self)
+        self.drag_options_button.setToolTip("Drag Options")
+        self.drag_options_button.setIcon(TablerQIcon(opacity=0.8).drag_drop)
+        self.drag_options_button.setProperty('widget-style', 'round')
+
+        # Create a menu for the 'Drag Options' button
+        drag_menu = PopupMenu(self.drag_options_button)
+        drag_section_action = drag_menu.addSection("Drag Options")
+
+        # Create checkable actions for drag options
+        self.include_text_plain_action = QtWidgets.QAction("Include text/plain", self)
+        self.include_text_plain_action.setCheckable(True)
+        self.include_text_plain_action.setChecked(True)
+
+        self.include_uri_list_action = QtWidgets.QAction("Include text/uri-list", self)
+        self.include_uri_list_action.setCheckable(True)
+        self.include_uri_list_action.setChecked(False)
+
+        # Add actions to the menu
+        drag_section_action.addAction(self.include_text_plain_action)
+        drag_section_action.addAction(self.include_uri_list_action)
+
+        self.drag_options_button.setMenu(drag_menu)
+
+        # Add 'Drag Options' button to the toolbar
+        self.general_tool_bar.addWidget(self.drag_options_button)
+
     # Public Methods
     # --------------
-    def show_context_menu(self, _position: QtCore.QPoint = None):
-        self.menu.exec_(QtGui.QCursor.pos())
-
     def get_selected_file_paths(self) -> List[str]:
         selected_items = self.tree_widget.selectedItems()
         if not selected_items:
-            return
+            return []
 
         column_index = self.tree_widget.get_column_index(self.FILE_PATH_COLUMN_NAME)
         if not column_index:
-            return
+            return []
 
-        selected_file_paths = [item.text(column_index) for item in selected_items]
-
-        return selected_file_paths
+        return [item.text(column_index) for item in selected_items]
 
     @property
     def selected_file_paths(self) -> List[str]:
@@ -123,9 +171,7 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         if not file_paths:
             return
 
-        folders = {os.path.dirname(file_path) if os.path.isfile(file_path) else file_path for file_path in file_paths}
-        for folder in folders:
-            ApplicationUtil.open_containing_folder(folder)
+        ApplicationUtil.open_containing_folder(file_paths)
 
     def open_in_terminal(self, file_paths: List[str] = []):
         file_paths = file_paths or self.selected_file_paths
@@ -167,20 +213,27 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
             supported_actions (QtCore.Qt.DropActions): The supported actions for the drag event.
         """
         items = self.tree_widget.selectedItems()
-
         if not items:
             return
-        
+
+        # Check state of checkboxes to decide which MIME types to include
+        include_text_plain = self.include_text_plain_action.isChecked()
+        include_uri_list = self.include_uri_list_action.isChecked()
+
         mime_data = QtCore.QMimeData()
 
-        # Set mime data in format 'text/plain'
+        # Retrieve column values
         texts = bb.utils.TreeUtil.get_column_values(items, self.tree_widget.get_column_index(self.FILE_PATH_COLUMN_NAME))
-        text = '\n'.join(texts)
-        mime_data.setText(text)
 
-        # Set mime data in format 'text/uri-list'
-        urls = [QtCore.QUrl.fromLocalFile(text) for text in texts]
-        mime_data.setUrls(urls)
+        # Include 'text/plain' MIME data if enabled in configuration
+        if include_text_plain:
+            text = '\n'.join(texts)
+            mime_data.setText(text)
+
+        # Include 'text/uri-list' MIME data if enabled in configuration
+        if include_uri_list:
+            urls = [QtCore.QUrl.fromLocalFile(text) for text in texts]
+            mime_data.setUrls(urls)
 
         # Create drag icon pixmap with badge
         drag_pixmap = widgets.DragPixmap(len(items))
@@ -190,6 +243,49 @@ class AssetViewWidget(widgets.DatabaseViewWidget):
         drag.setMimeData(mime_data)
         drag.setPixmap(drag_pixmap)
         drag.exec_(supported_actions)
+
+    def _show_context_menu(self, _position: QtCore.QPoint = None):
+        self.menu.exec_(QtGui.QCursor.pos())
+
+    # Override Methods
+    # ----------------
+    def save_state(self, settings: QtCore.QSettings, group_name: str = 'asset_view'):
+        """Save the state of the widget.
+
+        Args:
+            settings (QtCore.QSettings): The settings object to save the state.
+            group_name (str): The group name for the settings. Defaults to 'asset_view'.
+        """
+        # Save state of custom actions
+        settings.beginGroup(group_name)
+        settings.setValue('include_text_plain', self.include_text_plain_action.isChecked())
+        settings.setValue('include_uri_list', self.include_uri_list_action.isChecked())
+        settings.endGroup()
+
+        # Call the parent class's save state
+        super().save_state(settings, group_name)
+
+    def load_state(self, settings: QtCore.QSettings, group_name: str = 'asset_view'):
+        """Load the state of the widget.
+
+        Args:
+            settings (QtCore.QSettings): The settings object to load the state.
+            group_name (str): The group name for the settings. Defaults to 'asset_view'.
+        """
+        # Load state of custom actions
+        settings.beginGroup(group_name)
+        include_text_plain = settings.value('include_text_plain')
+        include_uri_list = settings.value('include_uri_list')
+        settings.endGroup()
+
+        # Only update actions if the saved state exists
+        if include_text_plain is not None:
+            self.include_text_plain_action.setChecked(include_text_plain == 'true')
+        if include_uri_list is not None:
+            self.include_uri_list_action.setChecked(include_uri_list == 'true')
+
+        # Call the parent class's load state
+        super().load_state(settings, group_name)
 
 
 # Main Function

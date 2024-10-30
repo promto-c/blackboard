@@ -197,13 +197,14 @@ class DataFetchingButtons(QtWidgets.QWidget):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setFixedWidth(170)
-        self.setMaximumWidth(170)
+        self.setFixedWidth(220)
+        self.setMaximumWidth(220)
 
         # Create Layouts
         # --------------
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
 
         # Create Widgets
         # --------------
@@ -233,14 +234,15 @@ class DataFetchingButtons(QtWidgets.QWidget):
         self.fetch_more_button.expand()
         self.fetch_all_button.collapse()
 
+        self.fetch_more_button.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+        self.fetch_all_button.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+        self.stop_fetch_button.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+
         # Add Widgets to Layouts
         # ----------------------
         layout.addWidget(self.fetch_more_button)
         layout.addWidget(self.fetch_all_button)
         layout.addWidget(self.stop_fetch_button)
-
-        if self.parent():
-            self.parent().installEventFilter(self)  # Install the event filter on the parent
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
@@ -273,32 +275,6 @@ class DataFetchingButtons(QtWidgets.QWidget):
         self.fetch_all_button.collapse()
         self.fetch_more_button.expand()
 
-    def position_fetch_more_button(self):
-        """Position the 'Fetch More' button.
-        """
-        if self.isHidden():
-            return
-
-        # Position the Fetch More button at the center bottom of the tree widget
-        x = (self.parent().width() - self.width()) / 2
-        y = self.parent().height() - self.height() - 30
-
-        self.move(int(x), int(y))
-
-    def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
-        """Filter events from the parent widget.
-        """
-        if event.type() == QtCore.QEvent.Type.Resize:
-            # Reposition the button on parent resize
-            self.position_fetch_more_button()
-        return super().eventFilter(watched, event)
-
-    def showEvent(self, event: QtGui.QShowEvent):
-        """Handle the widget show event.
-        """
-        super().showEvent(event)
-        self.position_fetch_more_button()
-
 class InlineConfirmButton(QtWidgets.QWidget):
 
     # Initialization and Setup
@@ -325,16 +301,6 @@ class InlineConfirmButton(QtWidgets.QWidget):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setStyleSheet('''
-            QPushButton {
-                background-color: #222;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #444;
-            }
-        ''')
-
         # Create Layouts
         # --------------
         layout = QtWidgets.QHBoxLayout(self)
@@ -344,9 +310,9 @@ class InlineConfirmButton(QtWidgets.QWidget):
 
         # Create Widgets
         # --------------
-        self.x_button = QtWidgets.QPushButton(self.button_text)
-        self.confirm_button = QtWidgets.QPushButton(self.confirm_button_text)
-        self.cancel_button = QtWidgets.QPushButton(self.cancel_button_text)
+        self.x_button = QtWidgets.QPushButton(self.button_text, self)
+        self.confirm_button = QtWidgets.QPushButton(self.confirm_button_text, self)
+        self.cancel_button = QtWidgets.QPushButton(self.cancel_button_text, self)
 
         self.confirm_button.setStyleSheet('''
             QPushButton {

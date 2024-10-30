@@ -1,6 +1,8 @@
 # Type Checking Imports
 # ---------------------
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+if TYPE_CHECKING:
+    from blackboard.widgets import GroupableTreeWidget
 
 # Standard Library Imports
 # ------------------------
@@ -13,16 +15,15 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-import blackboard as bb
-from blackboard import widgets
+from blackboard.utils import KeyBinder, TextExtraction, TreeUtil
 
 
 # Class Definitions
 # -----------------
 class MatchCountButton(QtWidgets.QPushButton):
-    """A custom QPushButton that changes its appearance on mouse hover and displays match counts.
+    """Button that changes its appearance on mouse hover and displays match counts.
 
-    This button is designed to display the number of matches in a search operation.
+    Designed to display the number of matches in a search operation.
     When the mouse hovers over it, the button provides a visual indication that clicking it
     will clear the search results.
 
@@ -33,7 +34,7 @@ class MatchCountButton(QtWidgets.QPushButton):
     # Initialization and Setup
     # ------------------------
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
-        """Initialize the MatchCountButton with a parent widget, sets properties, and tooltip.
+        """Initialize the button with a parent widget, sets properties, and tooltip.
 
         Args:
             parent (QtWidgets.QWidget, optional): The parent widget of the button. Defaults to None.
@@ -47,7 +48,7 @@ class MatchCountButton(QtWidgets.QPushButton):
     def __init_attributes(self):
         """Initialize the attributes.
         """
-        self._current_label = str()
+        self._current_label = ''
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -81,7 +82,7 @@ class MatchCountButton(QtWidgets.QPushButton):
         self._current_label = self.text()
         self.setIcon(TablerQIcon.x)
         self.setText('')
-        self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+        self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
 
     def leaveEvent(self, event: QtCore.QEvent):
         """Handle mouse leave events, resetting the icon and cursor.
@@ -95,15 +96,16 @@ class MatchCountButton(QtWidgets.QPushButton):
         self.unsetCursor()
 
 class SimpleSearchEdit(QtWidgets.QLineEdit):
-    """A custom combo box widget tailored for simplified search functionality within a 
-    groupable tree widget. It supports keyword search, highlighting matching items, 
-    and displaying the total count of matches.
+    """Widget for simplified search functionality within a groupable tree widget. 
+    Supports keyword search, highlights matching items, and displays the total count of matches.
 
     Attributes:
-        tree_widget (widgets.GroupableTreeWidget): The tree widget where search will be performed.
+        tree_widget (GroupableTreeWidget): The tree widget where search will be performed.
         _is_active (bool): Indicates whether the search filter is currently applied.
         _all_match_items (set): A set of items that match the current search criteria.
         skip_columns (set): A set of column indices to skip during the search.
+        _history (list): A list that stores the search _history.
+        _history_index (int): The current index in the search _history for navigation.
     """
 
     FIXED_STRING_MATCH_FLAGS = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchFixedString
@@ -114,12 +116,12 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, tree_widget: 'widgets.GroupableTreeWidget', parent: QtWidgets.QWidget = None):
-        """Initialize the SimpleSearchEdit with a reference to the tree widget and sets up
+    def __init__(self, tree_widget: 'GroupableTreeWidget', parent: QtWidgets.QWidget = None):
+        """Initialize the widget with a reference to the tree widget and sets up
         the UI components and signal connections.
 
         Args:
-            tree_widget (widgets.GroupableTreeWidget): The tree widget to be searched.
+            tree_widget (GroupableTreeWidget): The tree widget to be searched.
             parent (QtWidgets.QWidget, optional): The parent widget. Defaults to None.
         """
         # Initialize the super class
@@ -146,10 +148,13 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self._all_match_items = set()
         self._is_active = False
         self._is_searching = False
+        self._history = []
+        self._history_index = -1
 
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
+        # Set the UI properties
         self.setProperty('widget-style', 'round')
         self.setProperty('has-placeholder', True)
         self.setPlaceholderText('Type to Search')
@@ -163,7 +168,8 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.update_style()
 
     def __init_match_count_action(self):
-        """Initialize the match count action and adds it to the line edit."""
+        """Initialize the match count action and adds it to the line edit.
+        """
         # Create and add the label for showing the total match count
         self.match_count_button = MatchCountButton(self)
 
@@ -181,27 +187,57 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         """Initialize signal-slot connections.
         """
         # Connect signals to slots
-        self.textChanged.connect(self.set_inactive)
-        self.textChanged.connect(self._highlight_search)
+        self.textChanged.connect(self.deactivate)
+        self.textChanged.connect(self._highlight_matching_items)
         self.textChanged.connect(self.update_style)
         self.match_count_button.clicked.connect(self.clear)
-        self.tree_widget.item_added.connect(self._filter_new_item)
-        self.search_action.triggered.connect(self.set_active)
+        self.tree_widget.item_added.connect(self._filter_item)
+        self.search_action.triggered.connect(self.activate)
 
-        bb.utils.KeyBinder.bind_key('Enter', self, self.set_active)
-        bb.utils.KeyBinder.bind_key('Return', self, self.set_active)
-        bb.utils.KeyBinder.bind_key('Escape', self, self.clear)
+        # Bind keys using KeyBinder for _history navigation
+        KeyBinder.bind_key('Enter', self, self.activate)
+        KeyBinder.bind_key('Return', self, self.activate)
+        KeyBinder.bind_key('Escape', self, self.clear)
+        KeyBinder.bind_key('Up', self, lambda: self._navigate_history(-1))
+        KeyBinder.bind_key('Down', self, lambda: self._navigate_history(1))
 
     # Public Methods
     # --------------
     def set_text_as_selection(self):
-        """Set the text of the search edit to the selected items' text from the tree widget.
+        """Update the search edit text with the text of the currently selected items in the tree widget.
         """
         keywords = {f'"{index.data()}"' for index in self.tree_widget.selectedIndexes()}
         self.setText('|'.join(keywords))
         self.setFocus()
+        self.activate
 
-    def set_active(self):
+    def _navigate_history(self, direction: int):
+        """Navigate through the search _history using the up/down arrow keys."""
+        if not self._history:
+            return
+
+        if self._history_index == -1:
+            # If starting navigation, set _history_index to position beyond the end
+            self._history_index = len(self._history)
+
+        # Adjust the _history index
+        self._history_index += direction
+
+        # Clamp the _history index
+        if self._history_index < 0:
+            self._history_index = 0
+        elif self._history_index > len(self._history):
+            self._history_index = len(self._history)
+
+        if self._history_index == len(self._history):
+            # Beyond the last item, clear the line edit and reset _history_index
+            self.clear()
+            self._history_index = -1
+        else:
+            # Set the text to the _history item
+            self.setText(self._history[self._history_index])
+
+    def activate(self):
         """Activate the search functionality.
         """
         self._is_searching = False
@@ -212,23 +248,29 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self._apply_search()
         self.activated.emit()
 
+        # Add to _history only if it's a new entry
+        current_text = self.text().strip()
+        if current_text and (not self._history or self._history[-1] != current_text):
+            self._history.append(current_text)
+            self._history_index = -1
+
         if self.tree_widget.has_more_items_to_fetch:
             self._is_searching = True
             self.tree_widget.fetch_all()
 
-    def set_inactive(self):
+    def deactivate(self):
         """Deactivate the search functionality.
         """
         if not self._is_active:
             return
 
         self._set_property_active(False)
-        self._reset_search()
+        self._clear_search()
 
     def update(self):
         """Update the search and highlights matching items.
         """
-        self._highlight_search()
+        self._highlight_matching_items()
 
         if self._is_active:
             self._apply_search()
@@ -251,8 +293,8 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
     # Private Methods
     # ---------------
-    def _filter_new_item(self, tree_item: QtWidgets.QTreeWidgetItem):
-        """Filter a new item to see if it matches the search filter.
+    def _filter_item(self, tree_item: 'QtWidgets.QTreeWidgetItem'):
+        """Filter a item to see if it matches the search filter.
 
         Args:
             tree_item (QtWidgets.QTreeWidgetItem): The item that was added to the tree widget.
@@ -266,12 +308,12 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
         tree_item.setHidden(True)
 
-        if self._item_matches_filter(tree_item):
+        if self._is_matching_filter(tree_item):
             self._all_match_items.add(tree_item)
             tree_item.setHidden(False)
-            self._update_total_matches()
+            self._refresh_match_count()
 
-    def _item_matches_filter(self, item: QtWidgets.QTreeWidgetItem) -> bool:
+    def _is_matching_filter(self, item: 'QtWidgets.QTreeWidgetItem') -> bool:
         """Check if an item matches the search filter.
 
         Args:
@@ -291,49 +333,52 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
                 return True
 
             # Check unquoted terms with wildcard support
-            if any(self._matches_unquoted_term(item_text, term) for term in self.unquoted_terms):
+            if any(self._is_match_unquoted_term(item_text, term) for term in self.unquoted_terms):
                 return True
 
         return False
 
-    def _matches_unquoted_term(self, item_text, term):
+    def _is_match_unquoted_term(self, item_text: str, term: str) -> bool:
         """Helper method to check if item_text matches the unquoted term.
+
+        Args:
+            item_text (str): The text of the item to check.
+            term (str): The term to match against.
+
+        Returns:
+            bool: True if the item_text matches the unquoted term, False otherwise.
         """
-        if bb.utils.TextExtraction.is_contains_wildcard(term):
+        if TextExtraction.is_contains_wildcard(term):
             return fnmatch.fnmatch(item_text, term)
         else:
             return term in item_text
 
-    def _update_total_matches(self, total_matches: Optional[int] = None):
-        """Update the text of the match count label with the total number of matches.
+    def _refresh_match_count(self):
+        """Refresh the match count label to display the current number of matching items.
         """
-        total_matches = total_matches or len(self._all_match_items)
-        self.match_count_button.set_match_count(total_matches)
+        self.match_count_button.set_match_count(len(self._all_match_items))
 
-    def _reset_highlight(self):
-        """Reset the highlight and clears matched items.
+    def _clear_highlights(self):
+        """Clear the highlight and matched items.
         """
-        # Reset the highlight for all items
+        # Clear the highlight for all items
         self.tree_widget.clear_highlight()
         # Clear any previously matched items
         self._all_match_items.clear()
-        self._update_total_matches()
+        self._refresh_match_count()
 
-    def _highlight_search(self):
+    def _highlight_matching_items(self):
         """Highlight the items in the tree widget that match the search criteria.
         """
-        # Reset the highlight for all items
-        self._reset_highlight()
-
-        # Get the selected column, condition, and keyword
-        keyword = self.text().strip()
+        # Clear the highlight for all items
+        self._clear_highlights()
 
         # Return if the keyword is empty
-        if not keyword:
+        if not (keyword := self.text().strip()):
             return
 
-        # Match terms enclosed in either double or single quotes for fixed string match
-        self.quoted_terms, self.unquoted_terms = bb.utils.TextExtraction.extract_terms(keyword)
+        # Extract terms from the keyword for search filtering
+        self.quoted_terms, self.unquoted_terms = TextExtraction.extract_terms(keyword)
 
         for column_index in range(self.tree_widget.columnCount()):
             if column_index in self.skip_columns:
@@ -347,7 +392,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
             # Handle contains match terms
             for term in self.unquoted_terms:
-                flags = self.WILDCARD_MATCH_FLAGS if bb.utils.TextExtraction.is_contains_wildcard(term) else self.CONTAINS_MATCH_FLAGS
+                flags = self.WILDCARD_MATCH_FLAGS if TextExtraction.is_contains_wildcard(term) else self.CONTAINS_MATCH_FLAGS
 
                 # Find items that contain the term, regardless of its position in the string
                 match_items.update(self.tree_widget.findItems(term, flags, column_index))
@@ -358,7 +403,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
             # Store all matched items
             self._all_match_items.update(match_items)
 
-        self._update_total_matches()
+        self._refresh_match_count()
 
     def _set_property_active(self, state: bool = True):
         """Set the active state of the button.
@@ -373,18 +418,18 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.tree_widget.clear_highlight()
 
         # Hide all items
-        bb.utils.TreeUtil.hide_all_items(self.tree_widget)
+        TreeUtil.hide_all_items(self.tree_widget)
         # Show match items
-        bb.utils.TreeUtil.set_items_visibility(self._all_match_items, is_visible=True)
+        TreeUtil.set_items_visibility(self._all_match_items, is_visible=True)
 
-    def _reset_search(self):
-        """Reset the search and show all items.
+    def _clear_search(self):
+        """Clear the search and show all items.
         """
         self._is_searching = False
         # Show all items
-        bb.utils.TreeUtil.show_all_items(self.tree_widget)
+        TreeUtil.show_all_items(self.tree_widget)
 
-        self._highlight_search()
+        self._highlight_matching_items()
 
 
 # Main Function
@@ -394,16 +439,18 @@ def main():
     """
     import sys
     from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
+    from blackboard.widgets import GroupableTreeWidget, ScalableView
+    from blackboard import theme
 
     # Create the application and the main window
     app = QtWidgets.QApplication(sys.argv)
     window = QtWidgets.QMainWindow()
 
     # Set theme of QApplication to the dark theme
-    bb.theme.set_theme(app, 'dark')
+    theme.set_theme(app, 'dark')
 
     # Create the tree widget with example data
-    tree_widget = widgets.GroupableTreeWidget()
+    tree_widget = GroupableTreeWidget()
     tree_widget.setHeaderLabels(COLUMN_NAME_LIST)
     tree_widget.add_items(ID_TO_DATA_DICT)
 
@@ -421,7 +468,7 @@ def main():
     shortcut.activated.connect(search_edit.set_text_as_selection)
 
     # Create the scalable view and set the tree widget as its central widget
-    scalable_view = widgets.ScalableView(widget=main_widget)
+    scalable_view = ScalableView(widget=main_widget)
 
     # Add the tree widget to the layout of the widget
     window.setCentralWidget(scalable_view)

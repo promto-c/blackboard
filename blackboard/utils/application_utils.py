@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Tuple, Optional, List, Union, Dict
+from typing import Tuple, Optional, List, Union, Dict, Iterable
 
 # Standard Library Imports
 # ------------------------
@@ -203,14 +203,22 @@ class ApplicationUtil:
     #         raise NotImplementedError(f"Unsupported operating system: {os.name}")
 
     @staticmethod
-    def open_containing_folder(file_path: str) -> None:
-        """Open the folder containing the specified file.
+    def open_containing_folder(file_paths: Union[str, Iterable[str]]):
+        """Open the folder containing the specified file or files.
 
         Args:
-            file_path (str): The path to the file whose containing folder is to be opened.
+            file_paths (Union[str, Iterable[str]]): The path or paths to the file(s) whose containing folder(s) is to be opened.
         """
-        folder_path = os.path.dirname(file_path) if os.path.isfile(file_path) else file_path
-        ApplicationUtil.open_file(folder_path)
+        # Ensure file_paths is an iterable
+        if isinstance(file_paths, str):
+            file_paths = [file_paths]
+
+        # Extract folders
+        folders = {(os.path.isfile(file_path) and os.path.dirname(file_path)) or file_path for file_path in file_paths}
+
+        # Open each folder
+        for folder in folders:
+            ApplicationUtil.open_file(folder)
 
     @staticmethod
     def open_file(file_path: str):

@@ -1,7 +1,7 @@
 
 # Type Checking Imports
 # ---------------------
-from typing import Any, Optional, List, Union, Dict
+from typing import Any, Optional, List, Union, Dict, Tuple, Type
 
 # Standard Library Imports
 # ------------------------
@@ -22,13 +22,309 @@ from blackboard import widgets
 
 # Class Definitions
 # -----------------
+class FilterCondition(Enum):
+    """Enum representing supported filter conditions for different data types.
+    """
+    
+    # Text Conditions
+    CONTAINS = ("Contains", "{column} LIKE '%' || ? || '%'")  # SQL LIKE with '%term%'
+    DOES_NOT_CONTAIN = ("Does Not Contain", "{column} NOT LIKE '%' || ? || '%'")  # SQL NOT LIKE with '%term%'
+    EQUALS = ("Equals", "{column} = ?")  # SQL '='
+    NOT_EQUALS = ("Not Equals", "{column} != ?")  # SQL '!='
+    STARTS_WITH = ("Starts With", "{column} LIKE ? || '%'")  # SQL LIKE 'term%'
+    ENDS_WITH = ("Ends With", "{column} LIKE '%' || ?")  # SQL LIKE '%term'
+    IS_NULL = ("Is Null", "{column} IS NULL")  # SQL IS NULL
+    IS_NOT_NULL = ("Is Not Null", "{column} IS NOT NULL")  # SQL IS NOT NULL
+
+    # Numeric Conditions
+    GREATER_THAN = ("Greater Than", "{column} > ?")  # SQL '>'
+    LESS_THAN = ("Less Than", "{column} < ?")  # SQL '<'
+    BETWEEN = ("Between", "{column} BETWEEN ? AND ?")  # SQL BETWEEN
+    NOT_BETWEEN = ("Not Between", "{column} NOT BETWEEN ? AND ?")  # SQL NOT BETWEEN
+
+    # Date Conditions
+    BEFORE = ("Before", "{column} < ?")  # SQL '<'
+    AFTER = ("After", "{column} > ?")  # SQL '>'
+    IN_RANGE = ("In Range", "{column} BETWEEN ? AND ?")  # SQL BETWEEN
+    NOT_IN_RANGE = ("Not In Range", "{column} NOT BETWEEN ? AND ?")  # SQL NOT BETWEEN
+
+    # Boolean Conditions
+    IS_TRUE = ("Is True", "{column} = 1")  # SQL '1' or 'TRUE'
+    IS_FALSE = ("Is False", "{column} = 0")  # SQL '0' or 'FALSE'
+
+    # Multi-value Conditions
+    IN = ("In", "{column} IN ({placeholders})")
+    NOT_IN = ("Not In", "{column} NOT IN ({placeholders})")
+
+    def __init__(self, title: str, sql_format: str):
+        """Initialize the FilterCondition enum with a title and SQL format."""
+        self.title = title
+        self.sql_format = sql_format
+
+    @property
+    def display_name(self) -> str:
+        """Return the display name of the filter condition."""
+        return self.title
+
+    @property
+    def query_format(self) -> str:
+        """Return the SQL query format for the filter condition."""
+        return self.sql_format
+
+    def __str__(self):
+        """Return the string representation of the filter condition."""
+        return self.title
+
+class FilterSelectionBar(QtWidgets.QToolBar):
+    """A toolbar widget that manages filter actions.
+
+    Attributes:
+        filter_changed: Signal to notify filter state changes.
+    """
+
+    # Initialization and Setup
+    # ------------------------
+    filter_changed = QtCore.Signal(str, bool)  # Signal to notify filter state changes
+    filters_cleared = QtCore.Signal()  # Signal to notify when all filters are cleared
+
+    def __init__(self, parent=None):
+        """Initialize the FilterSelectionBar and set up UI components.
+
+        Args:
+            parent: The parent widget of this toolbar.
+        """
+        # Initialize the super class
+        super().__init__(parent)
+
+        # Initialize setup
+        self.__init_attributes()
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_attributes(self):
+        """Initialize the attributes.
+        """
+        # Attributes
+        # ----------
+        self._actions: Dict[str, QtWidgets.QAction] = {}  # Dictionary to store checkable actions
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        self.setWindowTitle("Filter Bar")
+        self._customize_toolbar_components()
+        self._update_ext_icon()
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
+        self.orientationChanged.connect(self._update_ext_icon)
+
+    # Public Methods
+    # --------------
+    def add_filter(self, name: str):
+        """Add a new checkable filter action to the toolbar.
+
+        Args:
+            name: The name of the filter to add.
+
+        Raises:
+            ValueError: If the filter already exists.
+        """
+        if name in self._actions:
+            raise ValueError(f"Filter '{name}' already exists.")
+        
+        action = QtWidgets.QAction(name, self)
+        action.setCheckable(True)  # Make the action checkable
+        action.triggered.connect(partial(self._apply_filter_action, name))
+        self._actions[name] = action  # Store the action
+
+        self.addAction(action)  # Add the action to the toolbar
+
+    def add_filters(self, names: list[str]):
+        """Add multiple checkable filter actions to the toolbar.
+
+        Args:
+            names: A list of filter names to add.
+        """
+        for name in names:
+            self.add_filter(name)
+
+    def remove_filter(self, name: str):
+        """Remove a filter action from the toolbar.
+
+        Args:
+            name: The name of the filter to remove.
+
+        Raises:
+            ValueError: If the filter is not found.
+        """
+        action = self._actions.pop(name, None)
+        if action:
+            self.removeAction(action)
+        else:
+            raise ValueError(f"Filter '{name}' not found.")
+
+    def clear(self):
+        """Remove all filter actions from the toolbar."""
+        for name in list(self._actions.keys()):
+            self.remove_filter(name)
+
+    def clear_filters(self):
+        """Uncheck all checked filters in the toolbar."""
+        for action in self._actions.values():
+            action.setChecked(False)
+        self.filters_cleared.emit()
+
+    def is_filter_checked(self, name: str) -> bool:
+        """Return whether the given filter is checked.
+
+        Args:
+            name: The name of the filter to check.
+
+        Returns:
+            True if the filter is checked, otherwise False.
+
+        Raises:
+            ValueError: If the filter is not found.
+        """
+        action = self._actions.get(name)
+        if action:
+            return action.isChecked()
+        raise ValueError(f"Filter '{name}' not found.")
+
+    def set_filter_checked(self, filter_name: str, checked: bool = True, block_signal: bool = False):
+        """Set the checked state of the given filter.
+
+        Args:
+            name: The name of the filter to set.
+            checked: The checked state to set (default is True).
+            block_signal: If True, block the signal emission (default is False).
+
+        Raises:
+            ValueError: If the filter is not found.
+        """
+        action = self._actions.get(filter_name)
+        if not action:
+            raise ValueError(f"Filter '{filter_name}' not found.")
+
+        action.setChecked(checked)
+        if block_signal:
+            return
+
+        self.filter_changed.emit(filter_name, checked)
+
+    def apply_exclusive_filter(self, filter_name: str):
+        """Apply the selected filter exclusively by clearing others.
+
+        Args:
+            filter_name: The name of the filter to apply exclusively.
+        """
+        self.clear_filters()
+        self.set_filter_checked(filter_name, checked=True)
+
+    def get_filter_names(self) -> List[str]:
+        """Retrieve a list of all filter names.
+
+        Returns:
+            A list of all filter names.
+        """
+        return list(self._actions.keys())
+
+    def get_filter_states(self) -> Dict[str, bool]:
+        """Retrieve the state of all filters in a dictionary format.
+
+        Returns:
+            A dictionary with filter names as keys and their checked state as values.
+        """
+        return {name: action.isChecked() for name, action in self._actions.items()}
+
+    def get_active_filters(self) -> List[str]:
+        """Retrieve a list of all checked (active) filters.
+
+        Returns:
+            A list of all checked filter names.
+        """
+        return [name for name, action in self._actions.items() if action.isChecked()]
+
+    # Class Properties
+    # ----------------
+    @property
+    def filter_names(self) -> List[str]:
+        return self.get_filter_names()
+
+    @property
+    def active_filters(self) -> List[str]:
+        return self.get_active_filters()
+
+    # Private Methods
+    # ---------------
+    def _customize_toolbar_components(self):
+        """Customize the toolbar components.
+        """
+        self.qt_toolbar_ext_button = self.findChild(QtWidgets.QToolButton, 'qt_toolbar_ext_button')
+        self.qt_toolbar_ext_button.setStyleSheet('padding: 0;')
+        self.qt_toolbar_ext_button.setFixedSize(20, 20)
+        self.qt_toolbar_ext_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+
+    def _move_ext_button(self):
+        """Move the toolbar extension button based on orientation.
+        """
+        if self.qt_toolbar_ext_button.isHidden():
+            return
+
+        if self.orientation() == QtCore.Qt.Vertical:
+            # Move button to the bottom of the toolbar in vertical orientation
+            new_y = self.height() - self.qt_toolbar_ext_button.height()
+            if self.qt_toolbar_ext_button.y() != new_y:
+                self.qt_toolbar_ext_button.move(self.qt_toolbar_ext_button.x(), new_y)
+        else:
+            # Move button to the right end in horizontal orientation
+            new_x = self.width() - self.qt_toolbar_ext_button.width()
+            if self.qt_toolbar_ext_button.x() != new_x:
+                self.qt_toolbar_ext_button.move(new_x, self.qt_toolbar_ext_button.y())
+
+    def _update_ext_icon(self, _orientation=None):
+        """Update the icon of the toolbar extension button.
+        """
+        self.qt_toolbar_ext_button.setIcon(TablerQIcon.chevron_down)
+
+    def _apply_filter_action(self, filter_name: str, check_state: bool):
+        """Apply the filter action logic, including exclusive selection if Ctrl is pressed."""
+        if QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.ControlModifier:
+            self.apply_exclusive_filter(filter_name)
+        else:
+            self.filter_changed.emit(filter_name, check_state)
+
+    # Overridden Methods
+    # ------------------
+    def paintEvent(self, event):
+        """Handle the paint event for the toolbar.
+
+        Args:
+            event: The paint event.
+        """
+        super().paintEvent(event)
+        self._move_ext_button()
+
+# TODO: Add support to set column name mapping to filter widget
 class FilterBarWidget(QtWidgets.QWidget):
+
+    filter_widget_removed = QtCore.Signal(str)
 
     def __init__(self, parent: QtWidgets.QWidget = None):
         super().__init__(parent)
 
         # Initialize setup
+        self.__init_attributes()
         self.__init_ui()
+
+    def __init_attributes(self):
+        """Initialize the attributes.
+        """
+        # Private Attributes
+        # ------------------
+        self._filter_widgets: List['FilterWidget'] = []
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -54,6 +350,7 @@ class FilterBarWidget(QtWidgets.QWidget):
         # Add filter button
         self.add_filter_button = QtWidgets.QToolButton(self)
         self.add_filter_button.setIcon(self.tabler_icon.plus)
+        self.add_filter_button.setToolTip("Add Filter from Column")
         self.add_filter_button.setProperty('widget-style', 'round')
         self.add_filter_button.setFixedSize(24, 24)
 
@@ -72,6 +369,44 @@ class FilterBarWidget(QtWidgets.QWidget):
         """Add a filter widget to the filter area layout.
         """
         self.filter_area_layout.addWidget(filter_widget.button)
+        self._filter_widgets.append(filter_widget)
+        filter_widget.removed.connect(self.remove_filter_widget)
+
+    def remove_filter_widget(self, filter_widget: 'FilterWidget' = None):
+        """Remove a filter widget from the filter area layout.
+        """
+        filter_widget = filter_widget or self.sender()
+        if filter_widget in self._filter_widgets:
+            self.filter_area_layout.removeWidget(filter_widget.button)
+            filter_widget.button.deleteLater()  # Remove the button associated with the filter
+            self._filter_widgets.remove(filter_widget)
+            self.filter_widget_removed.emit(filter_widget.filter_name)
+
+    def clear(self):
+        """Clear all filter widgets from the filter bar.
+        """
+        for filter_widget in self._filter_widgets:
+            self.remove_filter_widget(filter_widget)
+        self._filter_widgets.clear()
+
+    def get_active_filters(self) -> List['FilterWidget']:
+        """Return a list of currently active filters.
+        """
+        return [filter_widget for filter_widget in self._filter_widgets if filter_widget.is_active]
+
+    def filter_exists(self, filter_name: str) -> bool:
+        """Check if a filter already exists by its name.
+        """
+        return any(filter_widget.filter_name == filter_name for filter_widget in self._filter_widgets)
+
+    def count_filters(self) -> int:
+        """Return the number of active filters.
+        """
+        return len(self._filter_widgets)
+
+    @property
+    def filter_widgets(self) -> List['FilterWidget']:
+        return self._filter_widgets
 
 class MoreOptionsButton(QtWidgets.QToolButton):
     def __init__(self, parent=None):
@@ -168,9 +503,16 @@ class ResizablePopupMenu(QtWidgets.QMenu):
     def mousePressEvent(self, event: QtGui.QMouseEvent):
         """Handle the mouse press event for resizing the menu.
         """
-        if (event.pos().x() >= (self.width() - self.RESIZE_HANDLE_SIZE) and
-            event.pos().y() >= (self.height() - self.RESIZE_HANDLE_SIZE)
-           ):
+        # Calculate the rectangle representing the resize handle area
+        handle_rect = QtCore.QRect(
+            self.width() - self.RESIZE_HANDLE_SIZE,
+            self.height() - self.RESIZE_HANDLE_SIZE,
+            self.RESIZE_HANDLE_SIZE,
+            self.RESIZE_HANDLE_SIZE
+        )
+
+        if handle_rect.contains(event.pos()):
+            # Only start dragging if the mouse is within the handle area
             self._is_dragging = True
             self._drag_start_point = event.pos()
             self._initial_size = self.size()
@@ -181,6 +523,7 @@ class ResizablePopupMenu(QtWidgets.QMenu):
     def mouseMoveEvent(self, event: QtGui.QMouseEvent):
         """Handle the mouse move event to resize the menu.
         """
+        # If dragging, resize the widget
         if self._is_dragging:
             delta = event.pos() - self._drag_start_point
             new_size = QtCore.QSize(
@@ -189,6 +532,22 @@ class ResizablePopupMenu(QtWidgets.QMenu):
             )
             self.resize(new_size)
         else:
+            # TODO: Test
+            # Only change the cursor if the mouse is in the resize handle area
+            handle_rect = QtCore.QRect(
+                self.width() - self.RESIZE_HANDLE_SIZE,
+                self.height() - self.RESIZE_HANDLE_SIZE,
+                self.RESIZE_HANDLE_SIZE,
+                self.RESIZE_HANDLE_SIZE
+            )
+            if handle_rect.contains(event.pos()):
+                # Change to a diagonal resize cursor
+                self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.SizeFDiagCursor))
+            else:
+                # Reset to default cursor
+                self.unsetCursor()
+
+            # Call base implementation for default behavior
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
@@ -232,7 +591,6 @@ class FilterPopupButton(QtWidgets.QPushButton):
         self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self.setMinimumSize(self.MINIMUM_WIDTH, self.MINIMUM_HEIGHT)
         self.setFixedHeight(self.MINIMUM_HEIGHT)
-        self.setProperty('widget-style', 'round')
 
     def __init_accessibility(self):
         """Initialize accessibility features like keyboard navigation and screen reader support.
@@ -254,8 +612,11 @@ class FilterPopupButton(QtWidgets.QPushButton):
 
 class FilterWidget(QtWidgets.QWidget):
 
+    CONDITIONS: List[FilterCondition] = []
+
     label_changed = QtCore.Signal(str)
     activated = QtCore.Signal(list)
+    removed = QtCore.Signal()
 
     # Initialization and Setup
     # ------------------------
@@ -331,7 +692,10 @@ class FilterWidget(QtWidgets.QWidget):
 
         self.condition_combo_box = QtWidgets.QComboBox()
         self.condition_combo_box.setProperty('widget-style', 'clean')
-        self.condition_combo_box.addItems(['Condition1', 'Condition2'])
+
+        # Update the condition combo box
+        for condition in self.CONDITIONS:
+            self.condition_combo_box.addItem(condition.display_name, condition)
 
         self.clear_button = QtWidgets.QToolButton(self)
         self.clear_button.setIcon(self.tabler_icon.clear_all)
@@ -348,9 +712,9 @@ class FilterWidget(QtWidgets.QWidget):
 
         # Add Confirm and Cancel buttons
         self.cancel_button = QtWidgets.QPushButton("Cancel")
-        self.cancel_button.setProperty('widget-style', 'borderless')
+        self.cancel_button.setProperty('widget-style', 'dialog')
         self.apply_button = QtWidgets.QPushButton("Apply Filter")
-        self.apply_button.setProperty('widget-style', 'borderless')
+        self.apply_button.setProperty('widget-style', 'dialog')
         self.apply_button.setProperty('color', 'blue')
 
         # Add Widgets to Layouts
@@ -373,7 +737,7 @@ class FilterWidget(QtWidgets.QWidget):
 
         self.cancel_button.clicked.connect(self.discard_change)
         self.cancel_button.clicked.connect(self.hide_popup)
-        
+
         self.clear_button.clicked.connect(self.set_filter_applied)
         self.clear_button.clicked.connect(self.clear_state)
         self.clear_button.clicked.connect(self.clear_filter)
@@ -495,6 +859,12 @@ class FilterWidget(QtWidgets.QWidget):
         """
         self._initial_focus_widget = widget
 
+    def remove_filter(self):
+        """Remove the filter.
+        """
+        self.removed.emit()
+        self.hide_popup()
+
     # Class Properties
     # ----------------
     @property
@@ -508,6 +878,10 @@ class FilterWidget(QtWidgets.QWidget):
         """Check if the filter is active. Must be implemented in subclasses.
         """
         raise NotImplementedError('')
+    
+    @property
+    def selected_condition(self):
+        return self.condition_combo_box.currentData(QtCore.Qt.ItemDataRole.UserRole)
 
     # Slot Implementations
     # --------------------
@@ -521,11 +895,6 @@ class FilterWidget(QtWidgets.QWidget):
         """
         raise NotImplementedError("Subclasses must implement save_change")
 
-    def remove_filter(self):
-        """Remove the filter. Must be implemented in subclasses.
-        """
-        raise NotImplementedError("Subclasses must implement remove_filter")
-
     def clear_filter(self):
         """Clear the filter condition. Must be implemented in subclasses.
         """
@@ -535,6 +904,14 @@ class FilterWidget(QtWidgets.QWidget):
         """Set the filter. Must be implemented in subclasses.
         """
         raise NotImplementedError("Subclasses must implement set_filter")
+
+    def get_filter_condition(self) -> 'FilterCondition':
+        return self.condition_combo_box.currentData(QtCore.Qt.ItemDataRole.UserRole)
+
+    def get_filter_values(self) -> Optional[Tuple[Any, ...]]:
+        """Get the filter values. Must be implemented in subclasses.
+        """
+        raise NotImplementedError("Subclasses must implement get_filter_values")
 
     # Override Methods
     # ----------------
@@ -571,6 +948,15 @@ class DateRange(Enum):
         return self.value
 
 class DateRangeFilterWidget(FilterWidget):
+
+    CONDITIONS = [
+        FilterCondition.BEFORE,
+        FilterCondition.AFTER,
+        FilterCondition.IN_RANGE,
+        FilterCondition.NOT_IN_RANGE,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL
+    ]
 
     TODAY = QtCore.QDate.currentDate()
     DATE_RANGES = {
@@ -700,6 +1086,193 @@ class DateRangeFilterWidget(FilterWidget):
         # Set the first item as the current item
         self.relative_date_combo_box.setCurrentIndex(0)
 
+# NOTE: WIP
+class DateTimeRangeFilterWidget(DateRangeFilterWidget):
+    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
+
+        # Additional setup for time range filtering
+        self.__init_datetime_ui()
+        self.__init_datetime_signal_connections()
+
+    def __init_datetime_ui(self):
+        """Initialize UI elements for handling both date and time."""
+        self.setIcon(TablerQIcon.calendar_clock)
+
+        # Extend existing widgets to include time components
+        self.time_layout = QtWidgets.QHBoxLayout()
+        self.widget_layout.addLayout(self.time_layout)
+
+        self.time_start_edit = QtWidgets.QTimeEdit(self)
+        self.time_end_edit = QtWidgets.QTimeEdit(self)
+        self.time_start_edit.setDisplayFormat("HH:mm:ss")
+        self.time_end_edit.setDisplayFormat("HH:mm:ss")
+
+        self.time_start_label = widgets.LabelEmbedderWidget(self.time_start_edit, 'Start Time', self)
+        self.time_end_label = widgets.LabelEmbedderWidget(self.time_end_edit, 'End Time', self)
+
+        # Add the time widgets to the UI layout
+        self.time_layout.addWidget(self.time_start_label)
+        self.time_layout.addWidget(self.time_end_label)
+
+    def __init_datetime_signal_connections(self):
+        """Initialize signal-slot connections for datetime handling."""
+        # Connect signals related to time selection
+        self.time_start_edit.timeChanged.connect(self.handle_time_change)
+        self.time_end_edit.timeChanged.connect(self.handle_time_change)
+
+    def handle_time_change(self):
+        """Handle changes in the time edits to keep date and time consistent."""
+        # Implement any logic needed to manage changes in time components
+        ...
+
+    def save_change(self):
+        """Save the date and time range."""
+        super().save_change()  # Call the base method to save date-related data
+        
+        # Save time-specific data
+        start_time = self.time_start_edit.time().toString(QtCore.Qt.DateFormat.ISODate)
+        end_time = self.time_end_edit.time().toString(QtCore.Qt.DateFormat.ISODate)
+
+        # Emit signals or store state with combined date and time information
+        self.save_state('start_time', start_time)
+        self.save_state('end_time', end_time)
+        # Combine date and time for emitting
+        self.label_changed.emit(f"{self.start_date.toString(QtCore.Qt.DateFormat.ISODate)} {start_time} - {self.end_date.toString(QtCore.Qt.DateFormat.ISODate)} {end_time}")
+
+    def discard_change(self):
+        """Revert changes for both date and time."""
+        super().discard_change()  # Call the base method to discard date changes
+        self.time_start_edit.setTime(self.load_state('start_time', QtCore.QTime()))
+        self.time_end_edit.setTime(self.load_state('end_time', QtCore.QTime()))
+
+# NOTE: WIP
+class TextFilterWidget(FilterWidget):
+    """A widget for filtering text data with various SQL-like operators.
+
+    UI Wireframe:
+        +----------------------------------+
+        | Condition: [ Contains  v]        |
+        | +------------------------------+ |
+        | |  [ Enter text to filter... ] | |
+        | +------------------------------+ |
+        |                                  |
+        | [ Clear ]             [ Apply ]  |
+        +----------------------------------+
+    """
+
+    # Define supported conditions
+    CONDITIONS: List[FilterCondition] = [
+        FilterCondition.CONTAINS, 
+        FilterCondition.DOES_NOT_CONTAIN,
+        FilterCondition.EQUALS,
+        FilterCondition.NOT_EQUALS,
+        FilterCondition.STARTS_WITH,
+        FilterCondition.ENDS_WITH,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL,
+    ]
+
+    def __init__(self, filter_name: str = "Text Filter", parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
+
+        # Initialize setup specific to TextFilterWidget
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI elements specific to the TextFilterWidget.
+        """
+        self.setIcon(TablerQIcon.letter_case)
+
+        # Add a line edit for entering the text to filter
+        self.text_edit = QtWidgets.QLineEdit(self)
+        self.text_edit.setPlaceholderText("Enter text to filter...")
+        self.text_edit.setProperty('has-placeholder', True)
+        self.text_edit.textChanged.connect(self.update_style)
+        # Create a clear action for the line edit
+        clear_action = QtWidgets.QAction(self)
+        clear_action.setIcon(TablerQIcon.x)  # Icon for the clear button
+        clear_action.setToolTip("Clear")
+        clear_action.triggered.connect(self.text_edit.clear)
+        self.text_edit.addAction(clear_action, QtWidgets.QLineEdit.TrailingPosition)
+
+        # Add the line edit to the specific content area of the widget
+        self.widget_layout.addWidget(self.text_edit)
+
+        # Set the initial focus widget to the condition combo box
+        self.set_initial_focus_widget(self.condition_combo_box)
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections for TextFilterWidget.
+        """
+        self.condition_combo_box.currentIndexChanged.connect(self.update_ui_for_condition)
+
+    # Slot Implementations
+    # --------------------
+    def discard_change(self):
+        """Revert the widget to its previously saved state.
+        """
+        saved_condition = self.load_state('condition', 'Contains')
+        self.condition_combo_box.setCurrentText(saved_condition)
+
+        self.text_edit.setText(self.load_state('text', ""))
+
+    def save_change(self):
+        """Save the current state of the filter settings.
+        """
+        self.save_state('condition', self.condition_combo_box.currentText())
+        self.save_state('text', self.text_edit.text())
+
+        # Emit signals with appropriate data
+        condition = self.get_filter_condition()
+        if condition in (FilterCondition.IS_NULL, FilterCondition.IS_NOT_NULL):
+            text_value = ''
+            values = []
+        else:
+            text_value = self.text_edit.text()
+            values = [text_value]
+
+        label_text = self.format_label(text_value)
+        self.label_changed.emit(label_text)
+        self.activated.emit(values)
+
+    def clear_filter(self):
+        """Clear all filter settings and reset to the default state.
+        """
+        self.condition_combo_box.setCurrentIndex(0)
+        self.text_edit.clear()
+
+    def update_ui_for_condition(self, index: int):
+        """Update UI components based on the selected condition.
+        """
+        condition = self.condition_combo_box.itemText(index)
+
+        # If the condition is 'Is Null' or 'Is Not Null', hide the text input
+        if condition in ['Is Null', 'Is Not Null']:
+            self.text_edit.hide()
+        else:
+            self.text_edit.show()
+
+    def format_label(self, text_value: str) -> str:
+        """Format the display label based on current inputs.
+        """
+        condition = self.condition_combo_box.currentText()
+        if condition in ['Is Null', 'Is Not Null']:
+            return condition
+        elif text_value:
+            return f"{condition}: {text_value}"
+        return condition
+
+    # Class Properties
+    # ----------------
+    @property
+    def is_active(self):
+        """Check if the filter is active based on current values.
+        """
+        condition = self.condition_combo_box.currentText()
+        return condition in ['Is Null', 'Is Not Null'] or bool(self.text_edit.text())
+
 class FilterEntryEdit(QtWidgets.QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -749,13 +1322,22 @@ class FilterEntryEdit(QtWidgets.QLineEdit):
     def setModel(self, model):
         """Set the model for the completer."""
         self.model = model
-        self.proxy_model = bb.utils.FlatProxyModel(self.model)
+        self.proxy_model = bb.utils.FlatProxyModel(self.model, self)
         # Set the model for the completer
         self.completer().setModel(self.proxy_model)
 
 class MultiSelectFilterWidget(FilterWidget):
     """A widget representing a filter with a checkable tree.
     """
+
+    CONDITIONS = [
+        FilterCondition.IN,
+        FilterCondition.NOT_IN,
+        FilterCondition.CONTAINS, 
+        FilterCondition.DOES_NOT_CONTAIN,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL,
+    ]
 
     def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
@@ -1011,7 +1593,7 @@ class MultiSelectFilterWidget(FilterWidget):
         """ 
         # Add items to the model
         parent_item = parent_item or self.tree_view_model
-        item = QtGui.QStandardItem(item_label)
+        item = QtGui.QStandardItem(str(item_label))
         item.setCheckable(True)
         item.setEditable(False)
         parent_item.appendRow(item)
@@ -1064,6 +1646,14 @@ class MultiSelectFilterWidget(FilterWidget):
         self.activated.emit(tags)
 
 class FileTypeFilterWidget(FilterWidget):
+
+    CONDITIONS = [
+        FilterCondition.IN,
+        FilterCondition.NOT_IN,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL
+    ]
+
     def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
 
@@ -1202,7 +1792,265 @@ class FileTypeFilterWidget(FilterWidget):
         custom_input_text = ', '.join(custom_input)
         self.custom_input.setText(custom_input_text)
 
+class NumericFilterWidget(FilterWidget):
+    """A widget for filtering numeric data with dynamic two-way condition handling.
+
+    UI Wireframe:
+        +----------------------------------+
+        | Condition: [ Equal  v]           |
+        | +------------------------------+ |
+        | |  [ 0.0 ]    ...   [ ... ]    | |
+        | +------------------------------+ |
+        |                                  |
+        | [ Clear ]             [ Apply ]  |
+        +----------------------------------+
+    """
+
+    CONDITIONS = [
+        FilterCondition.EQUALS,
+        FilterCondition.NOT_EQUALS,
+        FilterCondition.GREATER_THAN,
+        FilterCondition.LESS_THAN,
+        FilterCondition.BETWEEN,
+        FilterCondition.NOT_BETWEEN,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL
+    ]
+
+    def __init__(self, filter_name: str = "Numeric Filter", parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
+
+        # Initialize setup specific to NumericFilterWidget
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI elements specific to the NumericFilterWidget."""
+        self.setIcon(TablerQIcon.filter)  # Set an appropriate icon for numeric filter
+
+        # Add line edits for entering numeric values with placeholders
+        self.lower_value_edit = QtWidgets.QLineEdit(self)
+        self.lower_value_edit.setPlaceholderText("Lower limit...")
+        self.lower_value_edit.setProperty('has-placeholder', True)
+        self.lower_value_edit.setValidator(QtGui.QDoubleValidator())  # Ensure numeric input only
+        self.lower_value_edit.textChanged.connect(self.update_style)
+        # Create a clear action for the line edit
+        clear_action = QtWidgets.QAction(self)
+        clear_action.setIcon(TablerQIcon.x)  # Icon for the clear button
+        clear_action.setToolTip("Clear")
+        clear_action.triggered.connect(self.lower_value_edit.clear)
+        self.lower_value_edit.addAction(clear_action, QtWidgets.QLineEdit.TrailingPosition)
+        self.lower_value_label = widgets.LabelEmbedderWidget(self.lower_value_edit, 'From')
+
+        self.upper_value_edit = QtWidgets.QLineEdit(self)
+        self.upper_value_edit.setPlaceholderText("Upper limit......")
+        self.upper_value_edit.setProperty('has-placeholder', True)
+        self.upper_value_edit.setValidator(QtGui.QDoubleValidator())  # Ensure numeric input only
+        self.upper_value_edit.textChanged.connect(self.update_style)
+        # Create a clear action for the line edit
+        clear_action = QtWidgets.QAction(self)
+        clear_action.setIcon(TablerQIcon.x)  # Icon for the clear button
+        clear_action.setToolTip("Clear")
+        clear_action.triggered.connect(self.upper_value_edit.clear)
+        self.upper_value_edit.addAction(clear_action, QtWidgets.QLineEdit.TrailingPosition)
+        self.upper_value_label = widgets.LabelEmbedderWidget(self.upper_value_edit, 'To')
+
+        # Add the line edits to the specific content area of the widget
+        self.value_layout = QtWidgets.QHBoxLayout()
+        self.value_layout.addWidget(self.lower_value_label)
+        self.value_layout.addWidget(QtWidgets.QLabel("--", self))  # Icon or writer to separate fields
+        self.value_layout.addWidget(self.upper_value_label)
+        self.widget_layout.addLayout(self.value_layout)
+
+        # Set the initial focus widget to the condition combo box
+        self.set_initial_focus_widget(self.condition_combo_box)
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections for NumericFilterWidget."""
+        self.condition_combo_box.currentIndexChanged.connect(self.update_ui_for_condition)
+        self.lower_value_edit.textChanged.connect(self.handle_input_change)
+        self.upper_value_edit.textChanged.connect(self.handle_input_change)
+
+    # Slot Implementations
+    # --------------------
+    def discard_change(self):
+        """Revert the widget to its previously saved state."""
+        saved_condition = self.load_state('condition', 'Equal')
+        self.condition_combo_box.setCurrentText(saved_condition)
+
+        self.lower_value_edit.setText(self.load_state('lower_value', ""))
+        self.upper_value_edit.setText(self.load_state('upper_value', ""))
+
+    def save_change(self):
+        """Save the current state of the filter settings."""
+        self.save_state('condition', self.condition_combo_box.currentText())
+        self.save_state('lower_value', self.lower_value_edit.text())
+        self.save_state('upper_value', self.upper_value_edit.text())
+
+        # Emit signals with appropriate data
+        lower_value = self.lower_value_edit.text()
+        upper_value = self.upper_value_edit.text()
+
+        label_text = self.format_label(lower_value, upper_value)
+        self.label_changed.emit(label_text)
+        self.activated.emit(self.get_filter_values())
+
+    def get_filter_values(self) -> Optional[Tuple[float, ...]]:
+        condition = self.get_filter_condition()
+        if condition in (FilterCondition.IS_NULL, FilterCondition.IS_NOT_NULL):
+            return []
+        lower_value = self.lower_value_edit.text()
+        upper_value = self.upper_value_edit.text()
+
+        if condition in (FilterCondition.BETWEEN, FilterCondition.NOT_BETWEEN):
+            if lower_value and upper_value:
+                return sorted([float(lower_value), float(upper_value)])
+            else:
+                return []  # Cannot apply BETWEEN without both values
+        else:
+            value = lower_value or upper_value
+            if value:
+                return [float(value)]
+            else:
+                return []
+
+    def clear_filter(self):
+        """Clear all filter settings and reset to the default state."""
+        self.condition_combo_box.setCurrentIndex(0)
+        self.lower_value_edit.clear()
+        self.upper_value_edit.clear()
+
+    def update_ui_for_condition(self, index: int):
+        """Update UI components based on the selected condition."""
+        condition = self.condition_combo_box.itemText(index)
+        lower_value = self.lower_value_edit.text()
+        upper_value = self.upper_value_edit.text()
+        if condition == 'Greater Than':
+            if lower_value:
+                self.upper_value_edit.clear()
+            elif upper_value:
+                self.lower_value_edit.setText(upper_value)
+                self.upper_value_edit.clear()
+        elif condition == 'Less Than':
+            if upper_value:
+                self.lower_value_edit.clear()
+            elif lower_value:
+                self.upper_value_edit.setText(lower_value)
+                self.lower_value_edit.clear()
+        elif condition == 'Equal':
+            if lower_value:
+                self.upper_value_edit.setText(lower_value)
+            elif upper_value:
+                self.lower_value_edit.setText(upper_value)
+
+    def handle_input_change(self):
+        """Adjust the condition dynamically based on user input."""
+        lower_value = self.lower_value_edit.text()
+        upper_value = self.upper_value_edit.text()
+
+        if lower_value and upper_value:
+            if lower_value == upper_value:
+                self.condition_combo_box.setCurrentText("Equal")
+            else:
+                self.condition_combo_box.setCurrentText("Between")
+        elif lower_value:
+            self.condition_combo_box.setCurrentText("Greater Than")
+        elif upper_value:
+            self.condition_combo_box.setCurrentText("Less Than")
+
+    def format_label(self, lower_value: str, upper_value: str) -> str:
+        """Format the display label based on current inputs."""
+        if lower_value and upper_value:
+            if lower_value == upper_value:
+                return f"= {lower_value}"  # When both values are equal
+            return f"{lower_value} - {upper_value}"
+        elif lower_value:
+            return f"> {lower_value}"
+        elif upper_value:
+            return f"< {upper_value}"
+        return "Equal"
+
+    # Class Properties
+    # ----------------
+    @property
+    def is_active(self):
+        """Check if the filter is active based on current values."""
+        return bool(self.lower_value_edit.text() or self.upper_value_edit.text())
+
 class BooleanFilterWidget(FilterWidget):
+    """A widget for filtering boolean data with options for True, False, NULL, and NOT NULL.
+
+    UI Wireframe:
+        +----------------------------------+
+        | Condition: [ Is True   v]        |
+        |                                  |
+        | [ Clear ]             [ Apply ]  |
+        +----------------------------------+
+    """
+
+    CONDITIONS = [
+        FilterCondition.IS_TRUE,
+        FilterCondition.IS_FALSE,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL
+    ]
+
+    def __init__(self, filter_name: str = "Boolean Filter", parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, parent=parent)
+
+        # Initialize setup specific to BooleanFilterWidget
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI elements specific to the BooleanFilterWidget."""
+        self.setIcon(TablerQIcon.checkbox)  # Set an appropriate icon for boolean filter
+
+        # Create condition combo box and add available conditions
+        self.condition_combo_box.clear()
+        self.condition_combo_box.addItems([condition.title for condition in self.CONDITIONS])
+
+        # Set the initial focus widget to the condition combo box
+        self.set_initial_focus_widget(self.condition_combo_box)
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections for BooleanFilterWidget."""
+        self.condition_combo_box.currentIndexChanged.connect(self.handle_condition_change)
+
+    # Slot Implementations
+    # --------------------
+    def handle_condition_change(self):
+        """Handle changes to the condition selection."""
+        self.save_change()
+
+    def discard_change(self):
+        """Revert the widget to its previously saved state."""
+        saved_condition = self.load_state('condition', FilterCondition.IS_TRUE.title)
+        self.condition_combo_box.setCurrentText(saved_condition)
+
+    def save_change(self):
+        """Save the current state of the filter settings."""
+        selected_condition = self.condition_combo_box.currentText()
+        self.save_state('condition', selected_condition)
+
+        # Emit signals with appropriate data
+        condition = FilterCondition[selected_condition.replace(" ", "_").upper()]
+        self.label_changed.emit(selected_condition)
+        self.activated.emit([condition])
+
+    def clear_filter(self):
+        """Clear the filter settings and reset to the default state."""
+        self.condition_combo_box.setCurrentIndex(0)
+
+    # Class Properties
+    # ----------------
+    @property
+    def is_active(self):
+        """Check if the filter is active based on the current condition."""
+        # If the current condition is anything other than 'IS_TRUE' or its equivalent, the filter is active.
+        return self.condition_combo_box.currentText() not in [FilterCondition.IS_TRUE.title, '']
+
+class ToggleFilterWidget(FilterWidget):
     def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
 
@@ -1213,7 +2061,7 @@ class BooleanFilterWidget(FilterWidget):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setIcon(TablerQIcon.checkbox)
+        self.setIcon(TablerQIcon.toggle_left)
         self.unset_popup()
         self.button.clicked.connect(self.toggle_active)
 
@@ -1226,6 +2074,8 @@ class BooleanFilterWidget(FilterWidget):
         """Set the active state of the filter.
         """
         self._is_active = state
+        icon = TablerQIcon.toggle_right if state else TablerQIcon.toggle_left
+        self.setIcon(icon)
         self.activated.emit([self._is_active])
 
     @property
@@ -1242,11 +2092,6 @@ if __name__ == '__main__':
     main_window = QtWidgets.QMainWindow()
     main_layout = QtWidgets.QHBoxLayout()
 
-    # Date Filter Setup
-    date_filter_widget = DateRangeFilterWidget(filter_name="Date")
-    date_filter_widget.activated.connect(print)
-    # Shot Filter Setup
-    shot_filter_widget = MultiSelectFilterWidget(filter_name="Shot")
     # sequence_to_shot = {
     #     "100": [
     #         "100_010_001", "100_020_050"
@@ -1291,6 +2136,15 @@ if __name__ == '__main__':
     model.appendRow(tropical)
     model.appendRow(berries)
 
+    # Date Filter Setup
+    date_filter_widget = DateRangeFilterWidget(filter_name="Date")
+    date_filter_widget.activated.connect(print)
+    # Date Filter Setup
+    date_time_filter_widget = DateTimeRangeFilterWidget(filter_name="Date Time")
+    date_time_filter_widget.activated.connect(print)
+    # Shot Filter Setup
+    shot_filter_widget = MultiSelectFilterWidget(filter_name="Shot")
+
     # Setting the model for the tree view
     shot_filter_widget.setModel(model)
 
@@ -1303,15 +2157,28 @@ if __name__ == '__main__':
     file_type_filter_widget = FileTypeFilterWidget(filter_name="File Type")
     file_type_filter_widget.activated.connect(print)
 
-    show_hidden_filter_widget = BooleanFilterWidget(filter_name='Show Hidden')
+    is_active_filter_widget = BooleanFilterWidget(filter_name='Is Active')
+    is_active_filter_widget.activated.connect(print)
+
+    show_hidden_filter_widget = ToggleFilterWidget(filter_name='Show Hidden')
     show_hidden_filter_widget.activated.connect(print)
+
+    numeric_filter_widget = NumericFilterWidget(filter_name='Value')
+    numeric_filter_widget.activated.connect(print)
+
+    text_filter_widget = TextFilterWidget(filter_name='Name')
+    text_filter_widget.activated.connect(print)
 
     # Filter bar
     filter_bar_widget = FilterBarWidget()
     filter_bar_widget.add_filter_widget(date_filter_widget)
+    filter_bar_widget.add_filter_widget(date_time_filter_widget)
     filter_bar_widget.add_filter_widget(shot_filter_widget)
     filter_bar_widget.add_filter_widget(file_type_filter_widget)
+    filter_bar_widget.add_filter_widget(is_active_filter_widget)
     filter_bar_widget.add_filter_widget(show_hidden_filter_widget)
+    filter_bar_widget.add_filter_widget(numeric_filter_widget)
+    filter_bar_widget.add_filter_widget(text_filter_widget)
 
     # Adding widgets to the layout
     main_layout.addWidget(filter_bar_widget)

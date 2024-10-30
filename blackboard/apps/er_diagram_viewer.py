@@ -20,7 +20,10 @@ def get_db_schema(db_path: str) -> tuple[dict, list]:
     schema = {}
     foreign_keys = []
 
-    with sqlite3.connect(db_path) as conn:
+    # Open database in read-only mode
+    conn = sqlite3.connect(f"file:///{db_path}?mode=ro", uri=True)
+
+    with conn:
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         tables = cursor.fetchall()

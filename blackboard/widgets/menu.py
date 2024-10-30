@@ -19,10 +19,6 @@ class SectionAction(QtWidgets.QWidgetAction):
 
         # Disable the label to make it non-interactive
         self.label.setDisabled(True)
-        self.label.setStyleSheet('''
-            color: #999;
-            padding: 6px;
-        ''')
 
         # Set the label as its default widget
         self.setDefaultWidget(self.label)
@@ -45,7 +41,7 @@ class SectionAction(QtWidgets.QWidgetAction):
         return menu
     
     def addSeparator(self) -> QtWidgets.QAction:
-        return self.parent_menu.addSeparator()
+        return self.parent_menu.insertSeparator(self.separator)
 
 class ContextMenu(QtWidgets.QMenu):
 
@@ -62,9 +58,11 @@ class ContextMenu(QtWidgets.QMenu):
         """
         actions = self.actions()
         for index, action in enumerate(actions):
-            if action == target_action:
-                if index + 1 < len(actions):
-                    self.insertAction(actions[index + 1], action_to_insert)
-                else:
-                    self.addAction(action_to_insert)
-                break
+            if action != target_action:
+                continue
+
+            if index + 1 < len(actions):
+                self.insertAction(actions[index + 1], action_to_insert)
+            else:
+                self.addAction(action_to_insert)
+            break
