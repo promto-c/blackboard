@@ -1,13 +1,72 @@
 import sys
 import os
 import glob
-from typing import Any, Dict
+from typing import Any, Dict, Optional, List
 from qtpy import QtCore, QtGui, QtWidgets
 from tablerqicon import TablerQIcon  # Importing TablerQIcon
 
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollListWidget
 from blackboard.widgets.thumbnail_widget import ThumbnailWidget
 from blackboard.widgets.sort_rule_widget import SortRuleWidget
+
+
+class GroupRuleWidget(QtWidgets.QWidget):
+    """Widget for managing grouping by fields."""
+
+    # Signal emitted when a group-by column is selected
+    group_by_changed = QtCore.Signal(str)
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None, fields: Optional[List[str]] = None):
+        """Initialize the GroupRuleWidget.
+
+        Args:
+            parent (Optional[QtWidgets.QWidget]): The parent widget.
+            fields (Optional[List[str]]): The list of available fields for grouping.
+        """
+        super().__init__(parent)
+
+        # Store the fields for grouping
+        self.fields = fields or []
+
+        # Initialize UI
+        self.__init_ui()
+
+    def __init_ui(self):
+        """Initialize the UI of the GroupRuleWidget."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+
+        # Label
+        self.label = QtWidgets.QLabel("Group By:", self)
+        layout.addWidget(self.label)
+
+        # Field dropdown for group-by selection
+        self.field_dropdown = QtWidgets.QComboBox(self)
+        self.field_dropdown.addItems(self.fields)
+        self.field_dropdown.setToolTip("Select a field to group by")
+        layout.addWidget(self.field_dropdown)
+
+        # Apply button
+        self.apply_button = QtWidgets.QPushButton("Apply", self)
+        layout.addWidget(self.apply_button)
+
+        # Connect signal
+        self.apply_button.clicked.connect(self.emit_group_by_change)
+
+    def set_fields(self, fields: List[str]):
+        """Set the available fields for grouping.
+
+        Args:
+            fields (List[str]): The list of fields.
+        """
+        self.fields = fields
+        self.field_dropdown.clear()
+        self.field_dropdown.addItems(self.fields)
+
+    def emit_group_by_change(self):
+        """Emit the group_by_changed signal with the selected field."""
+        selected_field = self.field_dropdown.currentText()
+        self.group_by_changed.emit(selected_field)
 
 
 def create_shadow_effect(blur_radius=30, x_offset=0, y_offset=4, color=QtGui.QColor(0, 0, 0, 150)):
@@ -210,6 +269,18 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         self.sort_rule_button = QtWidgets.QPushButton(TablerQIcon.arrows_sort, 'Sort', self)
         self.sort_rule_button.setMinimumWidth(100)
         self.sort_rule_menu = QtWidgets.QMenu(self.sort_rule_button)
+        
+        # Initialize SortRuleWidget and add it to the menu as a popup
+        self.sort_rule_widget = SortRuleWidget(self.gallery_widget)
+        self.sort_rule_widget.set_fields(fields)
+        # self.sort_rule_widget.sort_rule_applied.connect(self.apply_sort_rule)
+
+        # Add the SortRuleWidget to the sort menu
+        widget_action = QtWidgets.QWidgetAction(self.sort_rule_menu)
+        widget_action.setDefaultWidget(self.sort_rule_widget)
+        self.sort_rule_menu.addAction(widget_action)
+        
+        # Assign the menu to the button
         self.sort_rule_button.setMenu(self.sort_rule_menu)
 
         # Group
@@ -217,6 +288,15 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         self.group_button.setMinimumWidth(100)
         self.group_menu = QtWidgets.QMenu(self.group_button)
         self.group_button.setMenu(self.group_menu)
+
+        # Initialize GroupRuleWidget and add it to the group menu as a popup
+        self.group_rule_widget = GroupRuleWidget(self, fields=fields)
+        self.group_rule_widget.group_by_changed.connect(self.gallery_widget.set_group_by_field)
+
+        # Add the GroupRuleWidget to the group menu
+        group_widget_action = QtWidgets.QWidgetAction(self.group_menu)
+        group_widget_action.setDefaultWidget(self.group_rule_widget)
+        self.group_menu.addAction(group_widget_action)
 
         # Show/Hide Fields Button
         self.fields_action = QtGui.QAction(TablerQIcon.list, 'Show/Hide Fields')
@@ -228,15 +308,9 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
 
         self.fields_action.triggered.connect(self.show_field_settings)
 
-    def group_by_changed(self, text):
-        self.gallery_widget.set_group_by_field(text)
-
-    def sort_by_changed(self, text):
-        # Implement sorting logic here
-        pass
-
     def show_field_settings(self):
-        # Implement a dialog or dropdown for field visibility settings
+        """Show the field visibility settings.
+        """
         self.gallery_widget.open_visualize_settings()
 
 class GalleryViewToolBar(QtWidgets.QToolBar):
@@ -392,8 +466,9 @@ class GalleryWidget(MomentumScrollListWidget):
         # Initialize available fields as an empty list
         self.fields = []
         self.visible_fields = {}
-        self.groups = {}  # To track headers and items under each group
-        self.group_by_field = None  # The field used for grouping items
+        self.groups = {}
+        self.group_by_field = None
+        self.list_items: QtWidgets.QListWidgetItem = []  # Store items to support re-grouping
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -445,7 +520,8 @@ class GalleryWidget(MomentumScrollListWidget):
         self.fields = fields
 
     def set_group_by_field(self, field_name: str):
-        """Set the field by which to group the items."""
+        """Set the field by which to group the items and reorganize the view.
+        """
         self.group_by_field = field_name
         
         # Store the spacer item temporarily before clearing
@@ -458,7 +534,10 @@ class GalleryWidget(MomentumScrollListWidget):
         # Re-add the spacer item if it was successfully stored
         if spacer_item:
             self.insertItem(0, spacer_item)
-            self.spacer_item = spacer_item
+
+        # Reorganize stored items according to the new group field
+        for item_data in self.list_items:
+            self._insert_item_by_group(item_data)
 
     def set_resize_mode(self, mode: 'ThumbnailWidget.ResizeMode' = ThumbnailWidget.ResizeMode.Fit):
         for index in range(self.count()):
@@ -469,7 +548,7 @@ class GalleryWidget(MomentumScrollListWidget):
             item_widget.thumbnail_widget.set_resize_mode(mode)
 
     def add_item(self, datadict):
-        """Add an item to the gallery view.
+        """Add an item to the gallery and store it for future grouping.
 
         Args:
             datadict (dict): A dictionary containing the data for the item.
@@ -484,7 +563,17 @@ class GalleryWidget(MomentumScrollListWidget):
             print(f"Image path '{image_path}' is invalid or does not exist.")
             return
 
-        # Determine the group name based on the grouping field
+        # Store the item for later re-grouping if needed
+        self.list_items.append(datadict)
+        self._insert_item_by_group(datadict)
+
+    def _insert_item_by_group(self, datadict):
+        """Insert the item into the gallery view by its group.
+        """
+        data_fields = datadict.get('data_fields', {})
+        image_path = datadict.get('image_path')
+
+        # Determine group name based on current grouping field
         if self.group_by_field and self.group_by_field in data_fields:
             group_name = data_fields[self.group_by_field]
         else:
@@ -498,14 +587,14 @@ class GalleryWidget(MomentumScrollListWidget):
         group_data = self.groups[group_name]
         insert_position = self.row(group_data['header']) + len(group_data['items']) + 1
 
-        # Create the GalleryItemWidget
+        # Create and configure the gallery item widget
         gallery_item_widget = GalleryItemWidget(image_path, data_fields, self)
 
         # Create the QListWidgetItem and set its size hint
         item = QtWidgets.QListWidgetItem()
         item.setSizeHint(gallery_item_widget.sizeHint())
 
-        # Insert the item after the section header
+        # Insert the item after the section header and track it under its group
         self.insertItem(insert_position, item)
         self.setItemWidget(item, gallery_item_widget)
 
@@ -522,7 +611,7 @@ class GalleryWidget(MomentumScrollListWidget):
         self.addItem(header_item)
         self.setItemWidget(header_item, header_widget)
 
-        # Initialize the group data with the header and an empty item list
+        # Initialize the group with the header and an empty item list
         self.groups[group_name] = {'header': header_item, 'items': []}
 
     def toggle_section(self, group_name: str, collapsed: bool):
@@ -583,6 +672,9 @@ class GalleryWidget(MomentumScrollListWidget):
         self.fields = fields
         # Initialize all fields as visible by default
         self.visible_fields = {field: True for field in fields}
+
+        self.manipulation_tool_bar.sort_rule_widget.set_fields(fields)
+        self.manipulation_tool_bar.group_rule_widget.set_fields(fields)
 
     def toggle_field_visibility(self, field, state):
         """Toggle visibility of a specific field."""
@@ -838,7 +930,6 @@ if __name__ == "__main__":
     # Set available fields dynamically
     fields = ["Artist", "Shot Type", "Status", "Shot Name", "Frame Range", "Date"]
     window.gallery_view_widget.set_fields(fields)
-    window.gallery_view_widget.set_group_by_field("Status")
     
     # Add items to the gallery based on metadata
     for metadata in vfx_shot_metadata:
