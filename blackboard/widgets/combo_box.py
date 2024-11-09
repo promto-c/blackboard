@@ -89,24 +89,29 @@ class FilterLineEdit(QtWidgets.QLineEdit):
         self.combo_box.setCurrentIndex(index)
         self.combo_box.hidePopup()
 
-class CustomLineEdit(QtWidgets.QLineEdit):
+class StaticLineEdit(QtWidgets.QLineEdit):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, parent: QtWidgets.QComboBox):
+        super().__init__(
+            parent,
+            alignment=QtCore.Qt.AlignmentFlag.AlignCenter,
+            focusPolicy=QtCore.Qt.FocusPolicy.NoFocus,
+            contextMenuPolicy=QtCore.Qt.ContextMenuPolicy.CustomContextMenu,
+            readOnly=True,
+        )
 
         # Keep a reference to the combo box
-        self.combo_box = parent
-        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        self._combo_box = parent
 
     # Overridden Methods
     # ------------------
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event: QtGui.QMouseEvent):
         """Handle mouse press event to show the combo box popup.
         """
-        if event.button() == QtCore.Qt.LeftButton and self.combo_box is not None:
-            self.combo_box.showPopup()
+        if event.button() == QtCore.Qt.LeftButton:
+            self._combo_box.showPopup()
         else:
             super().mousePressEvent(event)
 
@@ -116,8 +121,11 @@ class PopupComboBox(QtWidgets.QComboBox):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, parent: QtWidgets.QWidget = None):
+        super().__init__(
+            parent, 
+            contextMenuPolicy=QtCore.Qt.ContextMenuPolicy.CustomContextMenu
+        )
 
         # Initialize setup
         self.__init_attributes()
@@ -144,14 +152,12 @@ class PopupComboBox(QtWidgets.QComboBox):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        line_edit = CustomLineEdit(self)
+        # Create Widgets
+        # --------------
+        line_edit = StaticLineEdit(self)
         self.setLineEdit(line_edit)
-        line_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-        # Set context menu policy to custom
-        self.lineEdit().setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
 
-        # Custom popup widget
+        # Popup widget
         self.popup_widget = QtWidgets.QWidget()
         self.popup_layout = QtWidgets.QVBoxLayout(self.popup_widget)
         self.popup_layout.setContentsMargins(0, 0, 0, 0)
@@ -160,10 +166,16 @@ class PopupComboBox(QtWidgets.QComboBox):
 
         # Tree view to display filtered items
         self.tree_view = widgets.MomentumScrollTreeView(self.popup_widget)
-        self._configure_tree_view()
-        self.filter_line_edit = FilterLineEdit(self.tree_view, self, self.popup_widget)
-        self.popup_layout.addWidget(self.filter_line_edit)
+        self.tree_view.setHeaderHidden(True)
+        self.tree_view.expandAll()
+        self.tree_view.setIndentation(12)
         self.tree_view.setModel(self.proxy_model)
+
+        self.filter_line_edit = FilterLineEdit(self.tree_view, self, self.popup_widget)
+
+        # Add Widgets to Layouts
+        # ----------------------
+        self.popup_layout.addWidget(self.filter_line_edit)
         self.popup_layout.addWidget(self.tree_view)
 
     def __init_signal_connections(self):
@@ -182,8 +194,7 @@ class PopupComboBox(QtWidgets.QComboBox):
         """
         # Set the combo box current item and hide the popup
         text = self.proxy_model.data(index)
-        index = self.findText(text)
-        self.setCurrentIndex(index)
+        self.setCurrentText(text)
         self.hidePopup()
 
     def copy_current_text(self):
@@ -222,15 +233,6 @@ class PopupComboBox(QtWidgets.QComboBox):
 
     # Private Methods
     # ---------------
-    def _configure_tree_view(self):
-        """Configure the tree view to expand all items and hide the expand/collapse buttons.
-        """
-        self.tree_view.setHeaderHidden(True)
-        self.tree_view.expandAll()
-        self.tree_view.setItemsExpandable(False)
-        self.tree_view.setRootIsDecorated(False)
-        self.tree_view.setIndentation(12)
-
     def _show_context_menu(self, position):
         """Show the custom context menu.
         """

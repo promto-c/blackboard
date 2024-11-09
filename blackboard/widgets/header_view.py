@@ -9,18 +9,17 @@ class HeaderColumnWidget(QtWidgets.QWidget):
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(2, 0, 2, 4)
-        # layout.setSpacing(0)
 
-        # label = QtWidgets.QLabel('test', self)
-        # layout.addSpacing(20)
         line_edit = QtWidgets.QLineEdit(self)
 
-        # layout.addWidget(label)
         layout.addWidget(line_edit)
-        
+
         line_edit.setPlaceholderText(f"Header")
 
+# NOTE: WIP
 class SearchableHeaderView(QtWidgets.QHeaderView):
+
+    MARGIN = 4
 
     # Initialization and Setup
     # ------------------------
@@ -62,6 +61,7 @@ class SearchableHeaderView(QtWidgets.QHeaderView):
         """
         # Connect signals to slots
         self.sectionResized.connect(self.update_positions)
+        self.sectionCountChanged.connect(self.on_columns_changed)
         self.parent().horizontalScrollBar().valueChanged.connect(self.update_positions)
 
     def __init_icons(self):
@@ -72,13 +72,35 @@ class SearchableHeaderView(QtWidgets.QHeaderView):
 
     # Private Methods
     # ---------------
+    def on_columns_changed(self, start=None, end=None):
+        """Handle column changes in the model."""
+        if end <= len(self.line_edits):
+            return
+        
+        num = end - len(self.line_edits)
+        for _ in range(num):
+            widget = HeaderColumnWidget(self)
+            widget.show()
+            self.line_edits.append(widget)
+        self.update_positions()
 
     # Extended Methods
     # ----------------
     def update_positions(self):
+
+        if not self.line_edits:
+            return
+
+        header_height = self.height()
+        line_edit_height = self.line_edits[0].sizeHint().height()
+
+        # Calculate the y-position to align the line_edit at the bottom
+        y_pos = header_height - line_edit_height - (self.MARGIN * 2)
+
         for i, line_edit in enumerate(self.line_edits):
-            section_rect = self.sectionViewportPosition(i)
-            rect = QtCore.QRect(section_rect+4, 11, self.sectionSize(i)-8, self.height())
+            x_pos = self.sectionViewportPosition(i) + self.MARGIN
+
+            rect = QtCore.QRect(x_pos, y_pos, self.sectionSize(i) - (self.MARGIN * 2), header_height)
             line_edit.setGeometry(rect)
 
     def set_line_edits(self):

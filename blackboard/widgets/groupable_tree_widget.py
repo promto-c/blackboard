@@ -377,11 +377,11 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
             tooltip="Toggle word wrap",
             checkable=True,
         )
-        self.set_uniform_row_height_action = self.add_action(
-            icon=self.tabler_icon.arrow_autofit_height,
-            tooltip="Toggle uniform row height",
-            checkable=True,
-        )
+        # self.set_uniform_row_height_action = self.add_action(
+        #     icon=self.tabler_icon.arrow_autofit_height,
+        #     tooltip="Toggle uniform row height",
+        #     checkable=True,
+        # )
 
         self.uniform_row_height_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal, self)
         self.uniform_row_height_slider.setRange(16, 200)
@@ -413,13 +413,9 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         # Connect signals to slots
         self.fit_in_view_action.triggered.connect(self.tree_widget.fit_column_in_view)
         self.word_wrap_action.toggled.connect(self.tree_widget.setWordWrap)
-        self.set_uniform_row_height_action.triggered.connect(self.toggle_uniform_row_height)
+        # self.set_uniform_row_height_action.triggered.connect(self.toggle_uniform_row_height)
         self.uniform_row_height_slider.valueChanged.connect(self.tree_widget.set_row_height)
         # self.refresh_action.triggered.connect(self.tree_widget.refresh)
-
-    def toggle_uniform_row_height(self, state: bool):
-        height = self.uniform_row_height_slider.value() if state else -1
-        self.tree_widget.set_row_height(height)
 
 class GroupableTreeWidget(MomentumScrollTreeWidget):
     """A QTreeWidget subclass that displays data in a tree structure with the ability to group data by a specific column.
@@ -486,6 +482,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.sortByColumn(1, QtCore.Qt.SortOrder.AscendingOrder)
 
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragOnly)
+        self.setUniformRowHeights(True)
 
         # Set up the context menu
         self.header().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
@@ -527,7 +524,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         # Connect signal of header
         self.header().customContextMenuRequested.connect(self._show_header_context_menu)
-        self.header().sortIndicatorChanged.connect(lambda _: self.set_row_height())
 
         self.itemExpanded.connect(self.toggle_expansion_for_selected)
         self.itemCollapsed.connect(self.toggle_expansion_for_selected)
@@ -688,38 +684,12 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # Set the row height for all items
         self._row_height = height or self._row_height
 
-        if self._row_height == -1:
-            self.reset_row_height()
-            return
-
-        top_level_item = self.topLevelItem(0)
-        if not top_level_item:
-            return
-
-        self.setUniformRowHeights(True)
-
-        for column_index in range(self.columnCount()):
-            size_hint = self.sizeHintForColumn(column_index)
-            top_level_item.setSizeHint(column_index, QtCore.QSize(size_hint, self._row_height))
-
-        # Force a visual update
-        self.model().layoutChanged.emit()
-
-    def reset_row_height(self):
-        """Reset the row height to default.
-        """
-        top_level_item = self.topLevelItem(0)
-        if not top_level_item:
-            return
-
-        self.setUniformRowHeights(False)
-
-        for column_index in range(self.columnCount()):
-            size_hint = self.sizeHintForColumn(column_index)
-            top_level_item.setSizeHint(column_index, QtCore.QSize(size_hint, -1))
-
-        # Force a visual update
-        self.model().layoutChanged.emit()
+        # Adjust item height using stylesheet
+        self.setStyleSheet(f"""
+            QTreeView::item {{
+                height: {height}px;
+            }}
+        """)
 
     def toggle_expansion_for_selected(self, reference_item: QtWidgets.QTreeWidgetItem):
         """Toggle the expansion state of selected items.
@@ -868,8 +838,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         Returns:
             TreeWidgetItem: The newly added tree item.
         """
-        # Capture the current first top-level item, if any
-        previous_first_item = self.topLevelItem(0) if self.topLevelItemCount() > 0 else None
         parent = parent or self.invisibleRootItem()
 
         # Generate a unique ID if not provided
@@ -901,13 +869,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         # Update dictionary
         self._id_to_tree_item[item_id] = tree_item
-
-        # Check the current first top-level item after the potential sort
-        current_first_item = self.topLevelItem(0)
-
-        # If the first item has changed (by comparing object references), emit the signal
-        if current_first_item != previous_first_item:
-            self.set_row_height()
 
         # Emit a signal that an item has been added
         self.item_added.emit(tree_item)
@@ -1194,7 +1155,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         header_state = settings.value('header_state', QtCore.QByteArray)
         color_adaptive_columns = settings.value('color_adaptive_columns', type=list)
         grouped_column_names = settings.value('grouped_column_names', type=list)
-        uniform_row_height = int(settings.value('uniform_row_height', -1))
+        uniform_row_height = int(settings.value('uniform_row_height', self.DEFAULT_ROW_HEIGHT))
         settings.endGroup()
 
         if not header_state:
