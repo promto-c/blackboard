@@ -51,7 +51,7 @@ class FilterLineEdit(QtWidgets.QLineEdit):
         self.tree_view.viewport().update()
 
     def navigate_up(self):
-        """Navigate selection up in the tree view, taking hierarchy into account.
+        """Navigate selection up in the tree view.
         """
         current_index = self.tree_view.currentIndex()
         if not current_index.isValid():

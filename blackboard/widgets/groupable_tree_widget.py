@@ -435,9 +435,9 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent: QtWidgets.QWidget = None):
+    def __init__(self, parent: QtWidgets.QWidget = None, *args, **kwargs):
         # Call the parent class constructor
-        super().__init__(parent)
+        super().__init__(parent, uniformRowHeights=True, *args, **kwargs)
 
         # Initialize setup
         self.__init_attributes()
@@ -480,17 +480,15 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """Initialize the UI of the widget.
         """
         self.sortByColumn(1, QtCore.Qt.SortOrder.AscendingOrder)
-
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragOnly)
-        self.setUniformRowHeights(True)
 
         # Set up the context menu
         self.header().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.header().setStretchLastSection(True)
         self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
 
         # Enable sorting in the tree widget
         self.setSortingEnabled(True)
-
         self.setWordWrap(True)
 
         # Enable ExtendedSelection mode for multi-select and set the selection behavior to SelectItems

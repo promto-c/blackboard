@@ -287,24 +287,26 @@ class TreeUtil:
     @classmethod
     def fit_column_in_view(cls, tree_widget: 'QtWidgets.QTreeWidget'):
         """Adjust the width of all columns to fit the entire view.
-    
+
             This method resizes columns so that their sum is equal to the width of the view minus the width of the vertical scroll bar. 
-            It starts by reducing the width of the column with the largest width by 10% until all columns fit within the expected width.
+        It starts by reducing the width of the column with the largest width by 10% until all columns fit within the expected width.
         """
         # Resize all columns to fit their contents
         cls.resize_all_to_contents(tree_widget)
-        
+
         # Get the expected width of the columns (the width of the view minus the width of the scroll bar)
         expect_column_width = tree_widget.size().width() - tree_widget.verticalScrollBar().width()
         # Calculate the sum of the current column widths
         column_width_sum = sum(tree_widget.columnWidth(column) for column in range(tree_widget.columnCount()))
-        
+
         # Loop until all columns fit within the expected width
         while column_width_sum > expect_column_width:
             # Find the column with the largest width
             largest_column = max(range(tree_widget.columnCount()), key=lambda x: tree_widget.columnWidth(x))
             # Reduce the width of the largest column by 10%
             new_width = max(tree_widget.columnWidth(largest_column) - expect_column_width // 10, 0)
+            if new_width == 0:
+                break
             tree_widget.setColumnWidth(largest_column, new_width)
             # Update the sum of the column widths
             column_width_sum -= tree_widget.columnWidth(largest_column) - new_width
@@ -314,9 +316,9 @@ class TreeUtil:
         """Resize all columns in the object to fit their contents.
         """
         # Iterate through all columns
-        for column_index in range(tree_widget.columnCount()):  
+        for column_index in range(tree_widget.columnCount()):
             # Resize the column to fit its contents
-            tree_widget.resizeColumnToContents(column_index) 
+            tree_widget.resizeColumnToContents(column_index)
 
     @staticmethod
     def get_item_data_dict(tree_widget: 'QtWidgets.QTreeWidget', item: 'QtWidgets.QTreeWidgetItem') -> Dict[str, Optional[str]]:
