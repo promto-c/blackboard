@@ -9,6 +9,152 @@ from blackboard.widgets.momentum_scroll_widget import MomentumScrollListWidget
 from blackboard.widgets.thumbnail_widget import ThumbnailWidget
 from blackboard.widgets.sort_rule_widget import SortRuleWidget
 
+import weakref
+
+
+class CloneWidget(QtCore.QObject):
+    """Generic widget cloner that clones any widget, including nested child widgets, and synchronizes properties and signals."""
+
+    def __init__(self, original_widget, parent=None):
+        super().__init__(parent)
+        self.original_widget = original_widget
+        self.cloned_widget = self.clone_widget(original_widget, parent)
+        self.connections = []  # Track connections for safe disconnection
+        self.synchronize_widgets(self.original_widget, self.cloned_widget)
+
+        # Connect the destroyed signals to clean up connections
+        original_widget.destroyed.connect(self.cleanup_connections)
+        self.cloned_widget.destroyed.connect(self.cleanup_connections)
+
+    def clone_widget(self, widget, parent):
+        """Recursively clone the given widget, including its layout and child widgets."""
+        cloned = widget.__class__(parent)  # Create a new instance of the same class
+        
+        # Copy properties of the widget
+        for i in range(widget.metaObject().propertyCount()):
+            prop = widget.metaObject().property(i)
+            if not prop.isWritable():
+                continue
+
+            cloned.setProperty(prop.name(), widget.property(prop.name()))
+
+        # Clone and set the layout if the widget has one
+        if widget.layout():
+            original_layout = widget.layout()
+            cloned_layout = self.clone_layout(original_layout, cloned)
+
+            # Recursively clone child widgets and add to the cloned layout
+            self.clone_layout_items(original_layout, cloned_layout, cloned)
+
+        return cloned
+
+    def clone_layout(self, layout, parent):
+        """Clone a layout, including its properties (margins, spacing, etc.) without the items."""
+        layout_type = type(layout)
+        cloned_layout = layout_type(parent)  # Create a new layout of the same type
+
+        # Copy layout properties
+        cloned_layout.setContentsMargins(layout.contentsMargins())
+        cloned_layout.setSpacing(layout.spacing())
+        cloned_layout.setAlignment(layout.alignment())
+
+        return cloned_layout
+
+    def clone_layout_items(self, original_layout, cloned_layout, parent):
+        for i in range(original_layout.count()):
+            item = original_layout.itemAt(i)
+            child = item.widget()
+
+            if child:
+                cloned_child = self.clone_widget(child, parent)
+                cloned_layout.addWidget(cloned_child)
+            elif item.spacerItem():
+                spacer = item.spacerItem()
+                cloned_spacer = QtWidgets.QSpacerItem(
+                    spacer.sizeHint().width(), spacer.sizeHint().height(),
+                    spacer.expandingDirections() & QtCore.Qt.Horizontal,
+                    spacer.expandingDirections() & QtCore.Qt.Vertical)
+                cloned_layout.addItem(cloned_spacer)
+            elif item.layout():
+                nested_layout = item.layout()
+                cloned_nested_layout = self.clone_layout(nested_layout)
+                self.clone_layout_items(nested_layout, cloned_nested_layout, parent)
+                cloned_layout.addLayout(cloned_nested_layout)
+
+    def synchronize_widgets(self, original, clone):
+        """Synchronize properties and signals of the original and cloned widgets, including all children."""
+        self.synchronize_widget_properties(original, clone)
+
+        # Recursively synchronize each child widget
+        if not original.layout():
+            return
+        for i in range(original.layout().count()):
+            original_child = original.layout().itemAt(i).widget()
+            cloned_child = clone.layout().itemAt(i).widget()
+            if original_child and cloned_child:
+                self.synchronize_widgets(original_child, cloned_child)
+
+    def synchronize_widget_properties(self, original, clone):
+        """Synchronize properties and signals for individual widget."""
+        # Create weak references to original and clone to prevent deletion issues
+        original_ref = weakref.ref(original)
+        clone_ref = weakref.ref(clone)
+
+        # Iterate over all properties with notify signals
+        for i in range(original.metaObject().propertyCount()):
+            prop = original.metaObject().property(i)
+            if prop.isWritable() and prop.hasNotifySignal():
+                # Get the notify signal for the property
+                signal_name = bytes(prop.notifySignal().name()).decode()
+
+                # Retrieve the signal from the original and clone using the signal name
+                signal = getattr(original, signal_name, None)
+                clone_signal = getattr(clone, signal_name, None)
+
+                # Connect signals if they exist and track connections
+                if signal and clone_signal:
+                    conn1 = signal.connect(lambda value, p=prop, c_ref=clone_ref: self.set_property_safe(c_ref, p.name(), value))
+                    conn2 = clone_signal.connect(lambda value, p=prop, o_ref=original_ref: self.set_property_safe(o_ref, p.name(), value))
+                    self.connections.append((signal, conn1))
+                    self.connections.append((clone_signal, conn2))
+
+    def set_property_safe(self, widget_ref, property_name, value):
+        """Set a property on a widget if it still exists."""
+        widget = widget_ref()
+        if widget is not None:
+            widget.setProperty(property_name, value)
+
+    def cleanup_connections(self):
+        """Disconnect all signals to prevent errors when the widgets are deleted."""
+        for signal, connection in self.connections:
+            try:
+                signal.disconnect(connection)
+            except TypeError:
+                pass  # Ignore if already disconnected
+        self.connections.clear()
+
+    def get_cloned_widget(self):
+        """Return the cloned widget."""
+        return self.cloned_widget
+
+
+class AutoWidgetAction(QtWidgets.QWidgetAction):
+    def __init__(self, widget, parent=None):
+        super().__init__(parent)
+        self._widget = widget
+
+    def createWidget(self, parent):
+        return CloneWidget(self._widget, parent).cloned_widget
+
+class CustomToolBar(QtWidgets.QToolBar):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def addWidget(self, widget):
+        # Wrap the cloned widget in AutoWidgetAction and add to the toolbar
+        widget_action = AutoWidgetAction(widget, self)
+        super().addAction(widget_action)
+
 
 class GroupRuleWidget(QtWidgets.QWidget):
     """Widget for managing grouping by fields."""
@@ -313,7 +459,7 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         """
         self.gallery_widget.open_visualize_settings()
 
-class GalleryViewToolBar(QtWidgets.QToolBar):
+class GalleryViewToolBar(CustomToolBar):
 
     BUTTON_SIZE = 22
 
@@ -346,19 +492,32 @@ class GalleryViewToolBar(QtWidgets.QToolBar):
 
         self.addSeparator()
         # Add size slider
-        self.size_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal, self)
-        self.size_slider.setMinimum(50)
-        self.size_slider.setMaximum(300)
-        self.size_slider.setValue(150)  # Default value
-        self.size_slider.setMaximumWidth(100)
-        self.size_slider.setToolTip("Adjust Thumbnail Size")
-        self.addWidget(self.size_slider)
+        self.add_size_slider_widget()
         self.addSeparator()
 
         self.refresh_action = self.add_action(
             icon=self.tabler_icon.refresh,
             tooltip="Refresh Gallery",
         )
+
+    def add_size_slider_widget(self):
+        self.slider_widget = QtWidgets.QWidget()
+        slider_layout = QtWidgets.QHBoxLayout(self.slider_widget)
+        self.size_button = QtWidgets.QToolButton(self.slider_widget, icon=TablerQIcon.sort_ascending_small_big)
+        # Add size slider
+        self.size_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self.size_slider.setMinimum(50)
+        self.size_slider.setMaximum(300)
+        self.size_slider.setValue(150)  # Default value
+        self.size_slider.setMaximumWidth(100)
+        self.size_slider.setToolTip("Adjust Thumbnail Size")
+        slider_layout.addWidget(self.size_button)
+
+        # TODO: Fix bug when clone widget with layout, .., then add slider_widget instead of size_slider
+        # slider_layout.addWidget(self.size_slider)
+        # self.addWidget(self.slider_widget)
+
+        self.addWidget(self.size_slider)
 
     def add_action(self, icon: QtGui.QIcon, tooltip: str, checkable: bool = False) -> QtGui.QAction:
         """Adds an action to the toolbar."""

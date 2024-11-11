@@ -88,7 +88,9 @@ class MomentumScrollHandler(QtCore.QObject):
         self._start_pos = event.pos()
 
         # Change the cursor to SizeAllCursor
-        self.widget.setCursor(QtCore.Qt.CursorShape.SizeAllCursor)
+        # NOTE: Override the app cursor as a workaround for some widgets wrapped by a graphic view
+        # self.widget.setCursor(QtCore.Qt.CursorShape.SizeAllCursor)
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.SizeAllCursor)
 
     def handle_mouse_move(self, event: QtGui.QMouseEvent) -> bool:
         """Handle mouse button move event.
@@ -128,7 +130,9 @@ class MomentumScrollHandler(QtCore.QObject):
         self.start(QtCore.QPointF(velocity.x(), velocity.y()))
 
         # Restore the cursor to default
-        self.widget.unsetCursor()
+        # NOTE: Override the app cursor as a workaround for some widgets wrapped by a graphic view
+        # self.widget.unsetCursor()
+        QtWidgets.QApplication.restoreOverrideCursor()
 
     def start(self, initial_velocity: QtCore.QPointF):
         """Start the momentum scrolling with the given initial velocity.

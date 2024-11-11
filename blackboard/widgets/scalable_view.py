@@ -78,6 +78,9 @@ class ScalableView(QtWidgets.QGraphicsView):
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
+        # Set the initial minimum size to fit the widget's contents
+        self.setMinimumSize(self.widget.sizeHint())
+
     def __init_signal_connections(self):
         """Initialize signal connections.
         """
@@ -119,6 +122,8 @@ class ScalableView(QtWidgets.QGraphicsView):
         self.setTransform(QtGui.QTransform().scale(zoom_level, zoom_level))
         # Update current zoom level
         self.current_zoom_level = zoom_level
+        # Update the minimum size to fit the current zoom level
+        self.setMinimumSize(self.widget.sizeHint() * self.current_zoom_level)
 
         # Update the size of the widget to fit the view window
         self.resizeEvent()
@@ -130,6 +135,8 @@ class ScalableView(QtWidgets.QGraphicsView):
         self.resetTransform()
         # Reset the current zoom level to 1.0 (no zoom)
         self.current_zoom_level = 1.0
+        # Update the minimum size to fit the current zoom level
+        self.setMinimumSize(self.widget.sizeHint() * self.current_zoom_level)
 
         # Update the size of the widget to fit the view window
         self.resizeEvent()
