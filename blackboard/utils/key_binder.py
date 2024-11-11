@@ -59,7 +59,7 @@ class KeyBinder(QtWidgets.QWidget):
         if context == QtCore.Qt.ShortcutContext.WidgetShortcut:
             shortcut = Shortcut(key_sequence, parent_widget, callback)
         else:
-            shortcut = QtGui.QShortcut(key_sequence, parent_widget, callback, context=context)
+            shortcut = QtWidgets.QShortcut(key_sequence, parent_widget, callback, context=context)
 
         # Store the shortcut object
         cls.shortcuts[key_sequence.toString()] = shortcut

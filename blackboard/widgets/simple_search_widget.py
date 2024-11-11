@@ -211,32 +211,6 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.setFocus()
         self.activate
 
-    def _navigate_history(self, direction: int):
-        """Navigate through the search _history using the up/down arrow keys."""
-        if not self._history:
-            return
-
-        if self._history_index == -1:
-            # If starting navigation, set _history_index to position beyond the end
-            self._history_index = len(self._history)
-
-        # Adjust the _history index
-        self._history_index += direction
-
-        # Clamp the _history index
-        if self._history_index < 0:
-            self._history_index = 0
-        elif self._history_index > len(self._history):
-            self._history_index = len(self._history)
-
-        if self._history_index == len(self._history):
-            # Beyond the last item, clear the line edit and reset _history_index
-            self.clear()
-            self._history_index = -1
-        else:
-            # Set the text to the _history item
-            self.setText(self._history[self._history_index])
-
     def activate(self):
         """Activate the search functionality.
         """
@@ -411,6 +385,30 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self._is_active = state
         self.setProperty('active', self._is_active)
         self.update_style()
+
+    def _navigate_history(self, direction: int):
+        """Navigate through the search history using the up/down arrow keys.
+        """
+        if not self._history:
+            return
+
+        # If starting navigation, set _history_index to position beyond the end
+        if self._history_index == -1:
+            self._history_index = len(self._history)
+
+        # Adjust the _history index
+        self._history_index += direction
+
+        # Clamp the _history index
+        self._history_index = max(0, min(self._history_index, len(self._history)))
+
+        if self._history_index == len(self._history):
+            # Beyond the last item, clear the line edit and reset _history_index
+            self.clear()
+            self._history_index = -1
+        else:
+            # Set the text to the _history item
+            self.setText(self._history[self._history_index])
 
     def _apply_search(self):
         """Apply the filters specified by the user to the tree widget.
