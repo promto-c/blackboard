@@ -61,14 +61,18 @@ class MatchCountButton(QtWidgets.QPushButton):
 
     # Public Methods
     # --------------
-    def set_match_count(self, total_matches: int):
+    def set_match_count(self, total_matches: int, has_more_results: bool = False):
         """Set the visibility and text of the button based on the total match count.
+        
+        If `has_more_results` is True, a `+` symbol is appended to indicate partial results.
 
         Args:
             total_matches (int): The number of matches to display.
+            has_more_results (bool): Whether there are more results than displayed. Defaults to False.
         """
         self.setVisible(bool(total_matches))
-        self.setText(str(total_matches))
+        # Add `+` symbol if there are more results than displayed
+        self.setText(f"{total_matches}+" if has_more_results else str(total_matches))
 
     # Overridden Methods
     # ------------------
@@ -147,7 +151,6 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         # ------------------
         self._all_match_items = set()
         self._is_active = False
-        self._is_searching = False
         self._history = []
         self._history_index = -1
 
@@ -192,6 +195,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.textChanged.connect(self.update_style)
         self.match_count_button.clicked.connect(self.clear)
         self.tree_widget.item_added.connect(self._filter_item)
+        self.tree_widget.fetch_complete.connect(self._refresh_match_count)
         self.search_action.triggered.connect(self.activate)
 
         # Bind keys using KeyBinder for _history navigation
@@ -214,7 +218,6 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     def activate(self):
         """Activate the search functionality.
         """
-        self._is_searching = False
         if not self._all_match_items and not self.tree_widget.has_more_items_to_fetch:
             return
 
@@ -229,7 +232,6 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
             self._history_index = -1
 
         if self.tree_widget.has_more_items_to_fetch:
-            self._is_searching = True
             self.tree_widget.fetch_all()
 
     def deactivate(self):
@@ -273,9 +275,6 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         Args:
             tree_item (QtWidgets.QTreeWidgetItem): The item that was added to the tree widget.
         """
-        if not self._is_searching:
-            return
-
         keyword = self.text().strip()
         if not keyword:
             return
@@ -330,7 +329,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     def _refresh_match_count(self):
         """Refresh the match count label to display the current number of matching items.
         """
-        self.match_count_button.set_match_count(len(self._all_match_items))
+        self.match_count_button.set_match_count(len(self._all_match_items), has_more_results=self.tree_widget.has_more_items_to_fetch)
 
     def _clear_highlights(self):
         """Clear the highlight and matched items.
@@ -423,7 +422,6 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     def _clear_search(self):
         """Clear the search and show all items.
         """
-        self._is_searching = False
         # Show all items
         TreeUtil.show_all_items(self.tree_widget)
 

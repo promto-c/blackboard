@@ -432,6 +432,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     item_added = QtCore.Signal(TreeWidgetItem)
     drag_started = QtCore.Signal(QtCore.Qt.DropActions)
     about_to_show_header_menu = QtCore.Signal(int)
+    fetch_complete = QtCore.Signal()
 
     # Initialization and Setup
     # ------------------------
@@ -1273,6 +1274,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.has_more_items_to_fetch = False
         self._disconnect_check_scroll_position()
         self.data_fetching_buttons.hide()
+        self.fetch_complete.emit()
         self.show_tool_tip("All items have been fetched.", 5000)
 
     def _disconnect_check_scroll_position(self):
