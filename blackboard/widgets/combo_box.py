@@ -4,8 +4,8 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 # Local Imports
 # -------------
-import blackboard as bb
-from blackboard import widgets
+from blackboard.utils import KeyBinder, FlatProxyModel
+from blackboard.widgets import MomentumScrollTreeView, HighlightTextDelegate
 
 
 # Class Definitions
@@ -21,7 +21,7 @@ class FilterLineEdit(QtWidgets.QLineEdit):
         self.tree_view = tree_view
         self.combo_box = combo_box
 
-        self.delegate = widgets.HighlightTextDelegate(self.tree_view)
+        self.delegate = HighlightTextDelegate(self.tree_view)
         self.tree_view.setItemDelegate(self.delegate)
 
         self.__init_signal_connections()
@@ -35,12 +35,12 @@ class FilterLineEdit(QtWidgets.QLineEdit):
         # Bind Shortcuts
         # --------------
         # Bind arrow keys for navigation
-        bb.utils.KeyBinder.bind_key("Up", self, self.navigate_up)
-        bb.utils.KeyBinder.bind_key("Down", self, self.navigate_down)
+        KeyBinder.bind_key("Up", self, self.navigate_up)
+        KeyBinder.bind_key("Down", self, self.navigate_down)
         # Bind Enter and Tab for selection
-        bb.utils.KeyBinder.bind_key("Return", self, self.apply_selection)
-        bb.utils.KeyBinder.bind_key("Enter", self, self.apply_selection)
-        bb.utils.KeyBinder.bind_key("Tab", self, self.apply_selection)
+        KeyBinder.bind_key("Return", self, self.apply_selection)
+        KeyBinder.bind_key("Enter", self, self.apply_selection)
+        KeyBinder.bind_key("Tab", self, self.apply_selection)
 
     # Public Methods
     # --------------
@@ -144,7 +144,7 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.proxy_model.setRecursiveFilteringEnabled(True)
         self.proxy_model.setFilterKeyColumn(0) 
 
-        self.flat_proxy_model = bb.utils.FlatProxyModel(self.model(), self)
+        self.flat_proxy_model = FlatProxyModel(self.model(), self)
         self.flat_proxy_model.setSourceModel(self.model())
         self.flat_proxy_model.setFilterCaseSensitivity(QtCore.Qt.CaseInsensitive)
         self.flat_proxy_model.sort(0, QtCore.Qt.AscendingOrder)
@@ -165,7 +165,7 @@ class PopupComboBox(QtWidgets.QComboBox):
         self.popup_widget.setWindowFlags(QtCore.Qt.WindowType.Popup)
 
         # Tree view to display filtered items
-        self.tree_view = widgets.MomentumScrollTreeView(self.popup_widget)
+        self.tree_view = MomentumScrollTreeView(self.popup_widget)
         self.tree_view.setHeaderHidden(True)
         self.tree_view.expandAll()
         self.tree_view.setIndentation(12)

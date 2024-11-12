@@ -21,9 +21,8 @@ import blackboard as bb
 from blackboard import widgets
 # NOTE: test
 from blackboard.widgets.header_view import SearchableHeaderView
-from blackboard.utils.thread_pool import ThreadPoolManager, GeneratorWorker
 from blackboard.utils.tree_utils import TreeUtil, TreeItemUtil
-from blackboard.widgets.button import DataFetchingButtons
+from blackboard.utils.data_fetch_manager import FetchManager
 from blackboard.widgets.menu import ContextMenu
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollTreeWidget
 
@@ -455,6 +454,9 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.color_adaptive_columns: List[int] = []
         self.grouped_column_names: List[str] = []
 
+        # Initialize FetchManager
+        self.fetch_manager = FetchManager(self)
+
         # Initialize the HighlightItemDelegate object to highlight items in the tree widget
         self.highlight_item_delegate = widgets.HighlightItemDelegate()
         self.thumbnail_delegate = widgets.ThumbnailDelegate(self)
@@ -466,16 +468,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self._current_column_index = 0
 
         self._id_to_tree_item: Dict[Any, QtWidgets.QTreeWidgetItem] = {}
-
-        # TODO: Separate class to handle this
-        self.generator = None
-        self._current_task = None
-
-        self.batch_size = 50
-        self.threshold_to_fetch_more = 50
-        self.has_more_items_to_fetch = False
-        self._vertical_scroll_connection = None
-        # ---
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -509,14 +501,8 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.overlay_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignBottom | QtCore.Qt.AlignmentFlag.AlignHCenter)
         self.overlay_layout.setContentsMargins(16, 16, 16, 16)
 
-        self.data_fetching_buttons = DataFetchingButtons(self)
-        self.data_fetching_buttons.hide()
-
-        self.overlay_layout.addWidget(self.data_fetching_buttons)
-
-        self.fetch_more_button = self.data_fetching_buttons.fetch_more_button
-        self.fetch_all_button = self.data_fetching_buttons.fetch_all_button
-        self.stop_fetch_button = self.data_fetching_buttons.stop_fetch_button
+        # Add data fetching buttons from FetchManager to overlay_layout
+        self.overlay_layout.addWidget(self.fetch_manager.data_fetching_buttons)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
@@ -530,10 +516,11 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         self.highlight_item_delegate.highlight_changed.connect(self.update)
 
-        # NOTE: Fetch more data
-        self.fetch_more_button.clicked.connect(self.fetch_more)
-        self.fetch_all_button.clicked.connect(self.fetch_all)
-        self.stop_fetch_button.clicked.connect(self.stop_fetch)
+        # Connect FetchManager signals
+        self.fetch_manager.data_fetched.connect(self.update_item)
+        self.fetch_manager.loaded_all.connect(self.fetch_complete.emit)
+
+        self.verticalScrollBar().valueChanged.connect(self._track_scroll_position)
 
         # Key Binds
         # ---------
@@ -587,8 +574,8 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # Connect actions to their corresponding methods
         self.group_by_action.triggered.connect(lambda: self.group_by_column(self._current_column_index))
         ungroup_all_action.triggered.connect(self.ungroup_all)
-        apply_color_adaptive_action.triggered.connect(lambda: self.apply_column_color_adaptive(self._current_column_index))
-        reset_all_color_adaptive_action.triggered.connect(self.reset_all_color_adaptive_column)
+        apply_color_adaptive_action.triggered.connect(lambda: self.apply_color_adaptive_column(self._current_column_index))
+        reset_all_color_adaptive_action.triggered.connect(self.clear_color_adaptive_columns)
         fit_column_in_view_action.triggered.connect(self.fit_column_in_view)
         hide_this_column.triggered.connect(lambda: self.hideColumn(self._current_column_index))
 
@@ -746,7 +733,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # Return the value range
         return min_value, max_value
 
-    def apply_column_color_adaptive(self, column: int):
+    def apply_color_adaptive_column(self, column: int):
         """Apply adaptive color mapping to a specific column at the appropriate child level determined by the group column.
 
         This method calculates the minimum and maximum values of the column at the appropriate child level determined by the group column
@@ -768,7 +755,23 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         delegate = widgets.AdaptiveColorMappingDelegate(self, min_value, max_value)
         self.setItemDelegateForColumn(column, delegate)
 
-    def reset_all_color_adaptive_column(self):
+    def remove_color_adaptive_column(self, column: int):
+        """Remove adaptive color mapping from a specific column.
+
+        This method removes the adaptive color mapping from the specified column by resetting
+        the item delegate to None and removing the column from the list of adaptive color-mapped columns.
+
+        Args:
+            column (int): The index of the column to remove adaptive color mapping from.
+        """
+        if column not in self.color_adaptive_columns:
+            return
+
+        # Reset the item delegate for the column, removing the adaptive color mapping
+        self.color_adaptive_columns.remove(column)
+        self.setItemDelegateForColumn(column, None)
+
+    def clear_color_adaptive_columns(self):
         """Reset the color adaptive for all columns in the tree widget.
         """
         for column in self.color_adaptive_columns:
@@ -908,13 +911,13 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         self._primary_key = primary_key
 
-    def update_item(self, data_dict: Dict[str, Any], update_key: Optional[Union[str, List[str]]] = None, add_if_not_exist: bool = False) -> Optional[TreeWidgetItem]:
+    def update_item(self, data_dict: Dict[str, Any], update_key: Optional[Union[str, List[str]]] = None, add_if_not_exist: bool = True) -> Optional[TreeWidgetItem]:
         """Update an item in the tree widget based on a specified update key or add it as a new item if it doesn't exist.
 
         Args:
             data_dict (Dict[str, Any]): The data to update the item with.
             update_key (Optional[Union[str, Tuple[str]]]): The key(s) to use for identifying the item to update. If None, the primary key is used.
-            add_if_not_exist (bool): If True, add a new item if the specified item doesn't exist. Defaults to False.
+            add_if_not_exist (bool): If True, add a new item if the specified item doesn't exist. Defaults to True.
 
         Returns:
             Optional[TreeWidgetItem]: The updated or newly added tree item, or None if not found and add_if_not_exist is False.
@@ -1167,9 +1170,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.set_row_height(uniform_row_height)
         self.column_management_widget.update_columns()
 
-    # TODO: Separate class
-    # Generator
-    # ---------
     def set_generator(self, generator: Optional[Generator], is_fetch_all: bool = False):
         """Set a new generator, clearing the existing task before setting the new generator.
 
@@ -1177,22 +1177,13 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             generator (Optional[Generator]): The generator to set.
         """
         self.clear()
-
-        self.generator = generator
-
-        if not self.generator:
-            return
-
-        self.has_more_items_to_fetch = True
-        self._vertical_scroll_connection = self.verticalScrollBar().valueChanged.connect(self._check_scroll_position)
-
-        self.data_fetching_buttons.show()
+        self.fetch_manager.set_generator(generator)
 
         if is_fetch_all:
-            self._fetch_more_data()
+            self.fetch_manager.fetch_all()
         else:
             first_batch_size = self.calculate_dynamic_batch_size()
-            self._fetch_more_data(first_batch_size)
+            self.fetch_manager.fetch(first_batch_size)
 
     def calculate_dynamic_batch_size(self) -> int:
         """Estimate the number of items that can fit in the current view.
@@ -1202,37 +1193,22 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         # Estimate the number of items based on the visible height and row height
         visible_height = self.viewport().height()
-        estimated_items = (visible_height // self._row_height) + 1 if self._row_height > 0 else self.batch_size
+        estimated_items = (visible_height // self._row_height) + 1 if self._row_height > 0 else self.fetch_manager.DEFAULT_BATCH_SIZE
 
         # Ensure the batch size is at least the default batch size
-        return max(estimated_items, self.batch_size)
+        return max(estimated_items, self.fetch_manager.DEFAULT_BATCH_SIZE)
 
-    def stop_fetch(self):
-        """Pause the current fetching task."""
-        if self._current_task:
-            self._current_task.pause()
+    def _track_scroll_position(self, value: int):
+        """Track the scroll position and fetch more data if the threshold is reached.
 
-    def fetch_more(self):
-        """Fetch more data."""
-        self._fetch_more_data(self.batch_size)
-
-    def fetch_all(self):
-        """Fetch all remaining data."""
-        self._fetch_more_data()
-
-    def show_fetching_indicator(self):
-        """Show the fetching indicator."""
-        self.fetch_more_button.hide()
-        self.fetch_all_button.hide()
-        self.stop_fetch_button.show()
-
-    def show_fetch_buttons(self):
-        """Show the fetch buttons."""
-        # Once fetching is finished, change the button text back to "Fetch More" and enable it
-        self.fetch_more_button.show()
-        self.fetch_all_button.show()
-        self.stop_fetch_button.hide()
-        self._current_task = None
+        Args:
+            value (int): The current scroll value.
+        """
+        if not self.fetch_manager.has_more_items_to_fetch:
+            return
+        scroll_bar = self.verticalScrollBar()
+        if value >= scroll_bar.maximum() - self.fetch_manager.THRESHOLD_TO_FETCH_MORE:
+            self.fetch_manager.fetch_more()
 
     def _restore_color_adaptive_column(self, columns: List[int]):
         """Restore the color adaptive columns.
@@ -1240,59 +1216,10 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         Args:
             columns (List[int]): The columns to restore.
         """
-        self.reset_all_color_adaptive_column()
+        self.clear_color_adaptive_columns()
 
         for column in columns:
-            self.apply_column_color_adaptive(column)
-
-    def _fetch_more_data(self, batch_size: Optional[int] = None):
-        """Fetch more data using the generator.
-
-        Args:
-            batch_size (Optional[int]): The batch size to fetch. If None, fetch all remaining data.
-        """
-        if self._current_task is not None or not self.has_more_items_to_fetch:
-            return
-
-        items_to_fetch = islice(self.generator, batch_size) if batch_size else self.generator
-
-        # Create the self._current_task
-        self._current_task = GeneratorWorker(items_to_fetch, desired_size=batch_size)
-        # Connect signals and store the connection for later disconnection
-        self._result_connection = self._current_task.result.connect(lambda data_dict: self.update_item(data_dict, add_if_not_exist=True))
-        self._current_task.started.connect(self.show_fetching_indicator)
-        self._current_task.finished.connect(self.show_fetch_buttons)
-        self._current_task.loaded_all.connect(self._handle_no_more_items)
-
-        # Start the self._current_task using ThreadPoolManager
-        ThreadPoolManager.thread_pool().start(self._current_task.run)
-
-    def _handle_no_more_items(self):
-        """Handle the event when there are no more items to fetch."""
-        self.has_more_items_to_fetch = False
-        self._disconnect_check_scroll_position()
-        self.data_fetching_buttons.hide()
-        self.fetch_complete.emit()
-        self.show_tool_tip("All items have been fetched.", 5000)
-
-    def _disconnect_check_scroll_position(self):
-        """Disconnect the scroll position check.
-        """
-        if not self._vertical_scroll_connection:
-            return
-
-        self.verticalScrollBar().valueChanged.disconnect(self._vertical_scroll_connection)
-        self._vertical_scroll_connection = None
-
-    def _check_scroll_position(self, value: int):
-        """Check the scroll position and fetch more data if the threshold is reached.
-
-        Args:
-            value (int): The current scroll value.
-        """
-        scroll_bar = self.verticalScrollBar()
-        if value >= scroll_bar.maximum() - self.threshold_to_fetch_more:
-            self._fetch_more_data(self.batch_size)
+            self.apply_color_adaptive_column(column)
 
     # Override Methods
     # ----------------
@@ -1329,16 +1256,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     def clear(self):
         """Clear the tree widget and stop any current tasks.
         """
-        if self._current_task is not None:
-            # Disconnect any existing signal connections before stopping the task
-            if self._result_connection:
-                self._current_task.result.disconnect(self._result_connection)
-                self._result_connection = None
-
-            # Stop the task
-            self._current_task.stop()
-            self._current_task = None
-
+        self.fetch_manager.stop_fetch()
         self._id_to_tree_item.clear()
         super().clear()
 

@@ -218,7 +218,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     def activate(self):
         """Activate the search functionality.
         """
-        if not self._all_match_items and not self.tree_widget.has_more_items_to_fetch:
+        if not self._all_match_items and not self.tree_widget.fetch_manager.has_more_items_to_fetch:
             return
 
         self._set_property_active(True)
@@ -231,8 +231,8 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
             self._history.append(current_text)
             self._history_index = -1
 
-        if self.tree_widget.has_more_items_to_fetch:
-            self.tree_widget.fetch_all()
+        if self.tree_widget.fetch_manager.has_more_items_to_fetch:
+            self.tree_widget.fetch_manager.fetch_all()
 
     def deactivate(self):
         """Deactivate the search functionality.
@@ -329,7 +329,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     def _refresh_match_count(self):
         """Refresh the match count label to display the current number of matching items.
         """
-        self.match_count_button.set_match_count(len(self._all_match_items), has_more_results=self.tree_widget.has_more_items_to_fetch)
+        self.match_count_button.set_match_count(len(self._all_match_items), has_more_results=self.tree_widget.fetch_manager.has_more_items_to_fetch)
 
     def _clear_highlights(self):
         """Clear the highlight and matched items.
