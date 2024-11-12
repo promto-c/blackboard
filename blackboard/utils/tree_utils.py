@@ -431,7 +431,7 @@ class TreeItemUtil:
 
     @staticmethod
     def remove_items(items: List['QtWidgets.QTreeWidgetItem']):
-        """Remove the specified QTreeWidgetItem instances from their current parents.
+        """Remove the specified QTreeWidgetItems from their parents in the tree widget.
 
         Args:
             items (List[QtWidgets.QTreeWidgetItem]): The list of items to be removed.
@@ -444,13 +444,13 @@ class TreeItemUtil:
     @staticmethod
     def reparent_items(items: List['QtWidgets.QTreeWidgetItem'],
                        target_parent: Optional['QtWidgets.QTreeWidgetItem'] = None):
-        """Reparent the specified QTreeWidgetItem instances to the target parent.
+        """Reparent the specified QTreeWidgetItems to a new parent item in the tree widget.
 
         Args:
             items (List[QtWidgets.QTreeWidgetItem]): The list of items to be reparented.
             target_parent (Optional[QtWidgets.QTreeWidgetItem]): The new parent item or None for top-level.
         """
-        # If the target parent is None, use the invisible root item to move items to the top-level.
+        # If the target parent is not specified, use the invisible root item to move items to the top level
         target_parent = target_parent or items[0].treeWidget().invisibleRootItem()
 
         # Remove items from their current parents and add them to the new parent

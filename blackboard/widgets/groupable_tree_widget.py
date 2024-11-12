@@ -432,6 +432,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     item_added = QtCore.Signal(TreeWidgetItem)
     drag_started = QtCore.Signal(QtCore.Qt.DropActions)
     about_to_show_header_menu = QtCore.Signal(int)
+    fetch_complete = QtCore.Signal()
 
     # Initialization and Setup
     # ------------------------
@@ -1199,20 +1200,11 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         Returns:
             int: Estimated number of items that can fit in the view.
         """
-        # Add a temporary item to calculate its size
-        temp_item = QtWidgets.QTreeWidgetItem(["Temporary Item"])
-        self.addTopLevelItem(temp_item)
-        item_height = self.visualItemRect(temp_item).height()
-        # Remove the temporary item
-        self.takeTopLevelItem(0)
-
-        # Calculate the visible area height
+        # Estimate the number of items based on the visible height and row height
         visible_height = self.viewport().height()
+        estimated_items = (visible_height // self._row_height) + 1 if self._row_height > 0 else self.batch_size
 
-        # Calculate and return the number of items that can fit in the view
-        estimated_items = (visible_height // item_height) + 1 if item_height > 0 else self.batch_size
-
-        # Adjust the batch size based on the estimate
+        # Ensure the batch size is at least the default batch size
         return max(estimated_items, self.batch_size)
 
     def stop_fetch(self):
@@ -1266,8 +1258,8 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         # Create the self._current_task
         self._current_task = GeneratorWorker(items_to_fetch, desired_size=batch_size)
-        # Connect signals to slots for handling placeholders and real data
-        self._current_task.result.connect(lambda data_dict: self.update_item(data_dict, add_if_not_exist=True))
+        # Connect signals and store the connection for later disconnection
+        self._result_connection = self._current_task.result.connect(lambda data_dict: self.update_item(data_dict, add_if_not_exist=True))
         self._current_task.started.connect(self.show_fetching_indicator)
         self._current_task.finished.connect(self.show_fetch_buttons)
         self._current_task.loaded_all.connect(self._handle_no_more_items)
@@ -1280,6 +1272,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.has_more_items_to_fetch = False
         self._disconnect_check_scroll_position()
         self.data_fetching_buttons.hide()
+        self.fetch_complete.emit()
         self.show_tool_tip("All items have been fetched.", 5000)
 
     def _disconnect_check_scroll_position(self):
@@ -1337,6 +1330,12 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """Clear the tree widget and stop any current tasks.
         """
         if self._current_task is not None:
+            # Disconnect any existing signal connections before stopping the task
+            if self._result_connection:
+                self._current_task.result.disconnect(self._result_connection)
+                self._result_connection = None
+
+            # Stop the task
             self._current_task.stop()
             self._current_task = None
 

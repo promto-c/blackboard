@@ -164,12 +164,16 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
         self.beginResetModel()
         self._flat_map.clear()
         old_model = self.sourceModel()
-        if old_model is not None:
-            old_model.dataChanged.disconnect(self._update_flat_map)
-            old_model.rowsInserted.disconnect(self._on_rows_inserted)
-            old_model.rowsRemoved.disconnect(self._on_rows_removed)
-            old_model.modelAboutToBeReset.disconnect(self._on_source_model_about_to_be_reset)
-            old_model.modelReset.disconnect(self._on_source_model_reset)
+
+        try:
+            if old_model is not None:
+                old_model.dataChanged.disconnect(self._update_flat_map)
+                old_model.rowsInserted.disconnect(self._on_rows_inserted)
+                old_model.rowsRemoved.disconnect(self._on_rows_removed)
+                old_model.modelAboutToBeReset.disconnect(self._on_source_model_about_to_be_reset)
+                old_model.modelReset.disconnect(self._on_source_model_reset)
+        except (RuntimeError, TypeError):
+            pass
 
         super().setSourceModel(source_model)
         source_model.dataChanged.connect(self._update_flat_map)
