@@ -600,21 +600,24 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.header_menu.popup(QtGui.QCursor.pos())
 
     # TODO: Move to util
-    def _create_item_groups(self, items: List[QtWidgets.QTreeWidgetItem], column: int) -> Dict[str, List[QtWidgets.QTreeWidgetItem]]:
-        """Group the data into a dictionary mapping group names to lists of tree items.
+    @staticmethod
+    def group_tree_items_by_column(items: List[QtWidgets.QTreeWidgetItem], column: int, default_group: str = '_others'
+                                   ) -> Dict[str, List[QtWidgets.QTreeWidgetItem]]:
+        """Group QTreeWidgetItem data into a dictionary by column value.
 
         Args:
-            items (List[QtWidgets.QTreeWidgetItem]): The data to be grouped.
-            column (int):
+            items (List[QtWidgets.QTreeWidgetItem]): The items to be grouped.
+            column (int): The column index from which to extract group keys.
+            default_group (str): The label to use for items without a specific group key. Defaults to '_others'.
 
         Returns:
-            Dict[str, List[QtWidgets.QTreeWidgetItem]]: A dictionary mapping group names to lists of tree items.
+            Dict[str, List[QtWidgets.QTreeWidgetItem]]: A dictionary mapping each unique value in the specified column to a list of tree items.
         """
         # Create a defaultdict to store the groups
         group_name_to_tree_items = defaultdict(list)
 
         for item in items:
-            key_data = item.data(column, QtCore.Qt.ItemDataRole.UserRole) or '_others'
+            key_data = item.data(column, QtCore.Qt.ItemDataRole.UserRole) or default_group
             group_name_to_tree_items[key_data].append(item)
 
         return group_name_to_tree_items
