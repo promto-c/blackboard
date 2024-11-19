@@ -1018,6 +1018,25 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             parent_item.child_grouped_dict[grouped_name] = grouped_item
             grouped_item.addChildren(items)
 
+    def _create_item_groups(self, items: List[QtWidgets.QTreeWidgetItem], column: int) -> Dict[str, List[QtWidgets.QTreeWidgetItem]]:
+        """Group the data into a dictionary mapping group names to lists of tree items.
+
+        Args:
+            items (List[QtWidgets.QTreeWidgetItem]): The data to be grouped.
+            column (int):
+
+        Returns:
+            Dict[str, List[QtWidgets.QTreeWidgetItem]]: A dictionary mapping group names to lists of tree items.
+        """
+        # Create a defaultdict to store the groups
+        group_name_to_tree_items = defaultdict(list)
+
+        for item in items:
+            key_data = item.data(column, QtCore.Qt.ItemDataRole.UserRole) or '_others'
+            group_name_to_tree_items[key_data].append(item)
+
+        return group_name_to_tree_items
+
     def fit_column_in_view(self):
         """Adjust the width of all columns to fit the entire view.
     

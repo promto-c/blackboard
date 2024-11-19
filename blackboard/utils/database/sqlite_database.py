@@ -808,7 +808,8 @@ class SQLiteModel(AbstractModel):
 
         many_to_many_field_names = self.get_many_to_many_field_names() if handle_m2m else []
         fields = [field for field in fields if field not in many_to_many_field_names]
-        fields_str = ', '.join(fields)
+        fields_quoted = [f'"{field}"' for field in fields]
+        fields_str = ', '.join(fields_quoted)
 
         query = f"SELECT {fields_str} FROM {self._table_name}"
         if where_clause:
