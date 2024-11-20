@@ -12,36 +12,43 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
     and step size based on the cursor's position within the spin box.
 
     Attributes:
-        padding_length_before (int): The number of characters to display before the decimal.
-        padding_length_after (int): The number of characters to display after the decimal.
+        integer_padding (int): The number of characters to display before the decimal.
+        fraction_padding (int): The number of characters to display after the decimal.
     """
+
     # Initialization and Setup
     # ------------------------
-    def __init__(self, padding_length_before: int = 1, padding_length_after: int = 2, 
-                 default_value: float = 0.0, min_value: float = 0.0, max_value: float = 99.99, single_step: float = 0.1, parent: QtWidgets.QWidget = None):
+    def __init__(self, integer_padding: int = 1, fraction_padding: int = 2, 
+                 default_value: float = 0.0, min_value: float = 0.0, 
+                 max_value: float = 99.99, step_size: float = 0.1, 
+                 parent: QtWidgets.QWidget = None):
         """Initialize the spin box with specific padding lengths.
 
         Args:
-            padding_length_before (int): Initial padding length before the decimal point.
-            padding_length_after (int): Initial padding length after the decimal point.
+            integer_padding (int): Initial padding length for the integer part.
+            fraction_padding (int): Initial padding length for the fractional part.
+            default_value (float): The initial value of the spin box.
+            min_value (float): The minimum value allowed.
+            max_value (float): The maximum value allowed.
+            step_size (float): The increment or decrement step size.
+            parent (QWidget, optional): The parent widget of the spin box.
         """
-        # Initialize the super class
         super().__init__(parent=parent)
 
         # Store the arguments
-        self.padding_length_before = padding_length_before
-        self.padding_length_after = padding_length_after
+        self.integer_padding = integer_padding
+        self.fraction_padding = fraction_padding
 
         self._mouse_press_pos = None
         self._mouse_press_value = None
 
         self.setRange(min_value, max_value)
         self.setValue(default_value)
-        self.setSingleStep(single_step)
+        self.setSingleStep(step_size)
         self.lineEdit().installEventFilter(self)
 
         # Hide the + and - buttons
-        self.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
 
         # Set the maximum number of decimal places
         self.setDecimals(10)
@@ -61,8 +68,8 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         """Adjust the step size based on the cursor position.
 
         Args:
-            old_pos: The previous position of the cursor (not currently used).
-            new_pos: The current position of the cursor.
+            old_pos (int): The previous position of the cursor (not currently used).
+            new_pos (int): The current position of the cursor.
         """
         # Get the current text from the line edit
         text = self.lineEdit().text()
@@ -90,7 +97,7 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         and the fractional part (after the decimal point) based on the input text.
 
         Args:
-            text: The current text from the line edit.
+            text (str): The current text from the line edit.
 
         Doctests:
             >>> app = QtWidgets.QApplication(sys.argv)
@@ -113,11 +120,11 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
             0
         """
         # Split the text at the decimal point to extract integer and decimal parts
-        integer_part, _, decimal_part = text.partition('.')
+        integer_part, _, fraction_part = text.partition('.')
 
         # Update padding lengths based on the lengths of integer and decimal parts
-        self.padding_length_before = len(integer_part)
-        self.padding_length_after = len(decimal_part) if decimal_part else 0
+        self.integer_padding = len(integer_part)
+        self.fraction_padding = len(fraction_part) if fraction_part else 0
 
     # Overridden Methods
     # ------------------
@@ -125,13 +132,13 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         """Set the value of the spinbox, adjusting the padding if necessary.
 
         Args:
-            value: The new value to be set for the spinbox. The value should be within the range of the spinbox.
+            value (float): The new value to be set for the spinbox. The value should be within the range of the spinbox.
         """
-        # Extracts the decimal part of the float value as a string.
-        decimal = str(value).split('.')[1] if '.' in str(value) else '' 
+        # Extracts the decimal part of the float value.
+        fraction_length = len(str(value).split('.')[1]) if '.' in str(value) else 0
 
         # Update padding to match or exceed the length of the decimal part.
-        self.padding_length_after = max(self.padding_length_after, len(decimal))
+        self.fraction_padding = max(self.fraction_padding, fraction_length)
 
         # Set the value using the superclass method
         super().setValue(value)
@@ -144,7 +151,7 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         for both the integer and fractional parts of the number.
 
         Args:
-            value: The numeric value to convert to a padded string.
+            value (float): The numeric value to convert to a padded string.
 
         Returns:
             str: A string representation of the value with leading zeros and fixed decimal places.
@@ -164,14 +171,11 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
             '0123.460'
         """
         # Determine the offset for padding, which includes the decimal point if any decimal places are specified.
-        if self.padding_length_after:
-            offset = self.padding_length_after + 1  # plus one for the decimal point
-        else:
-            offset = self.padding_length_after  # no decimal point, no offset
+        offset = self.fraction_padding + 1 if self.fraction_padding else 0
 
         # Format the value to a string with leading zeros and a fixed number of decimal places.
         # The total length includes padding before and after the decimal point, plus the decimal point itself.
-        text = "{:0{}.{}f}".format(value, self.padding_length_before + offset, self.padding_length_after)
+        text = "{:0{}.{}f}".format(value, self.integer_padding + offset, self.fraction_padding)
 
         # Append a decimal point to the text if the current text in the line edit ends with a decimal point.
         # This maintains the user's input style.
@@ -184,7 +188,7 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         """Step the value, maintaining proper cursor and selection positioning.
 
         Args:
-            steps: The number of steps to increment or decrement the value.
+            steps (int): The number of steps to increment or decrement the value.
         """
         # Capture current cursor position and selection range
         cursor_position = self.lineEdit().cursorPosition()
@@ -205,8 +209,8 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         length_difference = text_length_after - text_length_before
 
         # Determine the new cursor position and selection start
-        new_cursor_position = cursor_position + length_difference if text_length_before != text_length_after else cursor_position
-        new_selection_start = selection_start + length_difference if text_length_before != text_length_after else selection_start
+        new_cursor_position = cursor_position + length_difference
+        new_selection_start = selection_start + length_difference
 
         # Set the new cursor position and selection
         if selection_length > 0:
@@ -245,13 +249,22 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         return super().eventFilter(source, event)
 
 class DoubleSpinBoxWidget(QtWidgets.QWidget):
-    """A widget that combines a QPushButton and a customized QDoubleSpinBox for
-    controlled number input with toggling functionality. The QPushButton can toggle
-    the spin box value between a default and the last modified value.
+    """A widget that combines a QPushButton and a customized AdaptivePaddedDoubleSpinBox.
+
+    This widget provides controlled number input with toggling functionality.
+    The QPushButton toggles the spin box value between a default value and the last modified value.
+
+    Attributes:
+        default_value (float): Default value of the spin box.
+        min_value (float): Minimum allowed value.
+        max_value (float): Maximum allowed value.
+        step_size (float): Step size for the spin box.
+        icon (QtGui.QIcon): Icon displayed on the button.
     """
+
     # Initialization and Setup
     # ------------------------
-    def __init__(self, default_value: float = 0.0, min_value: float = 0.0, max_value: float = 99.99, single_step: float = 0.1, 
+    def __init__(self, default_value: float = 0.0, min_value: float = 0.0, max_value: float = 99.99, step_size: float = 0.1, 
                  icon: QtGui.QIcon = None, parent: QtWidgets.QWidget = None):
         """Initialize the widget with the given default value, min/max range, step size, and icon.
 
@@ -259,8 +272,8 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
             default_value (float): The initial default value of the spin box.
             min_value (float): Minimum allowed value for the spin box.
             max_value (float): Maximum allowed value for the spin box.
-            single_step (float): Increment/decrement step size for the spin box.
-            icon (QtGui.QIcon): Icon to display on the button.
+            step_size (float): Increment/decrement step size for the spin box.
+            icon (QtGui.QIcon, optional): Icon to display on the button.
             parent (QtWidgets.QWidget, optional): Parent widget.
         """
         super().__init__(parent)
@@ -271,7 +284,7 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
         self._icon = icon
         self.min_value = min_value
         self.max_value = max_value
-        self.single_step = single_step
+        self.step_size = step_size
 
         # Initialize setup
         self.__init_ui()
@@ -291,13 +304,13 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
         # Create Widgets
         # --------------
         # Create button
-        self.button = QtWidgets.QPushButton(self._icon, self) if self._icon else QtWidgets.QPushButton(self)
+        self.button = QtWidgets.QPushButton(self._icon, '', self) if self._icon else QtWidgets.QPushButton(self)
 
         # Create spin box
         self.spin_box = AdaptivePaddedDoubleSpinBox(
             default_value=self._default_value, 
             min_value=self.min_value, max_value=self.max_value, 
-            single_step=self.single_step, parent=self)
+            step_size=self.step_size, parent=self)
 
         # Add Widgets to Layouts
         # ----------------------
@@ -365,7 +378,7 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
         return self.button.icon()
 
     def setIcon(self, icon: QtGui.QIcon):
-        """Set a new icon for the button.
+        """Set the icon for the button.
         """
         self.button.setIcon(icon)
 
@@ -385,3 +398,59 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
             disabled (bool): Whether to disable or enable the widget components.
         """
         self.setEnabled(not disabled)
+
+
+# Example Usage
+# -------------
+def main():
+    """Run a PyQt application demonstrating the custom spin box widgets."""
+    import sys
+
+    app = QtWidgets.QApplication(sys.argv)
+
+    # Create a main window
+    main_window = QtWidgets.QMainWindow()
+    main_window.setWindowTitle("Spin Box Widgets Example")
+    main_window.resize(400, 200)
+
+    # Create a central widget
+    central_widget = QtWidgets.QWidget(main_window)
+    main_window.setCentralWidget(central_widget)
+
+    # Create a layout for the central widget
+    layout = QtWidgets.QVBoxLayout(central_widget)
+
+    # Add AdaptivePaddedDoubleSpinBox
+    adaptive_spinbox = AdaptivePaddedDoubleSpinBox(
+        integer_padding=3, 
+        fraction_padding=4, 
+        default_value=12.34, 
+        min_value=0.0, 
+        max_value=999.9999, 
+        step_size=0.01, 
+        parent=central_widget
+    )
+    adaptive_spinbox.setPrefix("Value: ")
+    adaptive_spinbox.setSuffix(" units")
+    layout.addWidget(adaptive_spinbox)
+
+    # Add DoubleSpinBoxWidget
+    toggle_spinbox_widget = DoubleSpinBoxWidget(
+        default_value=10.0, 
+        min_value=0.0, 
+        max_value=100.0, 
+        step_size=1.0, 
+        icon=QtGui.QIcon.fromTheme("edit-undo"), 
+        parent=central_widget
+    )
+    layout.addWidget(toggle_spinbox_widget)
+
+    # Show the main window
+    main_window.show()
+
+    # Start the application event loop
+    sys.exit(app.exec_())
+
+
+if __name__ == "__main__":
+    main()
