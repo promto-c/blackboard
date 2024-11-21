@@ -60,11 +60,11 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         """Set up signal connections between widgets and slots.
         """
         self.lineEdit().cursorPositionChanged.connect(self._adjust_step)
-        self.lineEdit().textChanged.connect(self.adjust_padding)
+        self.lineEdit().textChanged.connect(self._adjust_padding)
 
     # Private Methods
     # ---------------
-    def _adjust_step(self, old_pos: int, new_pos: int) -> None:
+    def _adjust_step(self, old_pos: int, new_pos: int):
         """Adjust the step size based on the cursor position.
 
         Args:
@@ -88,9 +88,7 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         # Set the step size based on the distance to the decimal point
         self.setSingleStep(10 ** (-distance_to_decimal))
 
-    # Extended Methods
-    # ----------------
-    def adjust_padding(self, text: str) -> None:
+    def _adjust_padding(self, text: str):
         """Adjust the padding lengths based on the current text.
 
         This method updates the padding lengths for both the integer part (before the decimal point)
@@ -103,17 +101,17 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
             >>> app = QtWidgets.QApplication(sys.argv)
             >>> spinbox = AdaptivePaddedDoubleSpinBox()
 
-            >>> spinbox.adjust_padding('123')
+            >>> spinbox._adjust_padding('123')
             >>> spinbox.padding_length_before
             3
             >>> spinbox.padding_length_after
             0
-            >>> spinbox.adjust_padding('00123.456')
+            >>> spinbox._adjust_padding('00123.456')
             >>> spinbox.padding_length_before
             5
             >>> spinbox.padding_length_after
             3
-            >>> spinbox.adjust_padding('00123.')
+            >>> spinbox._adjust_padding('00123.')
             >>> spinbox.padding_length_before
             5
             >>> spinbox.padding_length_after
@@ -128,7 +126,7 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
 
     # Overridden Methods
     # ------------------
-    def setValue(self, value: float) -> None:
+    def setValue(self, value: float):
         """Set the value of the spinbox, adjusting the padding if necessary.
 
         Args:
@@ -175,7 +173,7 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
 
         # Format the value to a string with leading zeros and a fixed number of decimal places.
         # The total length includes padding before and after the decimal point, plus the decimal point itself.
-        text = "{:0{}.{}f}".format(value, self.integer_padding + offset, self.fraction_padding)
+        text = f'{value:0{self.integer_padding + offset}.{self.fraction_padding}f}'
 
         # Append a decimal point to the text if the current text in the line edit ends with a decimal point.
         # This maintains the user's input style.
@@ -184,7 +182,7 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
 
         return text
 
-    def stepBy(self, steps: int) -> None:
+    def stepBy(self, steps: int):
         """Step the value, maintaining proper cursor and selection positioning.
 
         Args:
@@ -265,7 +263,7 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
     # Initialization and Setup
     # ------------------------
     def __init__(self, default_value: float = 0.0, min_value: float = 0.0, max_value: float = 99.99, step_size: float = 0.1, 
-                 icon: QtGui.QIcon = None, parent: QtWidgets.QWidget = None):
+                 icon: QtGui.QIcon = None, parent: QtWidgets.QWidget = None, *args, **kwargs):
         """Initialize the widget with the given default value, min/max range, step size, and icon.
 
         Args:
@@ -276,7 +274,7 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
             icon (QtGui.QIcon, optional): Icon to display on the button.
             parent (QtWidgets.QWidget, optional): Parent widget.
         """
-        super().__init__(parent)
+        super().__init__(parent, *args, **kwargs)
 
         # Store the arguments
         self._default_value = default_value
@@ -305,6 +303,7 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
         # --------------
         # Create button
         self.button = QtWidgets.QPushButton(self._icon, '', self) if self._icon else QtWidgets.QPushButton(self)
+        self.button.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
 
         # Create spin box
         self.spin_box = AdaptivePaddedDoubleSpinBox(
@@ -367,8 +366,9 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
     def _update_button_and_last_value(self, value: float):
         """Update the recent value when the spin box value changes, keeping track of the last set value.
         """
-        if value != self._default_value:
-            self._recent_value = value
+        if value == self._default_value:
+            return
+        self._recent_value = value
 
     # Overridden Methods
     # ------------------
@@ -398,6 +398,9 @@ class DoubleSpinBoxWidget(QtWidgets.QWidget):
             disabled (bool): Whether to disable or enable the widget components.
         """
         self.setEnabled(not disabled)
+
+    def setValue(self, value: float):
+        self.spin_box.setValue(value)
 
 
 # Example Usage
