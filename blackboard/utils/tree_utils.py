@@ -6,6 +6,7 @@ from typing import Any, Callable, List, Optional, Tuple, Dict, Iterable, Union
 # -------------------
 from qtpy import QtCore, QtGui, QtWidgets
 
+
 # Class Definitions
 # -----------------
 class TreeUtil:

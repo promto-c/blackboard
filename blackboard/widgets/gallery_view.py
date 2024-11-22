@@ -1,7 +1,7 @@
 import sys
 import os
 import glob
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Union
 from qtpy import QtCore, QtGui, QtWidgets
 from tablerqicon import TablerQIcon  # Importing TablerQIcon
 
@@ -155,6 +155,20 @@ class CustomToolBar(QtWidgets.QToolBar):
         widget_action = AutoWidgetAction(widget, self)
         super().addAction(widget_action)
 
+    def addAction(self, action: QtGui.QAction = None, icon: QtGui.QIcon = None, text: str = '', toolTip: str = None, 
+                  data: Any = None, *args, **kwargs) -> QtGui.QAction:
+        if not isinstance(action, QtGui.QAction):
+            toolTip = toolTip or text
+            action = QtGui.QAction(icon=icon, text=text, toolTip=toolTip, *args, **kwargs)
+            if data is not None:
+                action.setData(data)
+
+        super().addAction(action)
+
+        # Access the widget for the action and set the cursor
+        self.widgetForAction(action).setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+
+        return action
 
 class GroupRuleWidget(QtWidgets.QWidget):
     """Widget for managing grouping by fields."""
@@ -377,7 +391,7 @@ class GalleryItemWidget(QtWidgets.QWidget):
             self.content_area.setMaximumWidth(16777215)
             self.content_area.setFixedHeight(size)
 
-    def set_view_mode(self, view_mode: QtWidgets.QListWidget.ViewMode = QtWidgets.QListWidget.ViewMode.IconMode) -> None:
+    def set_view_mode(self, view_mode: QtWidgets.QListWidget.ViewMode = QtWidgets.QListWidget.ViewMode.IconMode):
         """Adjust the layout based on the view mode."""
         self._view_mode = view_mode
         if self._view_mode == QtWidgets.QListWidget.ViewMode.IconMode:
@@ -399,12 +413,12 @@ class InvisibleItemDelegate(QtWidgets.QStyledItemDelegate):
 class GalleryManipulationToolBar(QtWidgets.QToolBar):
     """A unified toolbar for sorting, grouping, and managing field visibility."""
 
-    def __init__(self, parent: 'GalleryWidget') -> None:
+    def __init__(self, parent: 'GalleryWidget'):
         super().__init__(parent)
         self.gallery_widget = parent
         self.__init_ui()
 
-    def __init_ui(self) -> None:
+    def __init_ui(self):
         self.setIconSize(QtCore.QSize(22, 22))
         self.setProperty('widget-style', 'overlay')
 
@@ -463,7 +477,9 @@ class GalleryViewToolBar(CustomToolBar):
 
     BUTTON_SIZE = 22
 
-    def __init__(self, parent: 'GalleryWidget') -> None:
+    DEFAULT_RESIZE_MODE = ThumbnailWidget.ResizeMode.Fit
+
+    def __init__(self, parent: 'GalleryWidget'):
         """Initialize the GalleryViewToolBar."""
         super().__init__(parent)
         self.gallery_widget = parent
@@ -471,36 +487,93 @@ class GalleryViewToolBar(CustomToolBar):
         self.__init_ui()
         self.__init_signal_connections()
 
-    def __init_attributes(self) -> None:
+    def __init_attributes(self):
         """Initialize attributes."""
         self.tabler_icon = TablerQIcon(opacity=0.8)
-        self.resize_mode_actions = {}
-        self.current_resize_mode = ThumbnailWidget.ResizeMode.Fit
+        self.current_resize_mode = self.DEFAULT_RESIZE_MODE
 
-    def __init_ui(self) -> None:
+    def __init_ui(self):
         """Initialize the UI of the toolbar."""
         self.setIconSize(QtCore.QSize(self.BUTTON_SIZE, self.BUTTON_SIZE))
         self.setProperty('widget-style', 'overlay')
 
         # Add actions to the toolbar
-        self.add_view_mode_actions()
-
+        self._add_view_mode_actions()
         self.addSeparator()
 
         # Add Resize Mode actions
-        self.add_resize_mode_actions()
-
+        self._add_resize_mode_actions()
         self.addSeparator()
+
         # Add size slider
-        self.add_size_slider_widget()
+        self._add_size_slider_widget()
         self.addSeparator()
 
-        self.refresh_action = self.add_action(
+        self.refresh_action = self.addAction(
             icon=self.tabler_icon.refresh,
-            tooltip="Refresh Gallery",
+            text="Refresh Gallery",
         )
 
-    def add_size_slider_widget(self):
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections."""
+        # Additional signal connections can be added here if needed
+        self.size_slider.valueChanged.connect(self.gallery_widget.set_card_size)
+        self.refresh_action.triggered.connect(self.refresh_gallery)
+
+    def _add_view_mode_actions(self):
+        """Add view mode actions to the toolbar."""
+        view_mode_group = QtWidgets.QActionGroup(self)
+        view_mode_group.setExclusive(True)
+
+        # Define view modes with icons and tooltips
+        view_modes = {
+            QtWidgets.QListWidget.ViewMode.IconMode: (self.tabler_icon.layout_grid, "Grid View"),
+            QtWidgets.QListWidget.ViewMode.ListMode: (self.tabler_icon.list_details, "List View"),
+        }
+
+        for mode, (icon, text) in view_modes.items():
+            action = self.addAction(
+                icon=icon,
+                text=text,
+                checkable=True,
+                data=mode,
+            )
+            view_mode_group.addAction(action)
+            # Check the current view mode
+            if mode == self.gallery_widget.viewMode():
+                action.setChecked(True)
+
+        # Connect the action group's triggered signal
+        view_mode_group.triggered.connect(self.set_view_mode)
+
+    def _add_resize_mode_actions(self):
+        """Add resize mode actions to the toolbar."""
+        # Create an action group for mutual exclusivity
+        resize_mode_group = QtWidgets.QActionGroup(self)
+        resize_mode_group.setExclusive(True)
+
+        # Define resize modes and corresponding icons
+        resize_modes = {
+            ThumbnailWidget.ResizeMode.Fit: (self.tabler_icon.aspect_ratio, "Fit Image"),
+            ThumbnailWidget.ResizeMode.Fill: (self.tabler_icon.box_padding, "Fill Image"),
+        }
+
+        for mode, (icon, text) in resize_modes.items():
+            action = self.addAction(
+                icon=icon,
+                text=text,
+                checkable=True,
+                data=mode
+            )
+            resize_mode_group.addAction(action)
+            # Check the default resize mode
+            if mode == self.current_resize_mode:
+                action.setChecked(True)
+
+        # Connect the action group's triggered signal
+        resize_mode_group.triggered.connect(self.set_resize_mode)
+
+    def _add_size_slider_widget(self):
         self.slider_widget = QtWidgets.QWidget()
         slider_layout = QtWidgets.QHBoxLayout(self.slider_widget)
         self.size_button = QtWidgets.QToolButton(self.slider_widget, icon=TablerQIcon.sort_ascending_small_big)
@@ -519,94 +592,33 @@ class GalleryViewToolBar(CustomToolBar):
 
         self.addWidget(self.size_slider)
 
-    def add_action(self, icon: QtGui.QIcon, tooltip: str, checkable: bool = False) -> QtGui.QAction:
-        """Adds an action to the toolbar."""
-        action = self.addAction(icon, tooltip)
-        action.setToolTip(tooltip)
-        action.setCheckable(checkable)
-
-        # Access the widget for the action and set the cursor
-        self.widgetForAction(action).setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-
-        return action
-
-    def add_view_mode_actions(self) -> None:
-        """Add view mode actions to the toolbar."""
-        view_mode_group = QtWidgets.QActionGroup(self)
-        view_mode_group.setExclusive(True)
-
-        # Define view modes with icons and tooltips
-        view_modes = {
-            QtWidgets.QListWidget.ViewMode.IconMode: (self.tabler_icon.layout_grid, "Grid View"),
-            QtWidgets.QListWidget.ViewMode.ListMode: (self.tabler_icon.list_details, "List View"),
-        }
-
-        for mode, (icon, tooltip) in view_modes.items():
-            action = self.add_action(
-                icon=icon,
-                tooltip=tooltip,
-                checkable=True,
-            )
-            action.setData(mode)
-            view_mode_group.addAction(action)
-            # Check the current view mode
-            if mode == self.gallery_widget.viewMode():
-                action.setChecked(True)
-
-        # Connect the action group's triggered signal
-        view_mode_group.triggered.connect(self.set_view_mode)
-
-    # Callback methods for actions
-    def set_view_mode(self, action: QtWidgets.QAction) -> None:
-        """Set the view mode based on the selected action."""
-        mode = action.data()
-        self.gallery_widget.setViewMode(mode)
-
-    def add_resize_mode_actions(self) -> None:
-        """Add resize mode actions to the toolbar."""
-        # Create an action group for mutual exclusivity
-        resize_mode_group = QtWidgets.QActionGroup(self)
-        resize_mode_group.setExclusive(True)
-
-        # Define resize modes and corresponding icons
-        resize_modes = {
-            ThumbnailWidget.ResizeMode.Fit: (self.tabler_icon.aspect_ratio, "Fit Image"),
-            ThumbnailWidget.ResizeMode.Fill: (self.tabler_icon.box_padding, "Fill Image"),
-        }
-
-        for mode, (icon, tooltip) in resize_modes.items():
-            action = self.add_action(
-                icon=icon,
-                tooltip=tooltip,
-                checkable=True,
-            )
-            action.setData(mode)
-            resize_mode_group.addAction(action)
-            self.resize_mode_actions[mode] = action
-            # Check the default resize mode
-            if mode == self.current_resize_mode:
-                action.setChecked(True)
-
-        # Connect the action group's triggered signal
-        resize_mode_group.triggered.connect(self.set_resize_mode)
-
-    def __init_signal_connections(self) -> None:
-        """Initialize signal-slot connections."""
-        # Additional signal connections can be added here if needed
-        self.size_slider.valueChanged.connect(self.gallery_widget.set_card_size)
-        self.refresh_action.triggered.connect(self.refresh_gallery)
-
-    def refresh_gallery(self) -> None:
+    def refresh_gallery(self):
         """Refresh the gallery content."""
         # Implement the logic to refresh the gallery
         pass
 
-    def set_resize_mode(self, action: QtWidgets.QAction) -> None:
-        """Set the image resize mode based on the selected action."""
-        mode = action.data()
-        if isinstance(mode, ThumbnailWidget.ResizeMode):
-            self.current_resize_mode = mode
-            self.gallery_widget.set_resize_mode(mode)
+    def set_resize_mode(self, mode: Union[QtWidgets.QAction, ThumbnailWidget.ResizeMode]):
+        """Set the image resize mode based on the selected action or directly with ResizeMode.
+
+        Args:
+            action: An instance of QAction carrying ResizeMode data or a direct ResizeMode value.
+        """
+        if isinstance(mode, QtWidgets.QAction):
+            mode = mode.data()
+
+        if not isinstance(mode, ThumbnailWidget.ResizeMode):
+            return
+
+        self.current_resize_mode = mode
+        self.gallery_widget.set_resize_mode(mode)
+
+    def set_view_mode(self, mode: Union[QtWidgets.QAction, QtWidgets.QListWidget.ViewMode]):
+        """Set the view mode based on the selected action.
+        """
+        if isinstance(mode, QtWidgets.QAction):
+            mode = mode.data()
+
+        self.gallery_widget.setViewMode(mode)
 
 class GalleryWidget(MomentumScrollListWidget):
 
@@ -911,7 +923,7 @@ if __name__ == "__main__":
     theme.set_theme(app, 'dark')
 
     # Specify directory to load images
-    directory = ''
+    directory = 'C:/Users/promm/Downloads'
     image_files = get_image_paths(directory)
 
     # Example metadata for images

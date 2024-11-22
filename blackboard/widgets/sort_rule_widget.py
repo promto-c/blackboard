@@ -1,15 +1,20 @@
 # Type Checking Imports
 # ---------------------
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Callable, Dict
 
 # Standard Library Imports
 # ------------------------
 from enum import Enum
+from dataclasses import dataclass
 
 # Third-Party Imports
 # -------------------
 from qtpy import QtCore, QtWidgets
 from tablerqicon import TablerQIcon
+
+# Local Imports
+# -------------
+from blackboard.utils.list_utils import ListUtil
 
 
 # Class Definitions
@@ -20,6 +25,36 @@ class SortOrder(Enum):
     ASCENDING = 'ASC'
     DESCENDING = 'DESC'
 
+@dataclass
+class SortRule:
+    field: str
+    order: SortOrder
+
+    def __str__(self):
+        return f"SortRule(field='{self.field}', order='{self.order.name}')"
+
+    @property
+    def __dict__(self) -> Dict[str, str]:
+        return {
+            'field': self.field,
+            'order': self.order.name
+        }
+
+    def to_dict(self) -> Dict[str, str]:
+        return self.__dict__
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        return cls(
+            field=data['field'],
+            order=SortOrder[data['order']]
+        )
+
+    def __post_init__(self):
+        if not isinstance(self.field, str):
+            raise TypeError("field must be a string")
+        if not isinstance(self.order, SortOrder):
+            raise TypeError("order must be a SortOrder instance")
 
 class SortRuleWidgetItem(QtWidgets.QListWidgetItem):
     """Widget representing a single sort rule.
@@ -33,7 +68,7 @@ class SortRuleWidgetItem(QtWidgets.QListWidgetItem):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, sort_rule_widget: 'SortRuleWidget'):
+    def __init__(self, sort_rule_widget: 'SortRuleWidget', field: str):
         """Initialize a SortRuleWidgetItem.
 
         Args:
@@ -43,16 +78,11 @@ class SortRuleWidgetItem(QtWidgets.QListWidgetItem):
 
         # Store the arguments
         self.sort_rule_widget = sort_rule_widget
+        self._current_field = field
 
         # Initialize UI and connections
-        self.__init_attributes()
         self.__init_ui()
         self.__init_signal_connections()
-
-    def __init_attributes(self):
-        """Initialize the attributes.
-        """
-        self.current_field: Optional[str] = None
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -88,9 +118,9 @@ class SortRuleWidgetItem(QtWidgets.QListWidgetItem):
         )
 
         # Toggle group behavior
-        button_group = QtWidgets.QButtonGroup(self.widget, exclusive=True)
-        button_group.addButton(self.asc_button)
-        button_group.addButton(self.desc_button)
+        self.ordering_button_group = QtWidgets.QButtonGroup(self.widget, exclusive=True)
+        self.ordering_button_group.addButton(self.asc_button)
+        self.ordering_button_group.addButton(self.desc_button)
 
         # Delete button
         self.delete_button = QtWidgets.QToolButton(
@@ -109,68 +139,55 @@ class SortRuleWidgetItem(QtWidgets.QListWidgetItem):
         self.setSizeHint(self.widget.sizeHint())
         self.sort_rule_widget.setItemWidget(self, self.widget)
 
-        # Populate the field dropdown
-        self.update_fields()
-
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
-        self.field_dropdown.currentIndexChanged.connect(self.field_changed)
-        self.delete_button.clicked.connect(self.delete_rule)
+        self.field_dropdown.currentTextChanged.connect(self._update_used_field)
+        self.delete_button.clicked.connect(lambda: self.sort_rule_widget.remove_rule(self))
 
-    def update_fields(self):
+    # Public Methods
+    # --------------
+    def set_available_fields(self, fields: List[str]):
         """Update the field dropdown with unused fields.
         """
-        current_field = self.current_field
         self.field_dropdown.blockSignals(True)
         self.field_dropdown.clear()
-
-        unused_fields = self.sort_rule_widget.get_unused_fields()
-        # Include the current field if it's already selected
-        if current_field and current_field not in unused_fields:
-            unused_fields.append(current_field)
-
-        self.field_dropdown.addItems(unused_fields)
-        # Set the current field
-        if current_field:
-            index = self.field_dropdown.findText(current_field)
-            if index >= 0:
-                self.field_dropdown.setCurrentIndex(index)
-        else:
-            # Select the first available field
-            if unused_fields:
-                self.field_dropdown.setCurrentIndex(0)
-                self.current_field = self.field_dropdown.currentText()
-                # Update selected_fields in SortRuleWidget
-                self.sort_rule_widget.field_changed(self, None, self.current_field)
+        self.field_dropdown.addItems([self._current_field] + fields)
         self.field_dropdown.blockSignals(False)
 
-    def field_changed(self, index: int):
+    def get_rule(self) -> 'SortRule':
+        """Return the current sort rule as a SortRule dataclass instance.
+
+        Returns:
+            SortRule: An instance containing the field and sort order.
+        """
+        return SortRule(
+            field=self._current_field,
+            order=SortOrder.ASCENDING if self.asc_button.isChecked() else SortOrder.DESCENDING,
+        )
+
+    # Class Properties
+    # ----------------
+    @property
+    def current_field(self) -> str:
+        return self._current_field
+
+    @current_field.setter
+    def current_field(self, field: str):
+        self.field_dropdown.setCurrentText(field)
+
+    # Private Methods
+    # ---------------
+    def _update_used_field(self, new_field: str):
         """Handle field selection changes.
 
         Args:
-            index (int): The index of the selected field in the dropdown.
+            new_field (str): The selected field name in the dropdown.
         """
-        old_field = self.current_field
-        new_field = self.field_dropdown.currentText()
-        self.current_field = new_field
-        # Update the selected_fields in sort_rule_widget
-        self.sort_rule_widget.field_changed(self, old_field, new_field)
-
-    def delete_rule(self):
-        """Delete this sort rule.
-        """
-        self.sort_rule_widget.remove_sort_rule(self)
-
-    def get_sort_rule(self) -> Tuple[str, SortOrder]:
-        """Return the current sort rule as a tuple.
-
-        Returns:
-            Tuple[str, SortOrder]: The field and sort order.
-        """
-        sort_order = SortOrder.ASCENDING if self.asc_button.isChecked() else SortOrder.DESCENDING
-        return (self.field_dropdown.currentText(), sort_order)
-
+        old_field = self._current_field
+        self._current_field = new_field
+        # Update the used_fields in sort_rule_widget
+        self.sort_rule_widget._update_used_fields(old_field, new_field)
 
 class SortRuleWidget(QtWidgets.QListWidget):
     """Widget for managing sort rules.
@@ -186,9 +203,11 @@ class SortRuleWidget(QtWidgets.QListWidget):
         +--------------------------------------+
     """
 
-    # Signal emitted when sorting rules are applied
-    sorting_changed = QtCore.Signal(list)
+    # Signal emitted when rules are applied
+    rules_applied = QtCore.Signal(list)
 
+    # Initialization and Setup
+    # ------------------------
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None, fields: Optional[List[str]] = None):
         """Initialize the SortRuleWidget.
 
@@ -199,7 +218,7 @@ class SortRuleWidget(QtWidgets.QListWidget):
         super().__init__(parent, dragDropMode=QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
 
         # Store the arguments
-        self.fields: List[str] = fields or []
+        self._fields = fields or []
 
         # Initialize setup
         self.__init_attributes()
@@ -209,8 +228,7 @@ class SortRuleWidget(QtWidgets.QListWidget):
     def __init_attributes(self):
         """Initialize the attributes.
         """
-        self.sort_rule_items: List[SortRuleWidgetItem] = []
-        self.selected_fields: List[str] = []
+        self._available_fields = self._fields.copy()
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -222,24 +240,27 @@ class SortRuleWidget(QtWidgets.QListWidget):
 
         # Create Widgets
         # --------------
-        # Add Sort Button
-        self.add_sort_button = QtWidgets.QPushButton(TablerQIcon.plus, "Add Sort", self)
+        self.add_button = QtWidgets.QPushButton(TablerQIcon.plus, "Add", self, enabled=bool(self._fields))
         self.clear_button = QtWidgets.QPushButton(TablerQIcon.clear_all, '', self, toolTip="Clear All")
         self.apply_button = QtWidgets.QPushButton("Apply", self)
 
         # Add Widgets to Layouts
         # ----------------------
-        self.overlay_layout.addWidget(self.add_sort_button)
+        self.overlay_layout.addWidget(self.add_button)
         self.overlay_layout.addWidget(self.clear_button, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
         self.overlay_layout.addWidget(self.apply_button, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
-        self.add_sort_button.clicked.connect(self.add_sort_rule)
+        self.add_button.clicked.connect(lambda: self.add_rule())
         self.clear_button.clicked.connect(self.clear_all_rules)
-        self.apply_button.clicked.connect(self.emit_sorting_changed)
-        self.model().rowsMoved.connect(self.on_rows_moved)
+        self.apply_button.clicked.connect(self.apply)
+
+    # Public Methods
+    # --------------
+    def get_items(self, is_only_checked: bool = False, filter_func: Optional[Callable[['QtWidgets.QListWidgetItem'], bool]] = None) -> List['SortRuleWidgetItem']:
+        return ListUtil.get_items(self, is_only_checked, filter_func)
 
     def set_fields(self, fields: List[str]):
         """Set the available fields for sorting.
@@ -247,107 +268,96 @@ class SortRuleWidget(QtWidgets.QListWidget):
         Args:
             fields (List[str]): The list of fields.
         """
-        self.fields = fields
-        self.selected_fields.clear()
-        # Update existing sort rule items
-        for item in self.sort_rule_items:
-            item.current_field = None
-            item.update_fields()
-        # Enable add_sort_button if there are fields
-        self.add_sort_button.setDisabled(len(self.get_unused_fields()) == 0)
+        self._fields = fields
+        self.clear_all_rules()
 
-    def get_unused_fields(self) -> List[str]:
-        """Get the list of fields not currently used in sort rules.
-
-        Returns:
-            List[str]: The list of unused fields.
-        """
-        return [field for field in self.fields if field not in self.selected_fields]
-
-    def add_sort_rule(self):
+    def add_rule(self, field: Optional[str] = None):
         """Add a new sort rule.
         """
-        sort_rule_item = SortRuleWidgetItem(self)
-        self.addItem(sort_rule_item)
-        self.sort_rule_items.append(sort_rule_item)
-        sort_rule_item.update_fields()
+        if not self._fields:
+            return
 
-        # Disable add_sort_button if all fields are used
-        if len(self.get_unused_fields()) == 0:
-            self.add_sort_button.setDisabled(True)
+        if field is None:
+            field = self._available_fields.pop(0)
+        else:
+            self._available_fields.remove(field)
 
-    def field_changed(self, sort_rule_item: 'SortRuleWidgetItem', old_field: Optional[str], new_field: str):
-        """Handle changes to a sort rule's field selection.
+        _rule_item = SortRuleWidgetItem(self, field=field)
 
-        Args:
-            sort_rule_item (SortRuleWidgetItem): The sort rule item that changed.
-            old_field (Optional[str]): The previously selected field.
-            new_field (str): The newly selected field.
-        """
-        if old_field in self.selected_fields:
-            self.selected_fields.remove(old_field)
-        if new_field not in self.selected_fields:
-            self.selected_fields.append(new_field)
-        # Update field_dropdowns in other SortRuleItems
-        for item in self.sort_rule_items:
-            if item != sort_rule_item:
-                item.update_fields()
+        # Update field_dropdowns in other items
+        self._set_available_fields()
 
-        self.add_sort_button.setDisabled(len(self.get_unused_fields()) == 0)
+        # Disable add_button if all fields are used
+        if not self._available_fields:
+            self.add_button.setDisabled(True)
 
-    def remove_sort_rule(self, sort_rule_item: 'SortRuleWidgetItem'):
+    def remove_rule(self, rule_item: 'SortRuleWidgetItem'):
         """Remove a sort rule item.
 
         Args:
             item_widget (SortRuleWidgetItem): The sort rule item to remove.
         """
         # Remove selected field
-        if sort_rule_item.current_field in self.selected_fields:
-            self.selected_fields.remove(sort_rule_item.current_field)
+        self._available_fields.append(rule_item.current_field)
         # Remove item
-        self.takeItem(self.row(sort_rule_item))
-        self.sort_rule_items.remove(sort_rule_item)
+        self.takeItem(self.row(rule_item))
+
         # Update field_dropdowns in other items
-        for item in self.sort_rule_items:
-            item.update_fields()
-        # Enable add_sort_button if necessary
-        self.add_sort_button.setDisabled(len(self.get_unused_fields()) == 0)
+        self._set_available_fields()
+
+        # Enable add_button if necessary
+        self.add_button.setEnabled(True)
 
     def clear_all_rules(self):
         """Clear all sort rules.
         """
         self.clear()
-        self.sort_rule_items.clear()
-        self.selected_fields.clear()
-        self.add_sort_button.setDisabled(False)
+        self._available_fields = self._fields.copy()
+        self.add_button.setEnabled(bool(self._fields))
 
-    def on_rows_moved(self, parent, start: int, end: int, destination, row: int):
-        """Handle the event when sort rules are reordered.
-
-        Args:
-            parent: The parent model index.
-            start (int): The starting row.
-            end (int): The ending row.
-            destination: The destination model index.
-            row (int): The destination row.
-        """
-        # Rows have been moved; no action needed here
-        pass
-
-    def emit_sorting_changed(self):
-        """Emit the sorting_changed signal with current sorting rules.
-        """
-        sorting_rules = self.get_sorting_rules()
-        self.sorting_changed.emit(sorting_rules)
-
-    def get_sorting_rules(self) -> List[Tuple[str, 'SortOrder']]:
+    def get_rules(self) -> List['SortRule']:
         """Return the current sorting rules.
 
         Returns:
             List[Tuple[str, SortOrder]]: A list of tuples containing field names and sort orders.
         """
-        sorting_rules = [item.get_sort_rule() for item in self.sort_rule_items]
-        return sorting_rules
+        return [item.get_rule() for item in self.get_items()]
+
+    def apply(self):
+        """Emit the rules_applied signal with current sorting rules.
+        """
+        self.rules_applied.emit(self.get_rules())
+
+    # Class Properties
+    # ----------------
+    @property
+    def fields(self) -> List[str]:
+        return self._fields
+
+    @fields.setter
+    def fields(self, fields: List[str]):
+        self.set_fields(fields)
+
+    # Private Methods
+    # ---------------
+    def _set_available_fields(self):
+        """Update field_dropdowns in SortRuleItems.
+        """
+        for item in self.get_items():
+            item.set_available_fields(self._available_fields)
+
+    def _update_used_fields(self, old_field: Optional[str], new_field: str):
+        """Handle changes to a sort rule's field selection.
+
+        Args:
+            old_field (Optional[str]): The previously selected field.
+            new_field (str): The newly selected field.
+        """
+        self._available_fields.append(old_field)
+        self._available_fields.remove(new_field)
+
+        # Update field_dropdowns in SortRuleItems
+        self._set_available_fields()
 
 
 if __name__ == "__main__":
@@ -355,22 +365,25 @@ if __name__ == "__main__":
     from blackboard import theme
 
     class MainWindow(QtWidgets.QMainWindow):
+
+        FIELDS = ["Name", "Date", "Size", "Type"]
         def __init__(self):
             """Initialize the main window."""
             super().__init__()
 
             # Create SortRuleWidget with fields
-            self.sort_rule_widget = SortRuleWidget(fields=["Name", "Date", "Size", "Type"])
+            self.sort_rule_widget = SortRuleWidget(self)
+            self.sort_rule_widget.set_fields(self.FIELDS)
 
             # Connect sortingChanged signal
-            self.sort_rule_widget.sorting_changed.connect(self.on_sorting_changed)
+            self.sort_rule_widget.rules_applied.connect(self.on_rules_applied)
 
             # Set up the main window
             self.setCentralWidget(self.sort_rule_widget)
             self.setWindowTitle("Sort Rule Widget Example with Apply Button")
             self.resize(400, 300)
 
-        def on_sorting_changed(self, sorting_rules: List[Tuple[str, SortOrder]]) -> None:
+        def on_rules_applied(self, sorting_rules: List['SortRule']) -> None:
             """Handle the sortingChanged signal.
 
             Args:
@@ -378,8 +391,8 @@ if __name__ == "__main__":
             """
             # Handle the sorting logic here
             print("Sorting rules applied:")
-            for field, order in sorting_rules:
-                print(f"Field: {field}, Order: {order.name}")
+            for sorting_rule in sorting_rules:
+                print(sorting_rule)
 
     app = QtWidgets.QApplication(sys.argv)
     theme.set_theme(app)
