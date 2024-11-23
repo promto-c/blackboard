@@ -30,9 +30,6 @@ class SortRule:
     field: str
     order: SortOrder
 
-    def __str__(self):
-        return f"SortRule(field='{self.field}', order='{self.order.name}')"
-
     @property
     def __dict__(self) -> Dict[str, str]:
         return {
@@ -68,16 +65,16 @@ class SortRuleWidgetItem(QtWidgets.QListWidgetItem):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, sort_rule_widget: 'SortRuleWidget', field: str):
+    def __init__(self, rule_widget: 'SortRuleListWidget', field: str):
         """Initialize a SortRuleWidgetItem.
 
         Args:
-            sort_rule_widget (SortRuleWidget): The parent SortRuleWidget.
+            rule_widget (SortRuleListWidget): The parent SortRuleListWidget.
         """
-        super().__init__(sort_rule_widget)
+        super().__init__(rule_widget)
 
         # Store the arguments
-        self.sort_rule_widget = sort_rule_widget
+        self.rule_widget = rule_widget
         self._current_field = field
 
         # Initialize UI and connections
@@ -89,7 +86,7 @@ class SortRuleWidgetItem(QtWidgets.QListWidgetItem):
         """
         # Create Layouts
         # --------------
-        self.widget = QtWidgets.QWidget(self.sort_rule_widget)
+        self.widget = QtWidgets.QWidget(self.rule_widget)
         layout = QtWidgets.QHBoxLayout(self.widget)
         layout.setContentsMargins(4, 4, 4, 4)
 
@@ -137,13 +134,13 @@ class SortRuleWidgetItem(QtWidgets.QListWidgetItem):
         layout.addWidget(self.delete_button)
 
         self.setSizeHint(self.widget.sizeHint())
-        self.sort_rule_widget.setItemWidget(self, self.widget)
+        self.rule_widget.setItemWidget(self, self.widget)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
         self.field_dropdown.currentTextChanged.connect(self._update_used_field)
-        self.delete_button.clicked.connect(lambda: self.sort_rule_widget.remove_rule(self))
+        self.delete_button.clicked.connect(lambda: self.rule_widget.remove_rule(self))
 
     # Public Methods
     # --------------
@@ -186,10 +183,10 @@ class SortRuleWidgetItem(QtWidgets.QListWidgetItem):
         """
         old_field = self._current_field
         self._current_field = new_field
-        # Update the used_fields in sort_rule_widget
-        self.sort_rule_widget._update_used_fields(old_field, new_field)
+        # Update the used_fields in rule_widget
+        self.rule_widget._update_used_fields(old_field, new_field)
 
-class SortRuleWidget(QtWidgets.QListWidget):
+class SortRuleListWidget(QtWidgets.QListWidget):
     """Widget for managing sort rules.
 
     UI Wireframe:
@@ -198,18 +195,18 @@ class SortRuleWidget(QtWidgets.QListWidget):
         | ○ [ Field Dropdown ] [Asc][Desc] [x] |
         | ○ [ Field Dropdown ] [Asc][Desc] [x] |
         | ○ [ Field Dropdown ] [Asc][Desc] [x] |
-        |                                      |
-        | [(+) Add Sort][Clear]        [Apply] |
         +--------------------------------------+
     """
 
-    # Signal emitted when rules are applied
-    rules_applied = QtCore.Signal(list)
+    # Signals
+    rule_added = QtCore.Signal()
+    rule_removed = QtCore.Signal()
+    rules_cleared = QtCore.Signal()
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent: Optional[QtWidgets.QWidget] = None, fields: Optional[List[str]] = None):
-        """Initialize the SortRuleWidget.
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
+        """Initialize the SortRuleListWidget.
 
         Args:
             parent (Optional[QtWidgets.QWidget]): The parent widget.
@@ -217,45 +214,14 @@ class SortRuleWidget(QtWidgets.QListWidget):
         """
         super().__init__(parent, dragDropMode=QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
 
-        # Store the arguments
-        self._fields = fields or []
-
         # Initialize setup
         self.__init_attributes()
-        self.__init_ui()
-        self.__init_signal_connections()
 
     def __init_attributes(self):
         """Initialize the attributes.
         """
-        self._available_fields = self._fields.copy()
-
-    def __init_ui(self):
-        """Initialize the UI of the widget.
-        """
-        # Create Layouts
-        # --------------
-        self.overlay_layout = QtWidgets.QHBoxLayout(self)
-        self.overlay_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignBottom)
-
-        # Create Widgets
-        # --------------
-        self.add_button = QtWidgets.QPushButton(TablerQIcon.plus, "Add", self, enabled=bool(self._fields))
-        self.clear_button = QtWidgets.QPushButton(TablerQIcon.clear_all, '', self, toolTip="Clear All")
-        self.apply_button = QtWidgets.QPushButton("Apply", self)
-
-        # Add Widgets to Layouts
-        # ----------------------
-        self.overlay_layout.addWidget(self.add_button)
-        self.overlay_layout.addWidget(self.clear_button, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
-        self.overlay_layout.addWidget(self.apply_button, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
-
-    def __init_signal_connections(self):
-        """Initialize signal-slot connections.
-        """
-        self.add_button.clicked.connect(lambda: self.add_rule())
-        self.clear_button.clicked.connect(self.clear_all_rules)
-        self.apply_button.clicked.connect(self.apply)
+        self._fields: List[str] = []
+        self._available_fields: List[str] = []
 
     # Public Methods
     # --------------
@@ -269,7 +235,7 @@ class SortRuleWidget(QtWidgets.QListWidget):
             fields (List[str]): The list of fields.
         """
         self._fields = fields
-        self.clear_all_rules()
+        self.clear_rules()
 
     def add_rule(self, field: Optional[str] = None):
         """Add a new sort rule.
@@ -286,10 +252,7 @@ class SortRuleWidget(QtWidgets.QListWidget):
 
         # Update field_dropdowns in other items
         self._set_available_fields()
-
-        # Disable add_button if all fields are used
-        if not self._available_fields:
-            self.add_button.setDisabled(True)
+        self.rule_added.emit()
 
     def remove_rule(self, rule_item: 'SortRuleWidgetItem'):
         """Remove a sort rule item.
@@ -297,23 +260,20 @@ class SortRuleWidget(QtWidgets.QListWidget):
         Args:
             item_widget (SortRuleWidgetItem): The sort rule item to remove.
         """
-        # Remove selected field
+        # Remove selected field and remove item
         self._available_fields.append(rule_item.current_field)
-        # Remove item
         self.takeItem(self.row(rule_item))
 
         # Update field_dropdowns in other items
         self._set_available_fields()
+        self.rule_removed.emit()
 
-        # Enable add_button if necessary
-        self.add_button.setEnabled(True)
-
-    def clear_all_rules(self):
+    def clear_rules(self):
         """Clear all sort rules.
         """
         self.clear()
         self._available_fields = self._fields.copy()
-        self.add_button.setEnabled(bool(self._fields))
+        self.rules_cleared.emit()
 
     def get_rules(self) -> List['SortRule']:
         """Return the current sorting rules.
@@ -322,11 +282,6 @@ class SortRuleWidget(QtWidgets.QListWidget):
             List[Tuple[str, SortOrder]]: A list of tuples containing field names and sort orders.
         """
         return [item.get_rule() for item in self.get_items()]
-
-    def apply(self):
-        """Emit the rules_applied signal with current sorting rules.
-        """
-        self.rules_applied.emit(self.get_rules())
 
     # Class Properties
     # ----------------
@@ -337,6 +292,10 @@ class SortRuleWidget(QtWidgets.QListWidget):
     @fields.setter
     def fields(self, fields: List[str]):
         self.set_fields(fields)
+
+    @property
+    def available_fields(self) -> List[str]:
+        return self._available_fields
 
     # Private Methods
     # ---------------
@@ -358,6 +317,103 @@ class SortRuleWidget(QtWidgets.QListWidget):
 
         # Update field_dropdowns in SortRuleItems
         self._set_available_fields()
+
+class SortRuleWidget(QtWidgets.QWidget):
+    """Widget containing sort rules with a list and control buttons.
+
+    UI Layout:
+        +--------------------------------------+
+        | Sort By:                             |
+        |                                      |
+        | ○ [ Field Dropdown ] [Asc][Desc] [x] |
+        | ○ [ Field Dropdown ] [Asc][Desc] [x] |
+        | ○ [ Field Dropdown ] [Asc][Desc] [x] |
+        |                                      |
+        | [(+) Add][Clear]        [Apply]      |
+        +--------------------------------------+
+    """
+
+    LABEL = 'Sort By'
+
+    # Signal emitted when rules are applied
+    rules_applied = QtCore.Signal(list)
+
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
+        """Initialize the SortRuleWidget.
+
+        Args:
+            fields (List[str]): List of available fields for sorting.
+            parent: Parent widget.
+        """
+        super().__init__(parent)
+
+        # Initialize setup
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        # Create Layouts
+        # --------------
+        main_layout = QtWidgets.QVBoxLayout(self)
+        button_layout = QtWidgets.QHBoxLayout()
+
+        # Create Widgets
+        # --------------
+        # Label for the widget
+        self.label = QtWidgets.QLabel(self.LABEL, self)
+
+        # SortRuleListWidget for managing sort rules
+        self.sort_rule_list_widget = SortRuleListWidget(self)
+
+        # Buttons for adding, clearing, and applying rules
+        self.add_button = QtWidgets.QPushButton(TablerQIcon.plus, "Add", self, enabled=bool(self.fields))
+        self.clear_button = QtWidgets.QPushButton(TablerQIcon.clear_all, '', self, toolTip="Clear All")
+        self.apply_button = QtWidgets.QPushButton("Apply", self)
+
+        # Add Widgets to Layouts
+        # ----------------------
+        # Add buttons to the layout
+        button_layout.addWidget(self.add_button)
+        button_layout.addWidget(self.clear_button, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
+        button_layout.addWidget(self.apply_button, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+
+        # Add components to the main layout
+        main_layout.addWidget(self.label)
+        main_layout.addWidget(self.sort_rule_list_widget)
+        main_layout.addLayout(button_layout)
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
+        self.sort_rule_list_widget.rule_added.connect(lambda: self.add_button.setEnabled(bool(self.sort_rule_list_widget.available_fields)))
+        self.sort_rule_list_widget.rule_removed.connect(lambda: self.add_button.setEnabled(True))
+        self.sort_rule_list_widget.rules_cleared.connect(lambda: self.add_button.setEnabled(bool(self.fields)))
+
+        self.add_button.clicked.connect(lambda: self.sort_rule_list_widget.add_rule())
+        self.clear_button.clicked.connect(self.sort_rule_list_widget.clear_rules)
+        self.apply_button.clicked.connect(lambda: self.rules_applied.emit(self.sort_rule_list_widget.get_rules()))
+
+    # Public Methods
+    # --------------
+    def set_fields(self, fields: List[str]):
+        """Set the available fields for sorting.
+
+        Args:
+            fields (List[str]): The list of fields.
+        """
+        self.sort_rule_list_widget.set_fields(fields)
+
+    # Class Properties
+    # ----------------
+    @property
+    def fields(self) -> List[str]:
+        return self.sort_rule_list_widget.fields
+
+    @fields.setter
+    def fields(self, fields: List[str]):
+        self.set_fields(fields)
 
 
 if __name__ == "__main__":
