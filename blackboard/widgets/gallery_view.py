@@ -385,17 +385,17 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         # Group
         self.group_button = QtWidgets.QPushButton(TablerQIcon.layout_2, 'Group', self)
         self.group_button.setMinimumWidth(100)
-        self.group_menu = QtWidgets.QMenu(self.group_button)
-        self.group_button.setMenu(self.group_menu)
+        self.group_rule_menu = QtWidgets.QMenu(self.group_button)
+        self.group_button.setMenu(self.group_rule_menu)
 
         # Initialize GroupRuleWidget and add it to the group menu as a popup
         self.group_rule_widget = GroupRuleWidget(self)
         self.group_rule_widget.set_fields(fields)
 
         # Add the GroupRuleWidget to the group menu
-        group_widget_action = QtWidgets.QWidgetAction(self.group_menu)
+        group_widget_action = QtWidgets.QWidgetAction(self.group_rule_menu)
         group_widget_action.setDefaultWidget(self.group_rule_widget)
-        self.group_menu.addAction(group_widget_action)
+        self.group_rule_menu.addAction(group_widget_action)
 
         # Show/Hide Fields Button
         self.fields_action = QtGui.QAction(TablerQIcon.list, 'Show/Hide Fields')
@@ -409,7 +409,9 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         """Initialize signal-slot connections.
         """
         self.group_rule_widget.rules_applied.connect(self.gallery_widget.set_group_by_field)
-        self.group_rule_widget.rules_applied.connect(self.group_menu.hide)
+        self.group_rule_widget.rules_applied.connect(self.group_rule_menu.hide)
+        # self.sort_rule_widget.rules_applied.connect(self.gallery_widget...)
+        self.sort_rule_widget.rules_applied.connect(self.sort_rule_menu.hide)
         self.fields_action.triggered.connect(self.show_field_settings)
 
     def show_field_settings(self):
@@ -876,7 +878,7 @@ if __name__ == "__main__":
     theme.set_theme(app, 'dark')
 
     # Specify directory to load images
-    directory = 'C:/Users/promm/Downloads'
+    directory = ''
     image_files = get_image_paths(directory)
 
     # Example metadata for images
