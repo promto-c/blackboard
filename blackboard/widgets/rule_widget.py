@@ -16,7 +16,7 @@ from tablerqicon import TablerQIcon
 # -------------
 if TYPE_CHECKING:
     from blackboard.widgets.base_rule_widget import BaseRuleListWidget
-from blackboard.widgets.base_rule_widget import BaseRuleWidgetItem, BaseRuleWidget
+from blackboard.widgets.base_rule_widget import BaseRule, BaseRuleWidgetItem, BaseRuleWidget
 
 
 # Class Definitions
@@ -27,33 +27,11 @@ class SortOrder(Enum):
     ASCENDING = 'ASC'
     DESCENDING = 'DESC'
 
+
 @dataclass
-class SortRule:
-    field: str
-    order: SortOrder
+class SortRule(BaseRule):
+    order: SortOrder = SortOrder.ASCENDING
 
-    @property
-    def __dict__(self) -> Dict[str, str]:
-        return {
-            'field': self.field,
-            'order': self.order.name
-        }
-
-    def to_dict(self) -> Dict[str, str]:
-        return self.__dict__
-
-    @classmethod
-    def from_dict(cls, data: dict):
-        return cls(
-            field=data['field'],
-            order=SortOrder[data['order']]
-        )
-
-    def __post_init__(self):
-        if not isinstance(self.field, str):
-            raise TypeError("field must be a string")
-        if not isinstance(self.order, SortOrder):
-            raise TypeError("order must be a SortOrder instance")
 
 class SortRuleWidgetItem(BaseRuleWidgetItem):
     """Widget representing a single sort rule.
@@ -65,15 +43,20 @@ class SortRuleWidgetItem(BaseRuleWidgetItem):
         +--------------------------------------+
     """
 
+    RuleDataClass = SortRule
+    rule: SortRule
+
     # Initialization and Setup
     # ------------------------
-    def __init__(self, rule_list_widget: 'BaseRuleListWidget', field: str):
+    def __init__(self, rule_list_widget: 'BaseRuleListWidget', rule: 'SortRule'):
         """Initialize a SortRuleWidgetItem.
 
         Args:
             rule_list_widget (BaseRuleListWidget): The parent BaseRuleListWidget.
         """
-        super().__init__(rule_list_widget, field=field)
+        super().__init__(rule_list_widget, rule=rule)
+
+        self._rule = rule
 
         # Initialize UI and connections
         self.__init_ui()
@@ -86,11 +69,11 @@ class SortRuleWidgetItem(BaseRuleWidgetItem):
         # Ascending/Descending toggle buttons
         self.asc_button = QtWidgets.QToolButton(
             self.widget, icon=TablerQIcon.sort_ascending_letters, toolTip="Sort in ascending order",
-            cursor=QtCore.Qt.CursorShape.PointingHandCursor, checkable=True, checked=True,
+            cursor=QtCore.Qt.CursorShape.PointingHandCursor, checkable=True, checked=self._rule.order == SortOrder.ASCENDING,
         )
         self.desc_button = QtWidgets.QToolButton(
             self.widget, icon=TablerQIcon.sort_descending_letters, toolTip="Sort in descending order",
-            cursor=QtCore.Qt.CursorShape.PointingHandCursor, checkable=True,
+            cursor=QtCore.Qt.CursorShape.PointingHandCursor, checkable=True, checked=self._rule.order == SortOrder.DESCENDING,
         )
 
         # Toggle group behavior
@@ -111,10 +94,8 @@ class SortRuleWidgetItem(BaseRuleWidgetItem):
         Returns:
             SortRule: An instance containing the field and sort order.
         """
-        return SortRule(
-            field=self._current_field,
-            order=SortOrder.ASCENDING if self.asc_button.isChecked() else SortOrder.DESCENDING,
-        )
+        self._rule.order = self.asc_button.isChecked() and SortOrder.ASCENDING or SortOrder.DESCENDING
+        return super().get_rule()
 
 class SortRuleWidget(BaseRuleWidget):
     """Widget containing sort rules with a list and control buttons.
@@ -132,14 +113,8 @@ class SortRuleWidget(BaseRuleWidget):
     """
 
     LABEL = 'Sort By'
+    RuleWidgetItemClass = SortRuleWidgetItem
 
-    def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
-        """Initialize the SortRuleWidget.
-
-        Args:
-            parent: Parent widget.
-        """
-        super().__init__(parent, item_class=SortRuleWidgetItem)
 
 class GroupRuleWidget(BaseRuleWidget):
     """Widget containing sort rules with a list and control buttons.

@@ -1,17 +1,31 @@
+# Type Checking Imports
+# ---------------------
+from typing import TYPE_CHECKING, Any, Dict, List, Union
+
+# Standard Library Imports
+# ------------------------
 import sys
 import os
 import glob
-from typing import Any, Dict, Optional, List, Union
-from qtpy import QtCore, QtGui, QtWidgets
-from tablerqicon import TablerQIcon  # Importing TablerQIcon
-
-from blackboard.widgets.momentum_scroll_widget import MomentumScrollListWidget
-from blackboard.widgets.thumbnail_widget import ThumbnailWidget
-from submodules.blackboard.blackboard.widgets.rule_widget import SortRuleWidget, GroupRuleWidget
-
 import weakref
 
+# Third Party Imports
+# -------------------
+from qtpy import QtCore, QtGui, QtWidgets
+from tablerqicon import TablerQIcon
 
+# Local Imports
+# -------------
+if TYPE_CHECKING:
+    from blackboard.widgets.base_rule_widget import BaseRule
+from blackboard.widgets.momentum_scroll_widget import MomentumScrollListWidget
+from blackboard.widgets.thumbnail_widget import ThumbnailWidget
+from blackboard.widgets.graphic_effect import DropShadowEffect
+from submodules.blackboard.blackboard.widgets.rule_widget import SortRuleWidget, GroupRuleWidget
+
+
+# Class Definitions
+# -----------------
 class CloneWidget(QtCore.QObject):
     """Generic widget cloner that clones any widget, including nested child widgets, and synchronizes properties and signals."""
 
@@ -169,26 +183,6 @@ class CustomToolBar(QtWidgets.QToolBar):
         self.widgetForAction(action).setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
 
         return action
-
-
-def create_shadow_effect(blur_radius=30, x_offset=0, y_offset=4, color=QtGui.QColor(0, 0, 0, 150)):
-    """Create and return a shadow effect for the floating card or any widget.
-
-    Args:
-        blur_radius (int): The blur radius of the shadow.
-        x_offset (int): The horizontal offset of the shadow.
-        y_offset (int): The vertical offset of the shadow.
-        color (QColor): The color of the shadow effect.
-
-    Returns:
-        QGraphicsDropShadowEffect: Configured shadow effect.
-    """
-    shadow = QtWidgets.QGraphicsDropShadowEffect()
-    shadow.setBlurRadius(blur_radius)
-    shadow.setXOffset(x_offset)
-    shadow.setYOffset(y_offset)
-    shadow.setColor(color)
-    return shadow
 
 class GallerySectionHeader(QtWidgets.QWidget):
     """Section header widget for gallery groups."""
@@ -358,7 +352,10 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
     def __init__(self, parent: 'GalleryWidget'):
         super().__init__(parent)
         self.gallery_widget = parent
+
+        # Initialize setup
         self.__init_ui()
+        self.__init_signal_connections()
 
     def __init_ui(self):
         self.setIconSize(QtCore.QSize(22, 22))
@@ -394,7 +391,6 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         # Initialize GroupRuleWidget and add it to the group menu as a popup
         self.group_rule_widget = GroupRuleWidget(self)
         self.group_rule_widget.set_fields(fields)
-        self.group_rule_widget.rules_applied.connect(self.gallery_widget.set_group_by_field)
 
         # Add the GroupRuleWidget to the group menu
         group_widget_action = QtWidgets.QWidgetAction(self.group_menu)
@@ -409,6 +405,11 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         self.addWidget(self.sort_rule_button)
         self.addWidget(self.group_button)
 
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
+        self.group_rule_widget.rules_applied.connect(self.gallery_widget.set_group_by_field)
+        self.group_rule_widget.rules_applied.connect(self.group_menu.hide)
         self.fields_action.triggered.connect(self.show_field_settings)
 
     def show_field_settings(self):
@@ -610,17 +611,19 @@ class GalleryWidget(MomentumScrollListWidget):
 
         # Initialize and add toolbars
         self.general_tool_bar = QtWidgets.QToolBar(self)
-        self.utility_tool_bar = GalleryViewToolBar(self)
         self.manipulation_tool_bar = GalleryManipulationToolBar(self)
+        self.utility_tool_bar = GalleryViewToolBar(self)
 
-        self.utility_tool_bar.setGraphicsEffect(create_shadow_effect())
-        self.manipulation_tool_bar.setGraphicsEffect(create_shadow_effect())
+        self.manipulation_tool_bar.setGraphicsEffect(DropShadowEffect())
+        self.utility_tool_bar.setGraphicsEffect(DropShadowEffect())
 
         # Add toolbars
         self.overlay_layout.addWidget(self.general_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
         self.overlay_layout.addWidget(self.manipulation_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.overlay_layout.addWidget(self.utility_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
 
+    # Public Methods
+    # --------------
     def get_available_fields(self):
         """Return a list of available fields for grouping, sorting, and visibility."""
         return self.fields
@@ -634,10 +637,10 @@ class GalleryWidget(MomentumScrollListWidget):
         self.fields = fields
 
     # TODO: Implement to support multi grouping
-    def set_group_by_field(self, fields: List[str]):
+    def set_group_by_field(self, rules: List['BaseRule']):
         """Set the field by which to group the items and reorganize the view.
         """
-        field = fields[0]
+        field = rules[0].field
         self.group_by_field = field
         
         # Store the spacer item temporarily before clearing
@@ -682,40 +685,6 @@ class GalleryWidget(MomentumScrollListWidget):
         # Store the item for later re-grouping if needed
         self.list_items.append(datadict)
         self._insert_item_by_group(datadict)
-
-    def _insert_item_by_group(self, datadict):
-        """Insert the item into the gallery view by its group.
-        """
-        data_fields = datadict.get('data_fields', {})
-        image_path = datadict.get('image_path')
-
-        # Determine group name based on current grouping field
-        if self.group_by_field and self.group_by_field in data_fields:
-            group_name = data_fields[self.group_by_field]
-        else:
-            group_name = 'Ungrouped'
-
-        # Create a section header if the group doesn't exist
-        if group_name not in self.groups:
-            self.add_section_header(group_name)
-
-        # Find the position to insert the new item under the section header
-        group_data = self.groups[group_name]
-        insert_position = self.row(group_data['header']) + len(group_data['items']) + 1
-
-        # Create and configure the gallery item widget
-        gallery_item_widget = GalleryItemWidget(image_path, data_fields, self)
-
-        # Create the QListWidgetItem and set its size hint
-        item = QtWidgets.QListWidgetItem()
-        item.setSizeHint(gallery_item_widget.sizeHint())
-
-        # Insert the item after the section header and track it under its group
-        self.insertItem(insert_position, item)
-        self.setItemWidget(item, gallery_item_widget)
-
-        # Track the item under its group
-        group_data['items'].append(item)
 
     def add_section_header(self, group_name: str):
         """Add a section header for a new group."""
@@ -807,6 +776,58 @@ class GalleryWidget(MomentumScrollListWidget):
         # Refresh the view
         self.model().layoutChanged.emit()
 
+    # Private Methods
+    # ---------------
+    def _insert_item_by_group(self, datadict):
+        """Insert the item into the gallery view by its group.
+        """
+        data_fields = datadict.get('data_fields', {})
+        image_path = datadict.get('image_path')
+
+        # Determine group name based on current grouping field
+        if self.group_by_field and self.group_by_field in data_fields:
+            group_name = data_fields[self.group_by_field]
+        else:
+            group_name = 'Ungrouped'
+
+        # Create a section header if the group doesn't exist
+        if group_name not in self.groups:
+            self.add_section_header(group_name)
+
+        # Find the position to insert the new item under the section header
+        group_data = self.groups[group_name]
+        insert_position = self.row(group_data['header']) + len(group_data['items']) + 1
+
+        # Create and configure the gallery item widget
+        gallery_item_widget = GalleryItemWidget(image_path, data_fields, self)
+
+        # Create the QListWidgetItem and set its size hint
+        item = QtWidgets.QListWidgetItem()
+        item.setSizeHint(gallery_item_widget.sizeHint())
+
+        # Insert the item after the section header and track it under its group
+        self.insertItem(insert_position, item)
+        self.setItemWidget(item, gallery_item_widget)
+
+        # Track the item under its group
+        group_data['items'].append(item)
+
+    def _update_spacer_item_size(self):
+        # Get the viewport width and adjust for any margins or spacing
+        full_width = self.viewport().width() - 20  # Adjust as needed
+
+        # Set the size hint for the spacer item
+        self.spacer_item.setSizeHint(QtCore.QSize(full_width, self.TOP_MARGIN))  # Adjust height as needed
+
+    def _update_section_headers_size(self):
+        """Update the size of all section headers to match the viewport width."""
+        full_width = self.viewport().width() - 20
+        for group_name, group_data in self.groups.items():
+            header_item = group_data['header']
+            header_item.setSizeHint(QtCore.QSize(full_width, 32))  # Update the size hint
+
+    # Overridden Methods
+    # ------------------
     def setViewMode(self, mode: QtWidgets.QListWidget.ViewMode):
         """Override setViewMode to update item widgets."""
         super().setViewMode(mode)
@@ -821,22 +842,9 @@ class GalleryWidget(MomentumScrollListWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.update_spacer_item_size()
-        self.update_section_headers_size()
+        self._update_spacer_item_size()
+        self._update_section_headers_size()
 
-    def update_spacer_item_size(self):
-        # Get the viewport width and adjust for any margins or spacing
-        full_width = self.viewport().width() - 20  # Adjust as needed
-
-        # Set the size hint for the spacer item
-        self.spacer_item.setSizeHint(QtCore.QSize(full_width, self.TOP_MARGIN))  # Adjust height as needed
-
-    def update_section_headers_size(self):
-        """Update the size of all section headers to match the viewport width."""
-        full_width = self.viewport().width() - 20
-        for group_name, group_data in self.groups.items():
-            header_item = group_data['header']
-            header_item.setSizeHint(QtCore.QSize(full_width, 32))  # Update the size hint
 
 class GalleryWindow(QtWidgets.QWidget):
     def __init__(self):

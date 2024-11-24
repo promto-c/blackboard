@@ -1,6 +1,10 @@
 # Type Checking Imports
 # ---------------------
-from typing import List, Optional, Any, Type
+from typing import List, Optional, Any, Type, Dict, get_type_hints
+
+# Standard Library Imports
+# ------------------------
+from dataclasses import dataclass, replace, fields, is_dataclass, asdict
 
 # Third-Party Imports
 # -------------------
@@ -14,6 +18,51 @@ from blackboard.utils.list_utils import ListUtil
 
 # Class Definitions
 # -----------------
+@dataclass
+class BaseRule:
+    field: str
+
+    # Public Methods
+    # --------------
+    def copy(self) -> 'BaseRule':
+        return replace(self)
+
+    def to_dict(self, recursive: bool = True) -> Dict[str, Any]:
+        if recursive:
+            return asdict(self)
+        else:
+            return {f.name: getattr(self, f.name) for f in fields(self)}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], recursive: bool = True) -> 'BaseRule':
+        if recursive:
+            type_hints = get_type_hints(cls)
+            init_kwargs = {}
+            for f in fields(cls):
+                field_name = f.name
+                field_type = type_hints.get(field_name, Any)
+                field_value = data.get(field_name)
+
+                if is_dataclass(field_type) and isinstance(field_value, dict) and hasattr(field_type, 'from_dict'):
+                    init_kwargs[field_name] = field_type.from_dict(field_value)
+                else:
+                    init_kwargs[field_name] = field_value
+
+            return cls(**init_kwargs)
+        else:
+            return cls(**data)
+
+    # Special Methods
+    # ---------------
+    def __post_init__(self):
+        type_hints = get_type_hints(self.__class__)
+        for f in fields(self):
+            value = getattr(self, f.name)
+            expected_type = type_hints.get(f.name, Any)
+            if not isinstance(value, expected_type):
+                raise TypeError(f"'{f.name}' must be of type {expected_type.__name__}")
+
+
 class BaseRuleWidgetItem(QtWidgets.QListWidgetItem):
     """Base class for rule widget items with shared UI and an extendable placeholder layout.
 
@@ -24,7 +73,9 @@ class BaseRuleWidgetItem(QtWidgets.QListWidgetItem):
         +--------------------------------------+
     """
 
-    def __init__(self, rule_list_widget: 'BaseRuleListWidget', field: str):
+    RuleDataClass = BaseRule
+
+    def __init__(self, rule_list_widget: 'BaseRuleListWidget', rule: 'BaseRule'):
         """Initialize a SortRuleWidgetItem.
 
         Args:
@@ -35,9 +86,9 @@ class BaseRuleWidgetItem(QtWidgets.QListWidgetItem):
 
         # Store the arguments
         self.rule_list_widget = rule_list_widget
-        self._current_field = field
+        self._rule = rule
 
-        # Initialize UI and connections
+        # Initialize setup
         self.__init_ui()
         self.__init_signal_connections()
 
@@ -94,33 +145,29 @@ class BaseRuleWidgetItem(QtWidgets.QListWidgetItem):
         """
         self.field_dropdown.blockSignals(True)
         self.field_dropdown.clear()
-        self.field_dropdown.addItems([self._current_field] + fields)
+        self.field_dropdown.addItems([self._rule.field] + fields)
         self.field_dropdown.blockSignals(False)
 
     # Placeholder Methods for Subclasses
     # ----------------------------------
-    def get_rule(self) -> Any:
+    def get_rule(self) -> RuleDataClass:
         """Retrieve the rule details. Default implementation returns the current field.
         """
-        return self._current_field
+        return self._rule
 
     # Class Properties
     # ----------------
     @property
-    def current_field(self) -> str:
+    def rule(self) -> RuleDataClass:
         """Current field used by the rule widget."""
-        return self._current_field
-
-    @current_field.setter
-    def current_field(self, field: str):
-        self.field_dropdown.setCurrentText(field)
+        return self.get_rule()
 
     # Private Methods
     # ---------------
     def _update_used_field(self, new_field: str):
         """Handle field selection changes."""
-        old_field = self._current_field
-        self._current_field = new_field
+        old_field = self._rule.field
+        self._rule.field = new_field
         self.rule_list_widget._update_used_fields(old_field, new_field)
 
 
@@ -184,7 +231,7 @@ class BaseRuleListWidget(QtWidgets.QListWidget):
         self._fields = fields
         self.clear_rules()
 
-    def add_rule(self, field: Optional[str] = None):
+    def add_rule(self, rule: Optional['BaseRule'] = None):
         """Add a new rule to the list.
 
         Args:
@@ -193,21 +240,27 @@ class BaseRuleListWidget(QtWidgets.QListWidget):
         if not self._fields:
             return
 
-        if field and field not in self._fields:
-            raise ValueError(f"Field '{field}' is not valid. Available fields: {self._fields}")
-
-        if field is None:
+        if rule is None:
             if not self._available_fields:
                 raise ValueError("No available fields to add a new rule.")
             field = self._available_fields.pop(0)
+            rule = self._item_class.RuleDataClass(field=field)
         else:
+            field = rule.field
             self._available_fields.remove(field)
 
         # Create a rule item using the specified item class
-        _rule_item = self._item_class(rule_list_widget=self, field=field)
+        rule_item = self._item_class(rule_list_widget=self, rule=rule)
 
         self._set_available_fields()
         self.rule_added.emit()
+
+        return rule_item
+
+    def set_rules(self, rules: List['BaseRule']):
+        self.clear_rules()
+        for rule in rules:
+            self.add_rule(rule)
 
     def remove_rule(self, rule_item: 'BaseRuleWidgetItem'):
         """Remove a rule item from the list.
@@ -216,7 +269,7 @@ class BaseRuleListWidget(QtWidgets.QListWidget):
             rule_item (BaseRuleWidgetItem): The rule item to remove.
         """
         # Remove selected field and remove item
-        self._available_fields.append(rule_item.current_field)
+        self._available_fields.append(rule_item.rule.field)
         self.takeItem(self.row(rule_item))
 
         # Update field_dropdowns in other items
@@ -236,7 +289,7 @@ class BaseRuleListWidget(QtWidgets.QListWidget):
         Returns:
             List: A list of rules.
         """
-        return [item.get_rule() for item in self._get_items()]
+        return [item.rule.copy() for item in self._get_items()]
 
     # Class Properties
     # ----------------
@@ -287,23 +340,24 @@ class BaseRuleWidget(QtWidgets.QWidget):
         rules_applied (Signal): Emitted when rules are applied.
 
     UI Layout:
-        +--------------------------------------+
-        | [LABEL]:                             |
-        |                                      |
-        | ○ [ Field Dropdown ] [         ] [x] |
-        | ○ [ Field Dropdown ] [         ] [x] |
-        | ○ [ Field Dropdown ] [         ] [x] |
-        |                                      |
-        | [(+) Add][Clear]        [Apply]      |
-        +--------------------------------------+
+        +----------------------------------+
+        | < LABEL >                        |
+        |                                  |
+        | ○ [ Field Dropdown ] [ ... ] [x] |
+        | ○ [ Field Dropdown ] [ ... ] [x] |
+        | ○ [ Field Dropdown ] [ ... ] [x] |
+        |                                  |
+        | [(+) Add][Clear]        [Apply]  |
+        +----------------------------------+
     """
 
     LABEL = "Rules"
+    RuleWidgetItemClass = BaseRuleWidgetItem
 
     # Signal emitted when rules are applied
     rules_applied = QtCore.Signal(list)
 
-    def __init__(self, parent: Optional[QtWidgets.QWidget] = None, item_class: Type['BaseRuleWidgetItem'] = BaseRuleWidgetItem):
+    def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
         """Initialize the BaseRuleWidget.
 
         Args:
@@ -312,12 +366,16 @@ class BaseRuleWidget(QtWidgets.QWidget):
         """
         super().__init__(parent)
 
-        # Store the arguments
-        self._item_class = item_class
-
         # Initialize setup
+        self.__init_attributes()
         self.__init_ui()
         self.__init_signal_connections()
+
+    def __init_attributes(self):
+        """Initialize the attributes.
+        """
+        self._changes_applied = False
+        self._saved_state = []
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -333,7 +391,7 @@ class BaseRuleWidget(QtWidgets.QWidget):
         self.label = QtWidgets.QLabel(self.LABEL, self)
 
         # SortRuleListWidget for managing sort rules
-        self.rule_list_widget = BaseRuleListWidget(self, item_class=self._item_class)
+        self.rule_list_widget = BaseRuleListWidget(self, item_class=self.RuleWidgetItemClass)
 
         # Buttons for adding, clearing, and applying rules
         self.add_button = QtWidgets.QPushButton(TablerQIcon.plus, "Add", self, enabled=bool(self.fields))
@@ -361,7 +419,7 @@ class BaseRuleWidget(QtWidgets.QWidget):
 
         self.add_button.clicked.connect(lambda: self.rule_list_widget.add_rule())
         self.clear_button.clicked.connect(self.rule_list_widget.clear_rules)
-        self.apply_button.clicked.connect(lambda: self.rules_applied.emit(self.rule_list_widget.get_rules()))
+        self.apply_button.clicked.connect(self.apply)
 
     # Public Methods
     # --------------
@@ -373,6 +431,16 @@ class BaseRuleWidget(QtWidgets.QWidget):
         """
         self.rule_list_widget.set_fields(fields)
 
+    def save_state(self):
+        self._saved_state = self.rule_list_widget.get_rules()
+
+    def restore_state(self):
+        self.rule_list_widget.set_rules(self._saved_state)
+
+    def apply(self):
+        self._changes_applied = True
+        self.rules_applied.emit(self.rule_list_widget.get_rules())
+
     # Class Properties
     # ----------------
     @property
@@ -382,3 +450,15 @@ class BaseRuleWidget(QtWidgets.QWidget):
     @fields.setter
     def fields(self, fields: List[str]):
         self.set_fields(fields)
+
+    # Overridden Methods
+    # ------------------
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._changes_applied = False
+        self.save_state()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if not self._changes_applied:
+            self.restore_state()
