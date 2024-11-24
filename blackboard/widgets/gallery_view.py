@@ -7,7 +7,7 @@ from tablerqicon import TablerQIcon  # Importing TablerQIcon
 
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollListWidget
 from blackboard.widgets.thumbnail_widget import ThumbnailWidget
-from blackboard.widgets.sort_rule_widget import SortRuleWidget
+from submodules.blackboard.blackboard.widgets.rule_widget import SortRuleWidget, GroupRuleWidget
 
 import weakref
 
@@ -169,64 +169,6 @@ class CustomToolBar(QtWidgets.QToolBar):
         self.widgetForAction(action).setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
 
         return action
-
-class GroupRuleWidget(QtWidgets.QWidget):
-    """Widget for managing grouping by fields."""
-
-    # Signal emitted when a group-by column is selected
-    group_by_changed = QtCore.Signal(str)
-
-    def __init__(self, parent: Optional[QtWidgets.QWidget] = None, fields: Optional[List[str]] = None):
-        """Initialize the GroupRuleWidget.
-
-        Args:
-            parent (Optional[QtWidgets.QWidget]): The parent widget.
-            fields (Optional[List[str]]): The list of available fields for grouping.
-        """
-        super().__init__(parent)
-
-        # Store the fields for grouping
-        self.fields = fields or []
-
-        # Initialize UI
-        self.__init_ui()
-
-    def __init_ui(self):
-        """Initialize the UI of the GroupRuleWidget."""
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-
-        # Label
-        self.label = QtWidgets.QLabel("Group By:", self)
-        layout.addWidget(self.label)
-
-        # Field dropdown for group-by selection
-        self.field_dropdown = QtWidgets.QComboBox(self)
-        self.field_dropdown.addItems(self.fields)
-        self.field_dropdown.setToolTip("Select a field to group by")
-        layout.addWidget(self.field_dropdown)
-
-        # Apply button
-        self.apply_button = QtWidgets.QPushButton("Apply", self)
-        layout.addWidget(self.apply_button)
-
-        # Connect signal
-        self.apply_button.clicked.connect(self.emit_group_by_change)
-
-    def set_fields(self, fields: List[str]):
-        """Set the available fields for grouping.
-
-        Args:
-            fields (List[str]): The list of fields.
-        """
-        self.fields = fields
-        self.field_dropdown.clear()
-        self.field_dropdown.addItems(self.fields)
-
-    def emit_group_by_change(self):
-        """Emit the group_by_changed signal with the selected field."""
-        selected_field = self.field_dropdown.currentText()
-        self.group_by_changed.emit(selected_field)
 
 
 def create_shadow_effect(blur_radius=30, x_offset=0, y_offset=4, color=QtGui.QColor(0, 0, 0, 150)):
@@ -450,8 +392,9 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
         self.group_button.setMenu(self.group_menu)
 
         # Initialize GroupRuleWidget and add it to the group menu as a popup
-        self.group_rule_widget = GroupRuleWidget(self, fields=fields)
-        self.group_rule_widget.group_by_changed.connect(self.gallery_widget.set_group_by_field)
+        self.group_rule_widget = GroupRuleWidget(self)
+        self.group_rule_widget.set_fields(fields)
+        self.group_rule_widget.rules_applied.connect(self.gallery_widget.set_group_by_field)
 
         # Add the GroupRuleWidget to the group menu
         group_widget_action = QtWidgets.QWidgetAction(self.group_menu)
@@ -690,10 +633,12 @@ class GalleryWidget(MomentumScrollListWidget):
         """
         self.fields = fields
 
-    def set_group_by_field(self, field_name: str):
+    # TODO: Implement to support multi grouping
+    def set_group_by_field(self, fields: List[str]):
         """Set the field by which to group the items and reorganize the view.
         """
-        self.group_by_field = field_name
+        field = fields[0]
+        self.group_by_field = field
         
         # Store the spacer item temporarily before clearing
         spacer_item = self.takeItem(0) if self.spacer_item else None
