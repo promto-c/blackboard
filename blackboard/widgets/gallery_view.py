@@ -241,7 +241,53 @@ class GallerySectionHeader(QtWidgets.QWidget):
         icon = TablerQIcon.chevron_down if not self.collapsed else TablerQIcon.chevron_right
         self.icon_label.setPixmap(icon.pixmap(20, 20))
 
-class GalleryItemWidget(QtWidgets.QWidget):
+class GallerySectionItem(QtWidgets.QListWidgetItem):
+
+    HEIGHT=32
+
+    # Initialization and Setup
+    # ------------------------
+    def __init__(self, list_widget: 'GalleryWidget', group_name: str):
+        super().__init__(list_widget)
+
+        # Store the arguments
+        self.list_widget = list_widget
+        self.group_name = group_name
+
+        # Initialize setup
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        self.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
+
+        self.header_widget = GallerySectionHeader(self.group_name, self.list_widget)
+        self.list_widget.setItemWidget(self, self.header_widget)
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
+        # Connect to the viewport_resized signal
+        self.list_widget.viewport_resized.connect(self._update_size)
+
+    # Public Methods
+    # --------------
+    # TODO: Handle, add item to section
+    def add_item(self, item: QtWidgets.QListWidgetItem):
+        ...
+
+    # Private Methods
+    # ---------------
+    def _update_size(self):
+        """Update the size hint when the viewport is resized."""
+        new_width = self.listWidget().viewport().width() - 20
+        self.setSizeHint(QtCore.QSize(new_width, self.HEIGHT))
+
+class GalleryCard(QtWidgets.QWidget):
+
+    ViewMode = QtWidgets.QListWidget.ViewMode
 
     DEFAULT_SIZE = 150
 
@@ -262,6 +308,8 @@ class GalleryItemWidget(QtWidgets.QWidget):
         self._card_size = self.DEFAULT_SIZE
         self._view_mode = QtWidgets.QListWidget.ViewMode.IconMode
 
+        self.field_widgets: Dict[str, QtWidgets.QWidget] = {}
+
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
@@ -281,8 +329,7 @@ class GalleryItemWidget(QtWidgets.QWidget):
         # Form-like widget to show data fields
         self.form_widget = QtWidgets.QWidget(self)
         self.form_layout = QtWidgets.QVBoxLayout(self.form_widget)
-        
-        self.field_widgets = {}
+
         for field, value in self.data_fields.items():
             label = QtWidgets.QLabel(value)
             label.setToolTip(field)
@@ -291,6 +338,8 @@ class GalleryItemWidget(QtWidgets.QWidget):
 
         self.content_area.addWidget(self.thumbnail_widget)
         self.content_area.addWidget(self.form_widget)
+        self.content_area.setHandleWidth(0)
+        self.content_area.handle(1).setEnabled(False)
 
         # Add Widgets to Layouts
         # ----------------------
@@ -298,26 +347,16 @@ class GalleryItemWidget(QtWidgets.QWidget):
         layout.addWidget(self.content_area)
 
         self.set_view_mode()
-        self.lock_splitter_handle()
 
     def set_field_visibility(self, field, visible):
         """Set the visibility of a specific field."""
         if field in self.field_widgets:
             self.field_widgets[field].setVisible(visible)
 
-    def lock_splitter_handle(self):
-        # Set handle width to zero to make it invisible
-        self.content_area.setHandleWidth(0)
-
-        # Disable resizing interaction
-        for i in range(self.content_area.count()):
-            handle = self.content_area.handle(i)
-            handle.setEnabled(False)
-
     def set_card_size(self, size: int = DEFAULT_SIZE):
         self._card_size = size
         self.thumbnail_widget.setFixedSize(size, size)
-        if self._view_mode == QtWidgets.QListWidget.ViewMode.IconMode:
+        if self._view_mode == GalleryCard.ViewMode.IconMode:
             self.content_area.setMinimumHeight(0)
             self.content_area.setMaximumHeight(16777215)
             self.content_area.setFixedWidth(size)
@@ -326,16 +365,21 @@ class GalleryItemWidget(QtWidgets.QWidget):
             self.content_area.setMaximumWidth(16777215)
             self.content_area.setFixedHeight(size)
 
-    def set_view_mode(self, view_mode: QtWidgets.QListWidget.ViewMode = QtWidgets.QListWidget.ViewMode.IconMode):
+    def set_view_mode(self, view_mode: ViewMode = ViewMode.IconMode):
         """Adjust the layout based on the view mode."""
         self._view_mode = view_mode
-        if self._view_mode == QtWidgets.QListWidget.ViewMode.IconMode:
+        if self._view_mode == GalleryCard.ViewMode.IconMode:
             # Unset the fixed height
-            self.content_area.setOrientation(QtCore.Qt.Vertical)
+            self.content_area.setOrientation(QtCore.Qt.Orientation.Vertical)
         else:
-            self.content_area.setOrientation(QtCore.Qt.Horizontal)
+            self.content_area.setOrientation(QtCore.Qt.Orientation.Horizontal)
 
         self.set_card_size(self._card_size)
+
+class GalleryWidgetItem(QtWidgets.QListWidgetItem):
+
+    def __init__(self, gallery_widget: 'GalleryWidget'):
+        ...
 
 class InvisibleItemDelegate(QtWidgets.QStyledItemDelegate):
     def paint(self, painter, option, index):
@@ -567,6 +611,7 @@ class GalleryViewToolBar(CustomToolBar):
 
 class GalleryWidget(MomentumScrollListWidget):
 
+    viewport_resized = QtCore.Signal()
     TOP_MARGIN = 20
 
     def __init__(self, parent=None):
@@ -585,7 +630,7 @@ class GalleryWidget(MomentumScrollListWidget):
         self.groups = {}
         self.group_by_fields = []
         self.sort_rules = []
-        self.list_items: List[Dict[str, Any]] = []  # Store items to support re-grouping
+        self.data_dicts: List[Dict[str, Any]] = []  # Store items to support re-grouping
         self.image_field = None
 
     def __init_ui(self):
@@ -648,7 +693,7 @@ class GalleryWidget(MomentumScrollListWidget):
     def set_resize_mode(self, mode: 'ThumbnailWidget.ResizeMode' = ThumbnailWidget.ResizeMode.Fit):
         for list_item in self.iter_items():
             item_widget = self.itemWidget(list_item)
-            if not item_widget or not isinstance(item_widget, GalleryItemWidget):
+            if not item_widget or not isinstance(item_widget, GalleryCard):
                 continue
             item_widget.thumbnail_widget.set_resize_mode(mode)
 
@@ -670,7 +715,7 @@ class GalleryWidget(MomentumScrollListWidget):
             return
 
         # Store the item for later re-grouping if needed
-        self.list_items.append(datadict)
+        self.data_dicts.append(datadict)
         self._insert_item_by_group(datadict)
 
     def toggle_section(self, group_name, collapsed):
@@ -713,7 +758,7 @@ class GalleryWidget(MomentumScrollListWidget):
         """Set the size of gallery items based on the slider value."""
         for list_item in self.iter_items():
             item_widget = self.itemWidget(list_item)
-            if not item_widget or not isinstance(item_widget, GalleryItemWidget):
+            if not item_widget or not isinstance(item_widget, GalleryCard):
                 continue
             item_widget.set_card_size(size)
             list_item.setSizeHint(item_widget.sizeHint())
@@ -742,7 +787,7 @@ class GalleryWidget(MomentumScrollListWidget):
         # Update all GalleryItemWidgets to reflect the new visibility state
         for list_item in self.iter_items():
             item_widget = self.itemWidget(list_item)
-            if isinstance(item_widget, GalleryItemWidget):
+            if isinstance(item_widget, GalleryCard):
                 item_widget.set_field_visibility(field, visible)
 
         # Refresh the view
@@ -776,7 +821,7 @@ class GalleryWidget(MomentumScrollListWidget):
         self.groups = {}
 
         # Reorganize stored items according to grouping and sorting
-        items = self.list_items.copy()
+        items = self.data_dicts.copy()
 
         # Apply sorting
         if self.sort_rules:
@@ -795,6 +840,20 @@ class GalleryWidget(MomentumScrollListWidget):
         """
         image_path = data_fields.get(self.image_field)
 
+        if not self.group_by_fields:
+            # No grouping is set, add the item directly
+            gallery_item_widget = GalleryCard(image_path, data_fields, self)
+
+            # Create the QListWidgetItem and set its size hint
+            item = QtWidgets.QListWidgetItem()
+            item.setSizeHint(gallery_item_widget.sizeHint())
+
+            # Insert the item after the spacer_item
+            insert_position = self.count() + 1  # Adjust for spacer_item if necessary
+            self.insertItem(insert_position, item)
+            self.setItemWidget(item, gallery_item_widget)
+            return
+
         # Determine group name based on current grouping fields
         group_values = [str(data_fields.get(field, 'Ungrouped')) for field in self.group_by_fields]
         group_name = ' - '.join(group_values) if group_values else 'Ungrouped'
@@ -809,7 +868,7 @@ class GalleryWidget(MomentumScrollListWidget):
         insert_position = self.row(group_data['header_item']) + len(items) + 1
 
         # Create and configure the gallery item widget
-        gallery_item_widget = GalleryItemWidget(image_path, data_fields, self)
+        gallery_item_widget = GalleryCard(image_path, data_fields, self)
 
         # Create the QListWidgetItem and set its size hint
         item = QtWidgets.QListWidgetItem()
@@ -825,30 +884,15 @@ class GalleryWidget(MomentumScrollListWidget):
     def add_section_header(self, group_name):
         """Add a section header for a new group.
         """
-        header_widget = GallerySectionHeader(group_name, self)
-        header_item = QtWidgets.QListWidgetItem()
-        header_item.setSizeHint(QtCore.QSize(self.viewport().width() - 20, 40))
-        header_item.setFlags(QtCore.Qt.NoItemFlags)  # Make it non-selectable
-
-        self.addItem(header_item)
-        self.setItemWidget(header_item, header_widget)
+        header_item = GallerySectionItem(self, group_name)
 
         # Initialize the group with the header and an empty item list
         self.groups[group_name] = {'header_item': header_item, 'items': []}
 
     def _update_spacer_item_size(self):
-        # Get the viewport width and adjust for any margins or spacing
-        full_width = self.viewport().width() - 20  # Adjust as needed
-
         # Set the size hint for the spacer item
-        self.spacer_item.setSizeHint(QtCore.QSize(full_width, self.TOP_MARGIN))  # Adjust height as needed
-
-    def _update_section_headers_size(self):
-        """Update the size of all section headers to match the viewport width."""
         full_width = self.viewport().width() - 20
-        for group_data in self.groups.values():
-            header_item = group_data['header_item']
-            header_item.setSizeHint(QtCore.QSize(full_width, 32))  # Update the size hint
+        self.spacer_item.setSizeHint(QtCore.QSize(full_width, self.TOP_MARGIN))
 
     # Overridden Methods
     # ------------------
@@ -858,7 +902,7 @@ class GalleryWidget(MomentumScrollListWidget):
         # Update all item widgets to adjust their layout
         for list_item in self.iter_items():
             item_widget = self.itemWidget(list_item)
-            if not item_widget or not isinstance(item_widget, GalleryItemWidget):
+            if not item_widget or not isinstance(item_widget, GalleryCard):
                 continue
             item_widget.set_view_mode(mode)
             list_item.setSizeHint(item_widget.sizeHint())
@@ -866,7 +910,7 @@ class GalleryWidget(MomentumScrollListWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_spacer_item_size()
-        self._update_section_headers_size()
+        self.viewport_resized.emit()
 
     def clear(self):
         """Override the clear method to handle the spacer_item."""
