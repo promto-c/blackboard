@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollListWidget
 from blackboard.widgets.thumbnail_widget import ThumbnailWidget
 from blackboard.widgets.graphic_effect import DropShadowEffect
-from submodules.blackboard.blackboard.widgets.rule_widget import SortRuleWidget, GroupRuleWidget
+from submodules.blackboard.blackboard.widgets.rule_widget import SortRule, SortOrder, SortRuleWidget, GroupRuleWidget
 
 
 # Class Definitions
@@ -193,7 +193,7 @@ class GallerySectionHeader(QtWidgets.QWidget):
         self.gallery_widget = gallery_widget
         self.group_name = group_name
         self.collapsed = False
-        
+
         self.__init_ui()
 
     def __init_ui(self):
@@ -228,13 +228,14 @@ class GallerySectionHeader(QtWidgets.QWidget):
         """Handle mouse press events to toggle only on left-click."""
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self.toggle()
-        
+
         super().mousePressEvent(event)
 
     def toggle(self):
         """Toggle the collapse state of the section."""
         self.collapsed = not self.collapsed
         self.update_icon()
+        # Pass the group name to the gallery widget
         self.gallery_widget.toggle_section(self.group_name, self.collapsed)
 
     def update_icon(self):
@@ -408,9 +409,9 @@ class GalleryManipulationToolBar(QtWidgets.QToolBar):
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
-        self.group_rule_widget.rules_applied.connect(self.gallery_widget.set_group_by_field)
+        self.group_rule_widget.rules_applied.connect(self.gallery_widget.set_group_by_fields)
         self.group_rule_widget.rules_applied.connect(self.group_rule_menu.hide)
-        # self.sort_rule_widget.rules_applied.connect(self.gallery_widget...)
+        self.sort_rule_widget.rules_applied.connect(self.gallery_widget.set_sort_rules)
         self.sort_rule_widget.rules_applied.connect(self.sort_rule_menu.hide)
         self.fields_action.triggered.connect(self.show_field_settings)
 
@@ -584,12 +585,19 @@ class GalleryWidget(MomentumScrollListWidget):
         self.fields = []
         self.visible_fields = {}
         self.groups = {}
-        self.group_by_field = None
-        self.list_items: QtWidgets.QListWidgetItem = []  # Store items to support re-grouping
+        self.group_by_fields = []
+        self.sort_rules = []
+        self.list_items: List[Dict[str, Any]] = []  # Store items to support re-grouping
+        self.image_field = None
 
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
+        # Create the spacer item
+        self.spacer_item = QtWidgets.QListWidgetItem()
+        self.spacer_item.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
+        self.insertItem(0, self.spacer_item)
+
         self.setViewMode(QtWidgets.QListWidget.IconMode)
         self.setResizeMode(QtWidgets.QListWidget.Adjust)
         self.setMovement(QtWidgets.QListWidget.Movement.Static)
@@ -597,11 +605,6 @@ class GalleryWidget(MomentumScrollListWidget):
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-
-        # Create the spacer item
-        self.spacer_item = QtWidgets.QListWidgetItem()
-        self.spacer_item.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
-        self.insertItem(0, self.spacer_item)
 
         # Set the custom item delegate
         self.setItemDelegate(InvisibleItemDelegate(self))
@@ -626,59 +629,43 @@ class GalleryWidget(MomentumScrollListWidget):
 
     # Public Methods
     # --------------
+    def set_image_field(self, field_name):
+        """Set the field name that contains the image path or thumbnail."""
+        self.image_field = field_name
+
     def get_available_fields(self):
         """Return a list of available fields for grouping, sorting, and visibility."""
         return self.fields
 
-    def set_fields(self, fields):
-        """Set the available fields for grouping, sorting, and visibility.
-        
-        Args:
-            fields (list): A list of field names (strings) to be set as available fields.
-        """
-        self.fields = fields
+    def set_group_by_fields(self, rules: List['BaseRule']):
+        """Set the fields by which to group the items and reorganize the view."""
+        self.group_by_fields = [rule.field for rule in rules]
+        self._reorganize_items()
 
-    # TODO: Implement to support multi grouping
-    def set_group_by_field(self, rules: List['BaseRule']):
-        """Set the field by which to group the items and reorganize the view.
-        """
-        field = rules[0].field
-        self.group_by_field = field
-        
-        # Store the spacer item temporarily before clearing
-        spacer_item = self.takeItem(0) if self.spacer_item else None
-
-        # Clear all items in the gallery
-        self.clear()
-        self.groups = {}
-
-        # Re-add the spacer item if it was successfully stored
-        if spacer_item:
-            self.insertItem(0, spacer_item)
-
-        # Reorganize stored items according to the new group field
-        for item_data in self.list_items:
-            self._insert_item_by_group(item_data)
+    def set_sort_rules(self, rules: List['SortRule']):
+        """Set the sorting rules and re-sort the items."""
+        self.sort_rules = rules
+        self._reorganize_items()
 
     def set_resize_mode(self, mode: 'ThumbnailWidget.ResizeMode' = ThumbnailWidget.ResizeMode.Fit):
-        for index in range(self.count()):
-            list_item = self.item(index)
+        for list_item in self.iter_items():
             item_widget = self.itemWidget(list_item)
             if not item_widget or not isinstance(item_widget, GalleryItemWidget):
                 continue
             item_widget.thumbnail_widget.set_resize_mode(mode)
 
-    def add_item(self, datadict):
+    def add_item(self, datadict: Dict[str, Any]):
         """Add an item to the gallery and store it for future grouping.
 
         Args:
             datadict (dict): A dictionary containing the data for the item.
-                Expected keys:
-                    - 'image_path': Path to the image file.
-                    - 'data_fields': A dictionary of field names and values.
+                Expected to include the image path field and other data fields.
         """
-        image_path = datadict.get('image_path')
-        data_fields = datadict.get('data_fields', {})
+        if not self.image_field:
+            print("Image field is not set. Use set_image_field(field_name) to set the image field.")
+            return
+
+        image_path = datadict.get(self.image_field)
 
         if not image_path or not os.path.exists(image_path):
             print(f"Image path '{image_path}' is invalid or does not exist.")
@@ -688,20 +675,7 @@ class GalleryWidget(MomentumScrollListWidget):
         self.list_items.append(datadict)
         self._insert_item_by_group(datadict)
 
-    def add_section_header(self, group_name: str):
-        """Add a section header for a new group."""
-        header_widget = GallerySectionHeader(group_name, self)
-        header_item = QtWidgets.QListWidgetItem()
-        header_item.setSizeHint(QtCore.QSize(self.viewport().width() - 20, 40))
-        header_item.setFlags(QtCore.Qt.NoItemFlags)  # Make it non-selectable
-
-        self.addItem(header_item)
-        self.setItemWidget(header_item, header_widget)
-
-        # Initialize the group with the header and an empty item list
-        self.groups[group_name] = {'header': header_item, 'items': []}
-
-    def toggle_section(self, group_name: str, collapsed: bool):
+    def toggle_section(self, group_name, collapsed):
         """Show or hide items under the specified section."""
         if group_name not in self.groups:
             return
@@ -739,8 +713,7 @@ class GalleryWidget(MomentumScrollListWidget):
 
     def set_card_size(self, size):
         """Set the size of gallery items based on the slider value."""
-        for index in range(self.count()):
-            list_item = self.item(index)
+        for list_item in self.iter_items():
             item_widget = self.itemWidget(list_item)
             if not item_widget or not isinstance(item_widget, GalleryItemWidget):
                 continue
@@ -752,7 +725,7 @@ class GalleryWidget(MomentumScrollListWidget):
 
     def set_fields(self, fields):
         """Set the available fields for grouping, sorting, and visibility.
-        
+
         Args:
             fields (list): A list of field names (strings) to be set as available fields.
         """
@@ -769,8 +742,7 @@ class GalleryWidget(MomentumScrollListWidget):
         self.visible_fields[field] = visible
 
         # Update all GalleryItemWidgets to reflect the new visibility state
-        for index in range(self.count()):
-            list_item = self.item(index)
+        for list_item in self.iter_items():
             item_widget = self.itemWidget(list_item)
             if isinstance(item_widget, GalleryItemWidget):
                 item_widget.set_field_visibility(field, visible)
@@ -778,19 +750,56 @@ class GalleryWidget(MomentumScrollListWidget):
         # Refresh the view
         self.model().layoutChanged.emit()
 
+    # Iterator over items excluding spacer_item
+    def iter_items(self):
+        """Iterator over items excluding spacer_item."""
+        for index in range(self.count()):
+            list_item = self.item(index)
+            yield list_item
+
     # Private Methods
     # ---------------
-    def _insert_item_by_group(self, datadict):
+    def _sort_value(self, value):
+        """Convert the value to a sortable type."""
+        if value is None:
+            return ''  # Sort None values as empty strings
+        if isinstance(value, str):
+            # Try to convert strings to numbers if possible
+            try:
+                return float(value)
+            except ValueError:
+                return value.lower()  # For case-insensitive sorting
+        return value
+
+    def _reorganize_items(self):
+        """Reorganize items based on current grouping and sorting rules."""
+        # Clear all items in the gallery
+        self.clear()
+        self.groups = {}
+
+        # Reorganize stored items according to grouping and sorting
+        items = self.list_items.copy()
+
+        # Apply sorting
+        if self.sort_rules:
+            # Sort the items starting from the last sort field
+            for rule in reversed(self.sort_rules):
+                field = rule.field
+                reverse = rule.order == SortOrder.DESCENDING
+                items.sort(key=lambda item: self._sort_value(item.get(field, None)), reverse=reverse)
+
+        # Re-insert items considering grouping
+        for item_data in items:
+            self._insert_item_by_group(item_data)
+
+    def _insert_item_by_group(self, data_fields):
         """Insert the item into the gallery view by its group.
         """
-        data_fields = datadict.get('data_fields', {})
-        image_path = datadict.get('image_path')
+        image_path = data_fields.get(self.image_field)
 
-        # Determine group name based on current grouping field
-        if self.group_by_field and self.group_by_field in data_fields:
-            group_name = data_fields[self.group_by_field]
-        else:
-            group_name = 'Ungrouped'
+        # Determine group name based on current grouping fields
+        group_values = [str(data_fields.get(field, 'Ungrouped')) for field in self.group_by_fields]
+        group_name = ' - '.join(group_values) if group_values else 'Ungrouped'
 
         # Create a section header if the group doesn't exist
         if group_name not in self.groups:
@@ -798,7 +807,8 @@ class GalleryWidget(MomentumScrollListWidget):
 
         # Find the position to insert the new item under the section header
         group_data = self.groups[group_name]
-        insert_position = self.row(group_data['header']) + len(group_data['items']) + 1
+        items = group_data['items']
+        insert_position = self.row(group_data['header_item']) + len(items) + 1
 
         # Create and configure the gallery item widget
         gallery_item_widget = GalleryItemWidget(image_path, data_fields, self)
@@ -814,6 +824,20 @@ class GalleryWidget(MomentumScrollListWidget):
         # Track the item under its group
         group_data['items'].append(item)
 
+    def add_section_header(self, group_name):
+        """Add a section header for a new group.
+        """
+        header_widget = GallerySectionHeader(group_name, self)
+        header_item = QtWidgets.QListWidgetItem()
+        header_item.setSizeHint(QtCore.QSize(self.viewport().width() - 20, 40))
+        header_item.setFlags(QtCore.Qt.NoItemFlags)  # Make it non-selectable
+
+        self.addItem(header_item)
+        self.setItemWidget(header_item, header_widget)
+
+        # Initialize the group with the header and an empty item list
+        self.groups[group_name] = {'header_item': header_item, 'items': []}
+
     def _update_spacer_item_size(self):
         # Get the viewport width and adjust for any margins or spacing
         full_width = self.viewport().width() - 20  # Adjust as needed
@@ -824,8 +848,8 @@ class GalleryWidget(MomentumScrollListWidget):
     def _update_section_headers_size(self):
         """Update the size of all section headers to match the viewport width."""
         full_width = self.viewport().width() - 20
-        for group_name, group_data in self.groups.items():
-            header_item = group_data['header']
+        for group_data in self.groups.values():
+            header_item = group_data['header_item']
             header_item.setSizeHint(QtCore.QSize(full_width, 32))  # Update the size hint
 
     # Overridden Methods
@@ -834,8 +858,7 @@ class GalleryWidget(MomentumScrollListWidget):
         """Override setViewMode to update item widgets."""
         super().setViewMode(mode)
         # Update all item widgets to adjust their layout
-        for index in range(self.count()):
-            list_item = self.item(index)
+        for list_item in self.iter_items():
             item_widget = self.itemWidget(list_item)
             if not item_widget or not isinstance(item_widget, GalleryItemWidget):
                 continue
@@ -846,6 +869,42 @@ class GalleryWidget(MomentumScrollListWidget):
         super().resizeEvent(event)
         self._update_spacer_item_size()
         self._update_section_headers_size()
+
+    def clear(self):
+        """Override the clear method to handle the spacer_item."""
+        # Store the spacer item temporarily before clearing
+        if self.spacer_item:
+            super().takeItem(0)
+        # Clear all items
+        super().clear()
+        # Re-insert the spacer_item at position 0
+        if self.spacer_item:
+            super().insertItem(0, self.spacer_item)
+
+    def count(self):
+        """Override count to exclude spacer_item."""
+        total_count = super().count()
+        return total_count - 1 if self.spacer_item else total_count
+
+    def item(self, row):
+        """Override item to adjust for spacer_item at index 0."""
+        adjusted_row = row + 1 if self.spacer_item else row
+        return super().item(adjusted_row)
+
+    def row(self, item):
+        """Override row to adjust for spacer_item at index 0."""
+        row = super().row(item)
+        return row - 1 if self.spacer_item and row > 0 else 0
+
+    def takeItem(self, row):
+        """Override takeItem to adjust for spacer_item at index 0."""
+        adjusted_row = row + 1 if self.spacer_item else row
+        return super().takeItem(adjusted_row)
+
+    def insertItem(self, row, item):
+        """Override insertItem to adjust for spacer_item at index 0."""
+        adjusted_row = row + 1 if self.spacer_item else row
+        super().insertItem(adjusted_row, item)
 
 
 class GalleryWindow(QtWidgets.QWidget):
@@ -884,178 +943,149 @@ if __name__ == "__main__":
     # Example metadata for images
     vfx_shot_metadata = [
         {
-            'image_path': image_files[0],
-            'data_fields': {
-                "Shot Name": "shot_001",
-                "Description": "Explosion in the background with debris flying.",
-                "Frame Range": "1001-1100",
-                "Artist": "Alice Smith",
-                "Shot Type": "FX",
-                "Status": "In Progress",
-            }
+            'Thumbnail': image_files[0],
+            "Shot Name": "shot_001",
+            "Description": "Explosion in the background with debris flying.",
+            "Frame Range": "1001-1100",
+            "Artist": "Alice Smith",
+            "Shot Type": "FX",
+            "Status": "In Progress",
         },
         {
-            'image_path': image_files[1],
-            'data_fields': {
-                "Shot Name": "shot_002",
-                "Description": "Character enters the frame from the left.",
-                "Frame Range": "1050-1150",
-                "Artist": "Bob Johnson",
-                "Shot Type": "Compositing",
-                "Status": "Complete",
-            }
+            'Thumbnail': image_files[1],
+            "Shot Name": "shot_002",
+            "Description": "Character enters the frame from the left.",
+            "Frame Range": "1050-1150",
+            "Artist": "Bob Johnson",
+            "Shot Type": "Compositing",
+            "Status": "Complete",
         },
         {
-            'image_path': image_files[2],
-            'data_fields': {
-                "Shot Name": "shot_003",
-                "Description": "Background matte painting integration.",
-                "Frame Range": "1200-1300",
-                "Artist": "Alice Smith",
-                "Shot Type": "Matte Painting",
-                "Status": "Review",
-            }
+            'Thumbnail': image_files[2],
+            "Shot Name": "shot_003",
+            "Description": "Background matte painting integration.",
+            "Frame Range": "1200-1300",
+            "Artist": "Alice Smith",
+            "Shot Type": "Matte Painting",
+            "Status": "Review",
         },
         {
-            'image_path': image_files[3],
-            'data_fields': {
-                "Shot Name": "shot_004",
-                "Description": "Fire effect on building collapse.",
-                "Frame Range": "1150-1250",
-                "Artist": "Charlie Davis",
-                "Shot Type": "FX",
-                "Status": "Pending",
-            }
+            'Thumbnail': image_files[3],
+            "Shot Name": "shot_004",
+            "Description": "Fire effect on building collapse.",
+            "Frame Range": "1150-1250",
+            "Artist": "Charlie Davis",
+            "Shot Type": "FX",
+            "Status": "Pending",
         },
         {
-            'image_path': image_files[4],
-            'data_fields': {
-                "Shot Name": "shot_005",
-                "Description": "Character close-up with lighting adjustments.",
-                "Frame Range": "1100-1200",
-                "Artist": "Bob Johnson",
-                "Shot Type": "Compositing",
-                "Status": "In Progress",
-            }
+            'Thumbnail': image_files[4],
+            "Shot Name": "shot_005",
+            "Description": "Character close-up with lighting adjustments.",
+            "Frame Range": "1100-1200",
+            "Artist": "Bob Johnson",
+            "Shot Type": "Compositing",
+            "Status": "In Progress",
         },
         {
-            'image_path': image_files[5],
-            'data_fields': {
-                "Shot Name": "shot_006",
-                "Description": "CG assets integrated into live-action plate.",
-                "Frame Range": "1300-1400",
-                "Artist": "Charlie Davis",
-                "Shot Type": "Integration",
-                "Status": "Complete",
-            }
+            'Thumbnail': image_files[5],
+            "Shot Name": "shot_006",
+            "Description": "CG assets integrated into live-action plate.",
+            "Frame Range": "1300-1400",
+            "Artist": "Charlie Davis",
+            "Shot Type": "Integration",
+            "Status": "Complete",
         },
         {
-            'image_path': image_files[6],
-            'data_fields': {
-                "Shot Name": "shot_007",
-                "Description": "Water simulation running through the street.",
-                "Frame Range": "1400-1500",
-                "Artist": "Alice Smith",
-                "Shot Type": "FX",
-                "Status": "In Progress",
-            }
+            'Thumbnail': image_files[6],
+            "Shot Name": "shot_007",
+            "Description": "Water simulation running through the street.",
+            "Frame Range": "1400-1500",
+            "Artist": "Alice Smith",
+            "Shot Type": "FX",
+            "Status": "In Progress",
         },
         {
-            'image_path': image_files[7],
-            'data_fields': {
-                "Shot Name": "shot_008",
-                "Description": "Sky replacement with volumetric clouds.",
-                "Frame Range": "1250-1350",
-                "Artist": "Bob Johnson",
-                "Shot Type": "Matte Painting",
-                "Status": "Review",
-            }
+            'Thumbnail': image_files[7],
+            "Shot Name": "shot_008",
+            "Description": "Sky replacement with volumetric clouds.",
+            "Frame Range": "1250-1350",
+            "Artist": "Bob Johnson",
+            "Shot Type": "Matte Painting",
+            "Status": "Review",
         },
         {
-            'image_path': image_files[8],
-            'data_fields': {
-                "Shot Name": "shot_009",
-                "Description": "Car chase with motion blur effects.",
-                "Frame Range": "1500-1600",
-                "Artist": "Charlie Davis",
-                "Shot Type": "Compositing",
-                "Status": "Pending",
-            }
+            'Thumbnail': image_files[8],
+            "Shot Name": "shot_009",
+            "Description": "Car chase with motion blur effects.",
+            "Frame Range": "1500-1600",
+            "Artist": "Charlie Davis",
+            "Shot Type": "Compositing",
+            "Status": "Pending",
         },
         {
-            'image_path': image_files[9],
-            'data_fields': {
-                "Shot Name": "shot_010",
-                "Description": "Day-to-night color grading transformation.",
-                "Frame Range": "1601-1700",
-                "Artist": "Alice Smith",
-                "Shot Type": "Color Grading",
-                "Status": "In Progress",
-            }
+            'Thumbnail': image_files[9],
+            "Shot Name": "shot_010",
+            "Description": "Day-to-night color grading transformation.",
+            "Frame Range": "1601-1700",
+            "Artist": "Alice Smith",
+            "Shot Type": "Color Grading",
+            "Status": "In Progress",
         },
         {
-            'image_path': image_files[10],
-            'data_fields': {
-                "Shot Name": "shot_011",
-                "Description": "Explosion aftermath with dust and smoke simulation.",
-                "Frame Range": "1700-1800",
-                "Artist": "Bob Johnson",
-                "Shot Type": "FX",
-                "Status": "Pending",
-            }
+            'Thumbnail': image_files[10],
+            "Shot Name": "shot_011",
+            "Description": "Explosion aftermath with dust and smoke simulation.",
+            "Frame Range": "1700-1800",
+            "Artist": "Bob Johnson",
+            "Shot Type": "FX",
+            "Status": "Pending",
         },
         {
-            'image_path': image_files[11],
-            'data_fields': {
-                "Shot Name": "shot_012",
-                "Description": "Green screen replacement with futuristic cityscape.",
-                "Frame Range": "1801-1900",
-                "Artist": "Charlie Davis",
-                "Shot Type": "Compositing",
-                "Status": "Complete",
-            }
+            'Thumbnail': image_files[11],
+            "Shot Name": "shot_012",
+            "Description": "Green screen replacement with futuristic cityscape.",
+            "Frame Range": "1801-1900",
+            "Artist": "Charlie Davis",
+            "Shot Type": "Compositing",
+            "Status": "Complete",
         },
         {
-            'image_path': image_files[12],
-            'data_fields': {
-                "Shot Name": "shot_013",
-                "Description": "Spaceship takeoff with realistic exhaust flames.",
-                "Frame Range": "1900-2000",
-                "Artist": "Alice Smith",
-                "Shot Type": "FX",
-                "Status": "In Progress",
-            }
+            'Thumbnail': image_files[12],
+            "Shot Name": "shot_013",
+            "Description": "Spaceship takeoff with realistic exhaust flames.",
+            "Frame Range": "1900-2000",
+            "Artist": "Alice Smith",
+            "Shot Type": "FX",
+            "Status": "In Progress",
         },
         {
-            'image_path': image_files[13],
-            'data_fields': {
-                "Shot Name": "shot_014",
-                "Description": "Character shadow enhancement for evening scene.",
-                "Frame Range": "2001-2100",
-                "Artist": "Bob Johnson",
-                "Shot Type": "Compositing",
-                "Status": "Review",
-            }
+            'Thumbnail': image_files[13],
+            "Shot Name": "shot_014",
+            "Description": "Character shadow enhancement for evening scene.",
+            "Frame Range": "2001-2100",
+            "Artist": "Bob Johnson",
+            "Shot Type": "Compositing",
+            "Status": "Review",
         },
         {
-            'image_path': image_files[14],
-            'data_fields': {
-                "Shot Name": "shot_015",
-                "Description": "CG building destruction with camera shake effect.",
-                "Frame Range": "2101-2200",
-                "Artist": "Charlie Davis",
-                "Shot Type": "FX",
-                "Status": "Pending",
-            }
+            'Thumbnail': image_files[14],
+            "Shot Name": "shot_015",
+            "Description": "CG building destruction with camera shake effect.",
+            "Frame Range": "2101-2200",
+            "Artist": "Charlie Davis",
+            "Shot Type": "FX",
+            "Status": "Pending",
         },
     ]
-
 
     # Initialize and show the gallery window
     window = GalleryWindow()
     # Set available fields dynamically
     fields = ["Artist", "Shot Type", "Status", "Shot Name", "Frame Range", "Date"]
     window.gallery_view_widget.set_fields(fields)
+    # Set the field that contains the image path
+    window.gallery_view_widget.set_image_field('Thumbnail')
     
     # Add items to the gallery based on metadata
     for metadata in vfx_shot_metadata:
