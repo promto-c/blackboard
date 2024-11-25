@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, Any, Dict, List, Union
+from typing import Any, Dict, List, Union
 
 # Standard Library Imports
 # ------------------------
@@ -16,12 +16,10 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-if TYPE_CHECKING:
-    from blackboard.widgets.base_rule_widget import BaseRule
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollListWidget
 from blackboard.widgets.thumbnail_widget import ThumbnailWidget
 from blackboard.widgets.graphic_effect import DropShadowEffect
-from submodules.blackboard.blackboard.widgets.rule_widget import SortRule, SortOrder, SortRuleWidget, GroupRuleWidget
+from submodules.blackboard.blackboard.widgets.rule_widget import SortRuleWidget, GroupRuleWidget
 
 
 # Class Definitions
@@ -637,12 +635,12 @@ class GalleryWidget(MomentumScrollListWidget):
         """Return a list of available fields for grouping, sorting, and visibility."""
         return self.fields
 
-    def set_group_by_fields(self, rules: List['BaseRule']):
+    def set_group_by_fields(self, rules: List['GroupRuleWidget.GroupRule']):
         """Set the fields by which to group the items and reorganize the view."""
         self.group_by_fields = [rule.field for rule in rules]
         self._reorganize_items()
 
-    def set_sort_rules(self, rules: List['SortRule']):
+    def set_sort_rules(self, rules: List['SortRuleWidget.SortRule']):
         """Set the sorting rules and re-sort the items."""
         self.sort_rules = rules
         self._reorganize_items()
@@ -785,7 +783,7 @@ class GalleryWidget(MomentumScrollListWidget):
             # Sort the items starting from the last sort field
             for rule in reversed(self.sort_rules):
                 field = rule.field
-                reverse = rule.order == SortOrder.DESCENDING
+                reverse = rule.order == SortRuleWidget.SortOrder.DESCENDING
                 items.sort(key=lambda item: self._sort_value(item.get(field, None)), reverse=reverse)
 
         # Re-insert items considering grouping

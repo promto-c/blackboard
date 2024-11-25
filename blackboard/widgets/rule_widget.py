@@ -114,6 +114,8 @@ class SortRuleWidget(BaseRuleWidget):
 
     LABEL = 'Sort By'
     RuleWidgetItemClass = SortRuleWidgetItem
+    SortOrder = SortOrder
+    SortRule = SortRule
 
 
 class GroupRuleWidget(BaseRuleWidget):
@@ -132,6 +134,7 @@ class GroupRuleWidget(BaseRuleWidget):
     """
 
     LABEL = 'Group By'
+    GroupRule = BaseRule
 
 
 if __name__ == "__main__":
