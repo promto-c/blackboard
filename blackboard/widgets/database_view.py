@@ -739,7 +739,7 @@ class DatabaseViewWidget(DataViewWidget):
             return
 
         # Determine the current table based on the selected column's header
-        tree_column_name = self.tree_widget.column_names[column_index]
+        tree_column_name = self.tree_widget.fields[column_index]
 
         # TODO: Store relation path in header item to be extract from item directly
         # Check if the column header includes a related table
@@ -927,7 +927,7 @@ class DatabaseViewWidget(DataViewWidget):
         """
         menu = QtWidgets.QMenu(self)
 
-        for column in self.tree_widget.column_names:
+        for column in self.tree_widget.fields:
             # Only add columns to the menu that don't already have an active filter
             if column not in self._visible_filter_columns:
                 action = menu.addAction(column)
@@ -995,7 +995,7 @@ class DatabaseViewWidget(DataViewWidget):
             local_field (str): The foreign key field in the current table.
             referenced_field (str): The primary key field in the related table.
         """
-        current_column_names = self.tree_widget.column_names.copy()
+        current_column_names = self.tree_widget.fields.copy()
 
         # Check if the related column header already exists
         target_column_name = f"{referenced_table}.{display_field}"
@@ -1032,7 +1032,7 @@ class DatabaseViewWidget(DataViewWidget):
             display_field (str): The field in the related table to display.
             m2m_field (ManyToManyField): The ManyToManyField object containing information about the relationship.
         """
-        current_column_names = self.tree_widget.column_names.copy()
+        current_column_names = self.tree_widget.fields.copy()
 
         # Check if the related column header already exists
         if display_column_label not in current_column_names:

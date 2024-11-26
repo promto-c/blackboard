@@ -269,11 +269,11 @@ class ColumnManagementWidget(QtWidgets.QTreeWidget):
         """
         self.clear()
 
-        if not self.tree_widget.column_names:
+        if not self.tree_widget.fields:
             return
 
         logical_indexes = [self.tree_widget.get_column_logical_index(i) for i in range(self.tree_widget.columnCount())]
-        header_names = [self.tree_widget.column_names[i] for i in logical_indexes]
+        header_names = [self.tree_widget.fields[i] for i in logical_indexes]
 
         self.addItems(header_names)
 
@@ -420,7 +420,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     """A QTreeWidget subclass that displays data in a tree structure with the ability to group data by a specific column.
 
     Attributes:
-        column_names (List[str]): The list of column names to be displayed in the tree widget.
+        fields (List[str]): The list of column names to be displayed in the tree widget.
         groups (Dict[str, TreeWidgetItem]): A dictionary mapping group names to their tree widget items.
     """
     # Default value
@@ -450,7 +450,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # Attributes
         # ----------
         # Store the current grouped column name
-        self.column_names: List[str] = []
+        self.fields: List[str] = []
         self.color_adaptive_columns: List[int] = []
         self.grouped_column_names: List[str] = []
 
@@ -593,7 +593,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         # Disable 'Group by this column' on the first column
         self.group_by_action.setEnabled(bool(self._current_column_index))
-        if self.column_names[self._current_column_index] in self.grouped_column_names:
+        if self.fields[self._current_column_index] in self.grouped_column_names:
             self.group_by_action.setEnabled(False)
 
         # Show the context menu
@@ -636,13 +636,13 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             source_column_name (str): The name of the source column. Defaults to 'file_path'.
             sequence_range_column_name (str): The name of the sequence range column. Defaults to 'sequence_range'.
         """
-        if 'thumbnail' not in self.column_names:
-            self.column_names.append('thumbnail')
-        self.setHeaderLabels(self.column_names)
+        if 'thumbnail' not in self.fields:
+            self.fields.append('thumbnail')
+        self.setHeaderLabels(self.fields)
 
-        source_column = self.column_names.index(source_column_name)
-        thumbnail_column = self.column_names.index('thumbnail')
-        sequence_range_column = self.column_names.index(sequence_range_column_name) if sequence_range_column_name in self.column_names else None
+        source_column = self.fields.index(source_column_name)
+        thumbnail_column = self.fields.index('thumbnail')
+        sequence_range_column = self.fields.index(sequence_range_column_name) if sequence_range_column_name in self.fields else None
 
         self.thumbnail_delegate.set_thumbnail_column(thumbnail_column)
         self.thumbnail_delegate.set_source_column(source_column)
@@ -791,7 +791,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         Returns:
             Optional[int]: The index of the column if found, otherwise None.
         """
-        return self.column_names.index(column_name) if column_name in self.column_names else None
+        return self.fields.index(column_name) if column_name in self.fields else None
 
     def get_column_visual_index(self, column: Union[str, int]) -> int:
         """Retrieve the visual index of the specified column.
@@ -950,7 +950,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         # Update the item data
         for key, value in data_dict.items():
-            if key not in self.column_names:
+            if key not in self.fields:
                 continue
             tree_item.set_value(key, value)
 
@@ -986,7 +986,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.grouped_column_names.append(grouped_column_name)
 
         # Store original and rename the first column
-        first_column_name = self.column_names[0]
+        first_column_name = self.fields[0]
         self.headerItem().setData(0, QtCore.Qt.ItemDataRole.UserRole, first_column_name)
         grouped_column_names_str = ' / '.join(self.grouped_column_names + [first_column_name])
         self.setHeaderLabel(grouped_column_names_str)
@@ -1053,7 +1053,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             return
 
         # Reset the header label
-        self.setHeaderLabel(self.column_names[0])
+        self.setHeaderLabel(self.fields[0])
         
         # Show hidden column
         for grouped_column_name in self.grouped_column_names:
@@ -1154,6 +1154,9 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         print('Not implemented')
 
+    def set_fields(self, fields: Iterable[str]):
+        self.setHeaderLabels(fields)
+
     def save_state(self, settings: QtCore.QSettings, group_name='tree_widget'):
         """Save the state of the tree widget.
 
@@ -1252,11 +1255,11 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             labels (Iterable[str]): The iterable of column names to be set.
         """
         # Store the column names for later use
-        self.column_names = labels
+        self.fields = list(labels)
 
         # Set the number of columns and the column labels
-        self.setColumnCount(len(self.column_names))
-        super().setHeaderLabels(self.column_names)
+        self.setColumnCount(len(self.fields))
+        super().setHeaderLabels(self.fields)
 
     def hideColumn(self, column: Union[int, str]):
         """Hide the specified column.

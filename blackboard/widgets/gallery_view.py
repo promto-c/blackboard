@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Iterable
 
 # Standard Library Imports
 # ------------------------
@@ -19,7 +19,7 @@ from tablerqicon import TablerQIcon
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollListWidget
 from blackboard.widgets.thumbnail_widget import ThumbnailWidget
 from blackboard.widgets.graphic_effect import DropShadowEffect
-from submodules.blackboard.blackboard.widgets.rule_widget import SortRuleWidget, GroupRuleWidget
+from blackboard.widgets.rule_widget import SortRuleWidget, GroupRuleWidget
 
 
 # Class Definitions
@@ -339,7 +339,7 @@ class GalleryCard(QtWidgets.QWidget):
         self.form_layout = QtWidgets.QVBoxLayout(self.form_widget)
 
         for field, value in self.data_fields.items():
-            label = QtWidgets.QLabel(value)
+            label = QtWidgets.QLabel(str(value))
             label.setToolTip(field)
             self.form_layout.addWidget(label)
             self.field_widgets[field] = label
@@ -404,6 +404,8 @@ class GalleryWidgetItem(QtWidgets.QListWidgetItem):
 
         self.gallery_widget.setItemWidget(self, self.gallery_card)
 
+    def get_value(self, field: str, default: Any = None) -> Any:
+        return self.data_fields.get(field, default)
 
 class InvisibleItemDelegate(QtWidgets.QStyledItemDelegate):
     def paint(self, painter, option, index):
@@ -786,13 +788,13 @@ class GalleryWidget(MomentumScrollListWidget):
         # Refresh the view
         self.model().layoutChanged.emit()
 
-    def set_fields(self, fields):
+    def set_fields(self, fields: Iterable[str]):
         """Set the available fields for grouping, sorting, and visibility.
 
         Args:
             fields (list): A list of field names (strings) to be set as available fields.
         """
-        self.fields = fields
+        self.fields = list(fields)
         # Initialize all fields as visible by default
         self.visible_fields = {field: True for field in fields}
 

@@ -312,8 +312,7 @@ def main():
 
     # Create an instance of the widget
     database_view_widget = AssetViewWidget()
-    database_view_widget.tree_widget.setHeaderLabels(['id'] + work_file_query.fields)
-    database_view_widget.search_edit.skip_columns.add(database_view_widget.tree_widget.get_column_index('id'))
+    database_view_widget.tree_widget.setHeaderLabels(work_file_query.fields)
     database_view_widget.tree_widget.create_thumbnail_column('file_path')
     database_view_widget.tree_widget.set_generator(generator)
 
