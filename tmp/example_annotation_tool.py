@@ -69,7 +69,7 @@ class DrawingLabel(QtWidgets.QWidget):
         self.rectangle_start: QtCore.QPoint = QtCore.QPoint()
         self.rectangle_end: QtCore.QPoint = QtCore.QPoint()
         self.rectangles: list[QtCore.QRect] = []
-        self.control_points: list[QtCore.QPoint] = []
+        self.control_points: list[QtCore.QPointF] = []
         self.drawing_objects: list[DrawingObject] = []
         self.text_items: list[tuple[QtCore.QPoint, str]] = []
         self.text_editor = None
@@ -148,6 +148,9 @@ class DrawingLabel(QtWidgets.QWidget):
                 elif self.current_tool == ToolMode.FREEHAND:
                     self.last_point = event.pos()
                     self.control_points = [event.pos()]
+                    # Add new drawing object
+                    self.current_drawing = DrawingObject(self.control_points, self.pen_color, self.pen_width)
+                    self.drawing_objects.append(self.current_drawing)
                 elif self.current_tool == ToolMode.TEXT:
                     self.add_text(event.pos())
 
@@ -216,7 +219,8 @@ class DrawingLabel(QtWidgets.QWidget):
 
         # Store the smoothed line as a DrawingObject
         smooth_points = [QtCore.QPointF(x, y) for x, y in zip(x_fine, y_fine)]
-        self.drawing_objects.append(DrawingObject(smooth_points, self.pen_color, self.pen_width))
+        # Update smooth points to current drawing object
+        self.current_drawing.points = smooth_points
 
         self.update()
 
