@@ -247,36 +247,44 @@ class GallerySectionItem(QtWidgets.QListWidgetItem):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, list_widget: 'GalleryWidget', group_name: str):
-        super().__init__(list_widget)
+    def __init__(self, gallery_widget: 'GalleryWidget', group_name: str):
+        super().__init__(gallery_widget)
 
         # Store the arguments
-        self.list_widget = list_widget
+        self.gallery_widget = gallery_widget
         self.group_name = group_name
 
         # Initialize setup
+        self.__init_attributes()
         self.__init_ui()
         self.__init_signal_connections()
+
+    def __init_attributes(self):
+        """Initialize the attributes.
+        """
+        self.items: List[QtWidgets.QListWidgetItem] = []
 
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
         self.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
 
-        self.header_widget = GallerySectionHeader(self.group_name, self.list_widget)
-        self.list_widget.setItemWidget(self, self.header_widget)
+        self.header_widget = GallerySectionHeader(self.group_name, self.gallery_widget)
+        self.gallery_widget.setItemWidget(self, self.header_widget)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
         # Connect to the viewport_resized signal
-        self.list_widget.viewport_resized.connect(self._update_size)
+        self.gallery_widget.viewport_resized.connect(self._update_size)
 
     # Public Methods
     # --------------
-    # TODO: Handle, add item to section
     def add_item(self, item: QtWidgets.QListWidgetItem):
-        ...
+        insert_position = self.gallery_widget.row(self) + len(self.items) + 1
+        self.gallery_widget.insertItem(insert_position, item)
+        self.items.append(item)
+        self._update_size()
 
     # Private Methods
     # ---------------
@@ -378,8 +386,24 @@ class GalleryCard(QtWidgets.QWidget):
 
 class GalleryWidgetItem(QtWidgets.QListWidgetItem):
 
-    def __init__(self, gallery_widget: 'GalleryWidget'):
-        ...
+    def __init__(self, parent: Union['GalleryWidget', 'GallerySectionItem'], data_fields: Dict[str, Any]):
+        if isinstance(parent, GallerySectionItem):
+            self.gallery_widget = parent.gallery_widget
+            super().__init__()
+            parent.add_item(self)
+
+        else:
+            self.gallery_widget = parent
+            super().__init__(self.gallery_widget)
+
+        self.data_fields = data_fields
+
+        self.image_path = data_fields.get(self.gallery_widget.image_field)
+        self.gallery_card = GalleryCard(self.image_path, self.data_fields, self.gallery_widget)
+        self.setSizeHint(self.gallery_card.sizeHint())
+
+        self.gallery_widget.setItemWidget(self, self.gallery_card)
+
 
 class InvisibleItemDelegate(QtWidgets.QStyledItemDelegate):
     def paint(self, painter, option, index):
@@ -627,7 +651,7 @@ class GalleryWidget(MomentumScrollListWidget):
         # Initialize available fields as an empty list
         self.fields = []
         self.visible_fields = {}
-        self.groups = {}
+        self.group_items: Dict[str, GallerySectionItem] = {}
         self.group_by_fields = []
         self.sort_rules = []
         self.data_dicts: List[Dict[str, Any]] = []  # Store items to support re-grouping
@@ -704,27 +728,23 @@ class GalleryWidget(MomentumScrollListWidget):
             datadict (dict): A dictionary containing the data for the item.
                 Expected to include the image path field and other data fields.
         """
-        if not self.image_field:
-            print("Image field is not set. Use set_image_field(field_name) to set the image field.")
-            return
-
-        image_path = datadict.get(self.image_field)
-
-        if not image_path or not os.path.exists(image_path):
-            print(f"Image path '{image_path}' is invalid or does not exist.")
-            return
-
         # Store the item for later re-grouping if needed
         self.data_dicts.append(datadict)
-        self._insert_item_by_group(datadict)
+        self._add_item(datadict)
+
+    def _add_item(self, datadict: Dict[str, Any]):
+        if self.group_by_fields:
+            self._insert_item_by_group(datadict)
+        else:
+            _item = GalleryWidgetItem(self, datadict)
 
     def toggle_section(self, group_name, collapsed):
         """Show or hide items under the specified section."""
-        if group_name not in self.groups:
+        if group_name not in self.group_items:
             return
 
-        group_data = self.groups[group_name]
-        for item in group_data['items']:
+        group_item = self.group_items[group_name]
+        for item in group_item.items:
             item.setHidden(collapsed)
 
     def open_visualize_settings(self):
@@ -818,10 +838,10 @@ class GalleryWidget(MomentumScrollListWidget):
         """Reorganize items based on current grouping and sorting rules."""
         # Clear all items in the gallery
         self.clear()
-        self.groups = {}
+        self.group_items.clear()
 
         # Reorganize stored items according to grouping and sorting
-        items = self.data_dicts.copy()
+        data_dicts = self.data_dicts.copy()
 
         # Apply sorting
         if self.sort_rules:
@@ -829,65 +849,27 @@ class GalleryWidget(MomentumScrollListWidget):
             for rule in reversed(self.sort_rules):
                 field = rule.field
                 reverse = rule.order == SortRuleWidget.SortOrder.DESCENDING
-                items.sort(key=lambda item: self._sort_value(item.get(field, None)), reverse=reverse)
+                data_dicts.sort(key=lambda item: self._sort_value(item.get(field, None)), reverse=reverse)
 
         # Re-insert items considering grouping
-        for item_data in items:
-            self._insert_item_by_group(item_data)
+        for data_dict in data_dicts:
+            self._add_item(data_dict)
 
     def _insert_item_by_group(self, data_fields):
         """Insert the item into the gallery view by its group.
         """
-        image_path = data_fields.get(self.image_field)
-
-        if not self.group_by_fields:
-            # No grouping is set, add the item directly
-            gallery_item_widget = GalleryCard(image_path, data_fields, self)
-
-            # Create the QListWidgetItem and set its size hint
-            item = QtWidgets.QListWidgetItem()
-            item.setSizeHint(gallery_item_widget.sizeHint())
-
-            # Insert the item after the spacer_item
-            insert_position = self.count() + 1  # Adjust for spacer_item if necessary
-            self.insertItem(insert_position, item)
-            self.setItemWidget(item, gallery_item_widget)
-            return
-
         # Determine group name based on current grouping fields
         group_values = [str(data_fields.get(field, 'Ungrouped')) for field in self.group_by_fields]
-        group_name = ' - '.join(group_values) if group_values else 'Ungrouped'
+        group_name = ' - '.join(group_values)
 
         # Create a section header if the group doesn't exist
-        if group_name not in self.groups:
-            self.add_section_header(group_name)
+        if group_name not in self.group_items:
+            group_item = GallerySectionItem(self, group_name)
+            self.group_items[group_name] = group_item
+        else:
+            group_item = self.group_items[group_name]
 
-        # Find the position to insert the new item under the section header
-        group_data = self.groups[group_name]
-        items = group_data['items']
-        insert_position = self.row(group_data['header_item']) + len(items) + 1
-
-        # Create and configure the gallery item widget
-        gallery_item_widget = GalleryCard(image_path, data_fields, self)
-
-        # Create the QListWidgetItem and set its size hint
-        item = QtWidgets.QListWidgetItem()
-        item.setSizeHint(gallery_item_widget.sizeHint())
-
-        # Insert the item after the section header and track it under its group
-        self.insertItem(insert_position, item)
-        self.setItemWidget(item, gallery_item_widget)
-
-        # Track the item under its group
-        group_data['items'].append(item)
-
-    def add_section_header(self, group_name):
-        """Add a section header for a new group.
-        """
-        header_item = GallerySectionItem(self, group_name)
-
-        # Initialize the group with the header and an empty item list
-        self.groups[group_name] = {'header_item': header_item, 'items': []}
+        _item = GalleryWidgetItem(group_item, data_fields)
 
     def _update_spacer_item_size(self):
         # Set the size hint for the spacer item
@@ -1124,7 +1106,7 @@ if __name__ == "__main__":
     # Initialize and show the gallery window
     window = GalleryWindow()
     # Set available fields dynamically
-    fields = ["Artist", "Shot Type", "Status", "Shot Name", "Frame Range", "Date"]
+    fields = ["Artist", "Shot Type", "Status", "Shot Name", "Frame Range", "Date", "Thumbnail"]
     window.gallery_view_widget.set_fields(fields)
     # Set the field that contains the image path
     window.gallery_view_widget.set_image_field('Thumbnail')
