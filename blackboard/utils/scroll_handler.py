@@ -1,6 +1,7 @@
 # Standard Library Imports
 # ------------------------
 import time
+from collections import deque
 
 # Third Party Imports
 # -------------------
@@ -13,12 +14,15 @@ class MomentumScrollHandler(QtCore.QObject):
     """Handle momentum scrolling for a given widget.
     """
 
-    STACK_VELOCITY_THRESHOLD = 16
+    STACK_VELOCITY_THRESHOLD = 32
+    ANGLE_TO_PIXEL_RATIO = 4.0
+    MIDDLE_MOUSE_STEP = 120.0
+    MAX_TIME_DELTA = 0.2
 
     # Initialization and Setup
     # ------------------------
     def __init__(self, widget: QtWidgets.QScrollArea, friction: float = 0.95,
-                 min_velocity: float = 0.1, velocity_scale: float = 0.02,
+                 min_velocity: float = 0.4, velocity_scale: float = 0.02,
                  frame_interval: int = 16):
         """Initialize the MomentumScrollHandler.
 
@@ -48,6 +52,7 @@ class MomentumScrollHandler(QtCore.QObject):
         self.velocity = QtCore.QPointF()
         self.stacked_x = 0.0
         self.stacked_y = 0.0
+        self._time_deltas = deque(maxlen=3)
         self.horizontal_scroll_bar = self.widget.horizontalScrollBar()
         self.vertical_scroll_bar = self.widget.verticalScrollBar()
         self.timer = QtCore.QTimer(interval=self.frame_interval)
@@ -144,19 +149,23 @@ class MomentumScrollHandler(QtCore.QObject):
         QtWidgets.QApplication.restoreOverrideCursor()
 
     # TODO: Refactor
-    def handle_wheel_event(self, event: QtGui.QWheelEvent) -> bool:
+    def handle_wheel_event(self, event: QtGui.QWheelEvent):
         """Handle wheel events for touchpad scrolling."""
         # # Check if the event is from a touchpad
         # if event.source() == QtCore.Qt.MouseEventSource.MouseEventNotSynthesized:
         #     # It's a regular mouse wheel event; let the default handler process it
         #     return False
 
-        # Get the time since the last wheel event
+        # TODO: Reset self._time_deltas when direction changed
+        # Record the current time and calculate time delta from last event
         current_time = time.time()
-        time_delta = current_time - self._last_wheel_event_time
-        time_delta = max(time_delta, 0.001)
-
+        time_delta = max(current_time - self._last_wheel_event_time, 0.001)
+        self._time_deltas.append(time_delta)
         self._last_wheel_event_time = current_time
+
+        # Calculate the moving average of the last 3 time deltas
+        filtered_time_deltas = [t for t in self._time_deltas if t < self.MAX_TIME_DELTA]
+        avg_time_delta = sum(filtered_time_deltas) / len(filtered_time_deltas) if filtered_time_deltas else time_delta
 
         # Get the pixel delta (high-resolution scrolling)
         pixel_delta = event.pixelDelta()
@@ -164,16 +173,17 @@ class MomentumScrollHandler(QtCore.QObject):
         if pixel_delta.isNull():
             # Some touchpads might not provide pixelDelta, use angleDelta instead
             angle_delta = event.angleDelta()
-            is_middle_mouse_event  = self.is_middle_mouse_event(angle_delta)
+            is_middle_mouse_event = self.is_middle_mouse_event(angle_delta)
             # Convert from degrees (1/8th of a degree per unit) to pixels
-            pixel_delta = angle_delta / 8.0
+            pixel_delta = angle_delta / self.ANGLE_TO_PIXEL_RATIO
         else:
             is_middle_mouse_event = False
 
         if is_middle_mouse_event:
+            ...
             # Update the scroll bars immediately
-            self.horizontal_scroll_bar.setValue(int(self.horizontal_scroll_bar.value() - (pixel_delta.x()/4)))
-            self.vertical_scroll_bar.setValue(int(self.vertical_scroll_bar.value() - (pixel_delta.y()/4)))
+            # self.horizontal_scroll_bar.setValue(int(self.horizontal_scroll_bar.value() - (pixel_delta.x())))
+            # self.vertical_scroll_bar.setValue(int(self.vertical_scroll_bar.value() - (pixel_delta.y())))
         # NOTE: Event from touchpad, ...
         else:
             # Update the scroll bars immediately
@@ -181,26 +191,21 @@ class MomentumScrollHandler(QtCore.QObject):
             self.vertical_scroll_bar.setValue(int(self.vertical_scroll_bar.value() - (pixel_delta.y())))
 
         # Update the velocity
-        velocity = QtCore.QPointF(pixel_delta) / time_delta
-
-        self.MIDDLE_MOUSE_STEP = 120.0
+        velocity = QtCore.QPointF(pixel_delta) / avg_time_delta
 
         if is_middle_mouse_event:
-            if 0 < velocity.x() < self.MIDDLE_MOUSE_STEP:
-                velocity.setX(self.MIDDLE_MOUSE_STEP)
-            elif -self.MIDDLE_MOUSE_STEP < velocity.x() < 0:
-                velocity.setX(-self.MIDDLE_MOUSE_STEP)
-            if 0 < velocity.y() < self.MIDDLE_MOUSE_STEP:
-                velocity.setY(self.MIDDLE_MOUSE_STEP)
-            elif -self.MIDDLE_MOUSE_STEP < velocity.y() < 0:
-                velocity.setY(-self.MIDDLE_MOUSE_STEP)
-            # print(velocity)
+            velocity = self._adjust_velocity(velocity)
 
         self.start(velocity)
 
-        # Accept the event
-        return True
-    
+    def _adjust_velocity(self, velocity: QtCore.QPointF) -> QtCore.QPointF:
+        """Adjust velocity for middle mouse events, ensuring a minimum threshold."""
+        if velocity.x():
+            velocity.setX(max(self.MIDDLE_MOUSE_STEP, abs(velocity.x())) * (1 if velocity.x() >= 0 else -1))
+        if velocity.y():
+            velocity.setY(max(self.MIDDLE_MOUSE_STEP, abs(velocity.y())) * (1 if velocity.y() >= 0 else -1))
+        return velocity
+
     def is_middle_mouse_event(self, angle_delta):
         return abs(angle_delta.y()) == 120
 

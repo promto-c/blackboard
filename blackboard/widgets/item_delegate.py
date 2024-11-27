@@ -219,8 +219,7 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
         normalized_value = (value - self.min_value) / (self.max_value - self.min_value)
 
         # Interpolate between the min_color and max_color based on the normalized value
-        color = QtGui.QColor()
-        color.setRgbF(
+        color = QtGui.QColor.fromRgbF(
             self.min_color.redF() + (self.max_color.redF() - self.min_color.redF()) * normalized_value,
             self.min_color.greenF() + (self.max_color.greenF() - self.min_color.greenF()) * normalized_value,
             self.min_color.blueF() + (self.max_color.blueF() - self.min_color.blueF()) * normalized_value
