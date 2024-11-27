@@ -204,7 +204,7 @@ class DataViewWidget(QtWidgets.QWidget):
         """Initialize signal-slot connections.
         """
         # Connect signals to slots
-        self.view_tool_bar.refresh_action.triggered.connect(self.activate_filter)
+        self.tree_widget.reload_requested.connect(self.activate_filter)
         bb.utils.KeyBinder.bind_key('Ctrl+F', self.tree_widget, self.search_edit.set_text_as_selection)
 
     # Public Methods

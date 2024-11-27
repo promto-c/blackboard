@@ -51,6 +51,10 @@ class MomentumScrollListView(QtWidgets.QListView):
         else:
             super().mouseReleaseEvent(event)
 
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        """Handle wheel events for touchpad scrolling."""
+        self.scroll_handler.handle_wheel_event(event)
+
 class MomentumScrollListWidget(QtWidgets.QListWidget):
     """A QListWidget with momentum scrolling functionality."""
 
@@ -98,6 +102,10 @@ class MomentumScrollListWidget(QtWidgets.QListWidget):
         # If not middle button, call the parent class method to handle the event
         else:
             super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        """Handle wheel events for touchpad scrolling."""
+        self.scroll_handler.handle_wheel_event(event)
 
 class MomentumScrollTreeView(QtWidgets.QTreeView):
     """A QTreeView with momentum scrolling functionality.
@@ -147,6 +155,10 @@ class MomentumScrollTreeView(QtWidgets.QTreeView):
         else:
             super().mouseReleaseEvent(event)
 
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        """Handle wheel events for touchpad scrolling."""
+        self.scroll_handler.handle_wheel_event(event)
+
 class MomentumScrollTreeWidget(QtWidgets.QTreeWidget):
     """A QTreeWidget with momentum scrolling functionality."""
 
@@ -194,6 +206,10 @@ class MomentumScrollTreeWidget(QtWidgets.QTreeWidget):
         else:
             super().mouseReleaseEvent(event)
 
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        """Handle wheel events for touchpad scrolling."""
+        self.scroll_handler.handle_wheel_event(event)
+
 class MomentumScrollArea(QtWidgets.QScrollArea):
     """A QScrollArea with momentum scrolling functionality."""
 
@@ -237,3 +253,7 @@ class MomentumScrollArea(QtWidgets.QScrollArea):
             self.scroll_handler.handle_mouse_release(event)
         else:
             super().mouseReleaseEvent(event)
+
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        """Handle wheel events for touchpad scrolling."""
+        self.scroll_handler.handle_wheel_event(event)

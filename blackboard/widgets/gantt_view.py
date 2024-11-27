@@ -213,7 +213,10 @@ class GanttTreeWidget(QtWidgets.QTreeWidget):
 if __name__ == "__main__":
     import sys
 
+    from blackboard import theme
+
     app = QtWidgets.QApplication(sys.argv)
+    theme.set_theme(app, 'dark')
 
     data_dict = [
         {'name': 'Task 1', 'start': datetime.date(2024, 1, 1), 'end': datetime.date(2024, 1, 10)},

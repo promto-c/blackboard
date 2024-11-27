@@ -112,6 +112,8 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         _history_index (int): The current index in the search _history for navigation.
     """
 
+    PLACEHOLDER_TEXT = 'Type to Search'
+
     FIXED_STRING_MATCH_FLAGS = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchFixedString
     CONTAINS_MATCH_FLAGS = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchContains
     WILDCARD_MATCH_FLAGS = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchWildcard
@@ -129,7 +131,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
             parent (QtWidgets.QWidget, optional): The parent widget. Defaults to None.
         """
         # Initialize the super class
-        super().__init__(parent)
+        super().__init__(parent, placeholderText=self.PLACEHOLDER_TEXT)
 
         # Store the arguments
         self.tree_widget = tree_widget
@@ -160,7 +162,6 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         # Set the UI properties
         self.setProperty('widget-style', 'round')
         self.setProperty('has-placeholder', True)
-        self.setPlaceholderText('Type to Search')
         self.setFixedHeight(24)
 
         # Create the search action

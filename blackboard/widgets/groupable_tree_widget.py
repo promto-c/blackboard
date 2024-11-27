@@ -390,9 +390,9 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         self.uniform_row_height_slider.setToolTip("Set uniform row height")  # Tooltip added
         self.addWidget(self.uniform_row_height_slider)
 
-        self.refresh_action = self.add_action(
-            icon=self.tabler_icon.refresh,
-            tooltip="Refresh",
+        self.reload_action = self.add_action(
+            icon=self.tabler_icon.reload,
+            tooltip="Reload",
         )
 
     def add_action(self, icon: QtGui.QIcon, tooltip: str, checkable: bool = False) -> QtGui.QAction:
@@ -414,7 +414,7 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         self.word_wrap_action.toggled.connect(self.tree_widget.setWordWrap)
         # self.set_uniform_row_height_action.triggered.connect(self.toggle_uniform_row_height)
         self.uniform_row_height_slider.valueChanged.connect(self.tree_widget.set_row_height)
-        # self.refresh_action.triggered.connect(self.tree_widget.refresh)
+        self.reload_action.triggered.connect(self.tree_widget.reload_requested.emit)
 
 class GroupableTreeWidget(MomentumScrollTreeWidget):
     """A QTreeWidget subclass that displays data in a tree structure with the ability to group data by a specific column.
@@ -432,6 +432,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     drag_started = QtCore.Signal(QtCore.Qt.DropActions)
     about_to_show_header_menu = QtCore.Signal(int)
     fetch_complete = QtCore.Signal()
+    reload_requested = QtCore.Signal()
 
     # Initialization and Setup
     # ------------------------

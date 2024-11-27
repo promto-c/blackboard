@@ -524,8 +524,8 @@ class GalleryViewToolBar(CustomToolBar):
         self._add_size_slider_widget()
         self.addSeparator()
 
-        self.refresh_action = self.addAction(
-            icon=self.tabler_icon.refresh,
+        self.reload_action = self.addAction(
+            icon=self.tabler_icon.reload,
             text="Refresh Gallery",
         )
 
@@ -533,7 +533,7 @@ class GalleryViewToolBar(CustomToolBar):
         """Initialize signal-slot connections."""
         # Additional signal connections can be added here if needed
         self.size_slider.valueChanged.connect(self.gallery_widget.set_card_size)
-        self.refresh_action.triggered.connect(self.refresh_gallery)
+        self.reload_action.triggered.connect(self.gallery_widget.reload_requested.emit)
 
     def _add_view_mode_actions(self):
         """Add view mode actions to the toolbar."""
@@ -607,11 +607,6 @@ class GalleryViewToolBar(CustomToolBar):
 
         self.addWidget(self.size_slider)
 
-    def refresh_gallery(self):
-        """Refresh the gallery content."""
-        # Implement the logic to refresh the gallery
-        pass
-
     def set_resize_mode(self, mode: Union[QtWidgets.QAction, ThumbnailWidget.ResizeMode]):
         """Set the image resize mode based on the selected action or directly with ResizeMode.
 
@@ -638,6 +633,7 @@ class GalleryViewToolBar(CustomToolBar):
 class GalleryWidget(MomentumScrollListWidget):
 
     viewport_resized = QtCore.Signal()
+    reload_requested = QtCore.Signal()
     TOP_MARGIN = 20
 
     def __init__(self, parent=None):
