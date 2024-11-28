@@ -1351,7 +1351,7 @@ def main():
     # Create an instance of the widget
     generator = generate_file_paths('blackboard', delay_duration_sec=0.05)
     tree_widget = GroupableTreeWidget()
-    tree_widget.setHeaderLabels(['id', 'file_path'])
+    tree_widget.set_fields(['id', 'file_path'])
     tree_widget.create_thumbnail_column('file_path')
     tree_widget.set_generator(generator)
 
