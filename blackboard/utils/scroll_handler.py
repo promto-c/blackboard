@@ -15,7 +15,7 @@ class MomentumScrollHandler(QtCore.QObject):
     """
 
     STACK_VELOCITY_THRESHOLD = 32
-    ANGLE_TO_PIXEL_RATIO = 4.0
+    ANGLE_TO_PIXEL_RATIO = 8.0
     MIDDLE_MOUSE_STEP = 120.0
     MAX_TIME_DELTA = 0.2
 
@@ -173,19 +173,13 @@ class MomentumScrollHandler(QtCore.QObject):
         if pixel_delta.isNull():
             # Some touchpads might not provide pixelDelta, use angleDelta instead
             angle_delta = event.angleDelta()
-            is_middle_mouse_event = self.is_middle_mouse_event(angle_delta)
+            is_stepping_wheel_event = self.is_stepping_wheel_event(event)
             # Convert from degrees (1/8th of a degree per unit) to pixels
             pixel_delta = angle_delta / self.ANGLE_TO_PIXEL_RATIO
         else:
-            is_middle_mouse_event = False
+            is_stepping_wheel_event = False
 
-        if is_middle_mouse_event:
-            ...
-            # Update the scroll bars immediately
-            # self.horizontal_scroll_bar.setValue(int(self.horizontal_scroll_bar.value() - (pixel_delta.x())))
-            # self.vertical_scroll_bar.setValue(int(self.vertical_scroll_bar.value() - (pixel_delta.y())))
-        # NOTE: Event from touchpad, ...
-        else:
+        if not is_stepping_wheel_event:
             # Update the scroll bars immediately
             self.horizontal_scroll_bar.setValue(int(self.horizontal_scroll_bar.value() - (pixel_delta.x())))
             self.vertical_scroll_bar.setValue(int(self.vertical_scroll_bar.value() - (pixel_delta.y())))
@@ -193,21 +187,21 @@ class MomentumScrollHandler(QtCore.QObject):
         # Update the velocity
         velocity = QtCore.QPointF(pixel_delta) / avg_time_delta
 
-        if is_middle_mouse_event:
-            velocity = self._adjust_velocity(velocity)
+        if is_stepping_wheel_event:
+            velocity = self._adjust_velocity_for_stepping_wheel(velocity)
 
         self.start(velocity)
 
-    def _adjust_velocity(self, velocity: QtCore.QPointF) -> QtCore.QPointF:
+    def _adjust_velocity_for_stepping_wheel(self, velocity: QtCore.QPointF) -> QtCore.QPointF:
         """Adjust velocity for middle mouse events, ensuring a minimum threshold."""
         if velocity.x():
             velocity.setX(max(self.MIDDLE_MOUSE_STEP, abs(velocity.x())) * (1 if velocity.x() >= 0 else -1))
         if velocity.y():
             velocity.setY(max(self.MIDDLE_MOUSE_STEP, abs(velocity.y())) * (1 if velocity.y() >= 0 else -1))
-        return velocity
+        return velocity * 2
 
-    def is_middle_mouse_event(self, angle_delta):
-        return abs(angle_delta.y()) == 120
+    def is_stepping_wheel_event(self, event: QtGui.QWheelEvent):
+        return abs(event.angleDelta().y()) == 120
 
     def start(self, initial_velocity: QtCore.QPointF):
         """Start the momentum scrolling with the given initial velocity.
@@ -261,10 +255,10 @@ class MomentumScrollHandler(QtCore.QObject):
 
         # NOTE: Stacked when lower than 1.0
         # ---
+        # Handle horizontal velocity
         if abs(self.velocity.x()) < 1:
             self.stacked_x += self.velocity.x()
-            
-            if -1.0 < self.stacked_x < 1:
+            if abs(self.stacked_x) < 1:
                 diff_x = 0
             else:
                 diff_x = self.stacked_x
@@ -272,10 +266,10 @@ class MomentumScrollHandler(QtCore.QObject):
         else:
             diff_x = self.velocity.x()
 
+        # Handle vertical velocity
         if abs(self.velocity.y()) < 1:
             self.stacked_y += self.velocity.y()
-            
-            if -1.0 < self.stacked_y < 1:
+            if abs(self.stacked_y) < 1:
                 diff_y = 0
             else:
                 diff_y = self.stacked_y
@@ -284,7 +278,11 @@ class MomentumScrollHandler(QtCore.QObject):
             diff_y = self.velocity.y()
         # ---
 
-        self.horizontal_scroll_bar.setValue(int(self.horizontal_scroll_bar.value() - diff_x))
-        self.vertical_scroll_bar.setValue(int(self.vertical_scroll_bar.value() - diff_y))
+        # Apply the velocity updates to the scroll bars
+        if diff_x != 0:
+            self.horizontal_scroll_bar.setValue(self.horizontal_scroll_bar.value() - int(diff_x))
+        if diff_y != 0:
+            self.vertical_scroll_bar.setValue(self.vertical_scroll_bar.value() - int(diff_y))
 
+        # Apply friction to the velocity
         self.velocity *= self.friction
