@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Set
 if TYPE_CHECKING:
     from blackboard.widgets import GroupableTreeWidget
 
@@ -107,7 +107,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         tree_widget (GroupableTreeWidget): The tree widget where search will be performed.
         _is_active (bool): Indicates whether the search filter is currently applied.
         _all_match_items (set): A set of items that match the current search criteria.
-        skip_columns (set): A set of column indices to skip during the search.
+        included_fields (set): A set of fields to include in the search.
         _history (list): A list that stores the search _history.
         _history_index (int): The current index in the search _history for navigation.
     """
@@ -147,7 +147,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         # Attributes
         # ----------
         self.tabler_icon = TablerQIcon(opacity=0.6)
-        self.skip_columns = set()
+        self.included_fields: Set[str] = set()
 
         # Private Attributes
         # ------------------
@@ -164,10 +164,10 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.setProperty('has-placeholder', True)
         self.setFixedHeight(24)
 
-        # Create the search action
+        # Create the search action and add it to the leading side
         self.search_action = self.addAction(self.tabler_icon.search, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
 
-        # Create the clear action
+        # Create and set up the match count button (for showing match count)
         self.__init_match_count_action()
         self.update_style()
 
@@ -197,7 +197,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.match_count_button.clicked.connect(self.clear)
         self.tree_widget.item_added.connect(self._filter_item)
         self.tree_widget.fetch_complete.connect(self._refresh_match_count)
-        self.search_action.triggered.connect(self.activate)
+        self.search_action.triggered.connect(self._show_search_fields_menu)
 
         # Bind keys using KeyBinder for _history navigation
         KeyBinder.bind_key('Enter', self, self.activate)
@@ -208,6 +208,16 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
     # Public Methods
     # --------------
+    def set_search_field(self, field: str, checked: bool = True):
+        """Toggle whether the field is included in the search.
+        """
+        if checked:
+            self.included_fields.add(field)
+        else:
+            self.included_fields.discard(field)
+        # Reapply search with updated settings
+        self.update()
+
     def set_text_as_selection(self):
         """Update the search edit text with the text of the currently selected items in the tree widget.
         """
@@ -270,6 +280,21 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
     # Private Methods
     # ---------------
+    def _show_search_fields_menu(self):
+        """Show a menu to select which fields to search by."""
+        # Create a QMenu and populate it with checkable actions for each column in the tree widget
+        menu = QtWidgets.QMenu()
+
+        # Iterate over the columns of the tree widget and add checkable actions to the menu
+        for field in self.tree_widget.fields:
+            action = menu.addAction(field)
+            action.setCheckable(True)
+            action.setChecked(field in self.included_fields)
+            action.triggered.connect(lambda checked, field=field: self.set_search_field(field, checked))
+
+        # Show the menu at the position of the search icon
+        menu.exec_(self.mapToGlobal(self.rect().topLeft()))
+
     def _filter_item(self, tree_item: 'QtWidgets.QTreeWidgetItem'):
         """Filter a item to see if it matches the search filter.
 
@@ -296,10 +321,9 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         Returns:
             bool: True if the item matches the filter, False otherwise.
         """
-        for column_index in range(self.tree_widget.columnCount()):
-            if column_index in self.skip_columns:
-                continue
-
+        search_fields = self.included_fields or self.tree_widget.fields
+        for field in search_fields:
+            column_index = self.tree_widget.get_column_index(field)
             item_text = item.text(column_index)
 
             # Check quoted terms for exact match
@@ -354,9 +378,9 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         # Extract terms from the keyword for search filtering
         self.quoted_terms, self.unquoted_terms = TextExtraction.extract_terms(keyword)
 
-        for column_index in range(self.tree_widget.columnCount()):
-            if column_index in self.skip_columns:
-                continue
+        search_fields = self.included_fields or self.tree_widget.fields
+        for field in search_fields:
+            column_index = self.tree_widget.get_column_index(field)
 
             match_items = set()
 

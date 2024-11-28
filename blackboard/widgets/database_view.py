@@ -1145,7 +1145,7 @@ def main():
     # Create an instance of the widget
     database_view_widget = DataViewWidget()
     database_view_widget.tree_widget.set_fields(work_file_query.fields)
-    database_view_widget.search_edit.skip_columns.add(database_view_widget.tree_widget.get_column_index('id'))
+    database_view_widget.search_edit.set_search_field('shot_name')
     database_view_widget.tree_widget.create_thumbnail_column('file_path')
     database_view_widget.tree_widget.set_generator(generator)
 
