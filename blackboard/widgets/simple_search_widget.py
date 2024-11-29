@@ -285,6 +285,14 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         # Create a QMenu and populate it with checkable actions for each column in the tree widget
         menu = QtWidgets.QMenu()
 
+        # Add the global search action
+        global_search_action = menu.addAction("Global Search")
+        global_search_action.setCheckable(True)
+        global_search_action.setChecked(not self.included_fields)
+        global_search_action.triggered.connect(self.included_fields.clear)
+
+        menu.addSeparator()
+
         # Iterate over the columns of the tree widget and add checkable actions to the menu
         for field in self.tree_widget.fields:
             action = menu.addAction(field)
