@@ -1975,7 +1975,8 @@ class NumericFilterWidget(FilterWidget):
     @property
     def is_active(self):
         """Check if the filter is active based on current values."""
-        return bool(self.lower_value_edit.text() or self.upper_value_edit.text())
+        condition = self.condition_combo_box.currentText()
+        return condition in ['Is Null', 'Is Not Null'] or bool(self.lower_value_edit.text() or self.upper_value_edit.text())
 
 class BooleanFilterWidget(FilterWidget):
     """A widget for filtering boolean data with options for True, False, NULL, and NOT NULL.

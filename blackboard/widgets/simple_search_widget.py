@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, Optional, Set
+from typing import TYPE_CHECKING, Optional, Set, Union, Iterable
 if TYPE_CHECKING:
     from blackboard.widgets import GroupableTreeWidget
 
@@ -99,20 +99,30 @@ class MatchCountButton(QtWidgets.QPushButton):
         self.setText(self._current_label)
         self.unsetCursor()
 
-class SimpleSearchEdit(QtWidgets.QLineEdit):
-    """Widget for simplified search functionality within a groupable tree widget. 
-    Supports keyword search, highlights matching items, and displays the total count of matches.
+class SearchFieldButton(QtWidgets.QPushButton):
 
-    Attributes:
-        tree_widget (GroupableTreeWidget): The tree widget where search will be performed.
-        _is_active (bool): Indicates whether the search filter is currently applied.
-        _all_match_items (set): A set of items that match the current search criteria.
-        included_fields (set): A set of fields to include in the search.
-        _history (list): A list that stores the search _history.
-        _history_index (int): The current index in the search _history for navigation.
-    """
+    def __init__(self, parent):
+        super().__init__(
+            icon=TablerQIcon(opacity=0.6).search,
+            text='Global',
+            cursor=QtCore.Qt.CursorShape.PointingHandCursor,
+            parent=parent,
+        )
 
-    PLACEHOLDER_TEXT = 'Type to Search'
+        self.setStyleSheet('''
+            QPushButton {
+                border: 0px;
+                color: #CCC;
+                background: transparent;
+                border-top-right-radius: 0;
+                border-bottom-right-radius: 0;
+                border-right: 1px solid gray;
+                padding: 0 6;
+                text-align: left;
+            }
+        ''')
+
+class SimpleSearchWidget(QtWidgets.QFrame):
 
     FIXED_STRING_MATCH_FLAGS = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchFixedString
     CONTAINS_MATCH_FLAGS = QtCore.Qt.MatchFlag.MatchRecursive | QtCore.Qt.MatchFlag.MatchContains
@@ -131,7 +141,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
             parent (QtWidgets.QWidget, optional): The parent widget. Defaults to None.
         """
         # Initialize the super class
-        super().__init__(parent, placeholderText=self.PLACEHOLDER_TEXT)
+        super().__init__(parent)
 
         # Store the arguments
         self.tree_widget = tree_widget
@@ -148,6 +158,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         # ----------
         self.tabler_icon = TablerQIcon(opacity=0.6)
         self.included_fields: Set[str] = set()
+        self.default_search_fields: Set[str] = set()
 
         # Private Attributes
         # ------------------
@@ -159,17 +170,29 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        # Set the UI properties
-        self.setProperty('widget-style', 'round')
-        self.setProperty('has-placeholder', True)
         self.setFixedHeight(24)
 
-        # Create the search action and add it to the leading side
-        self.search_action = self.addAction(self.tabler_icon.search, QtWidgets.QLineEdit.ActionPosition.LeadingPosition)
+        # Create Layouts
+        # --------------
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Create Widgets
+        # --------------
+        # Set up the search line edit widget
+        self.search_field_button = SearchFieldButton(self)
+        self.search_field_menu = QtWidgets.QMenu()
+        self.search_field_button.setMenu(self.search_field_menu)
+        self.search_field_menu.aboutToShow.connect(self._show_search_fields_menu)
+        self.line_edit = SearchEdit(self.tree_widget, self)
 
         # Create and set up the match count button (for showing match count)
         self.__init_match_count_action()
-        self.update_style()
+
+        # Add Widgets to Layouts
+        # ----------------------
+        layout.addWidget(self.search_field_button)
+        layout.addWidget(self.line_edit)
 
     def __init_match_count_action(self):
         """Initialize the match count action and adds it to the line edit.
@@ -182,7 +205,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.match_count_action.setDefaultWidget(self.match_count_button)
 
         # Add the match count action to the line edit, positioned at the trailing end
-        self.addAction(self.match_count_action, QtWidgets.QLineEdit.ActionPosition.TrailingPosition)
+        self.line_edit.addAction(self.match_count_action, QtWidgets.QLineEdit.ActionPosition.TrailingPosition)
 
         # Initially hide the match count button
         self.match_count_button.setVisible(False)
@@ -190,41 +213,103 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
+        # Install event filter on the line edit to detect focus changes
+        self.line_edit.installEventFilter(self)
+
         # Connect signals to slots
-        self.textChanged.connect(self.deactivate)
-        self.textChanged.connect(self._highlight_matching_items)
-        self.textChanged.connect(self.update_style)
-        self.match_count_button.clicked.connect(self.clear)
+        self.line_edit.textChanged.connect(self.deactivate)
+        self.line_edit.textChanged.connect(self._highlight_matching_items)
+        self.line_edit.textChanged.connect(self.line_edit.update_style)
+        self.match_count_button.clicked.connect(self.clear_search)
         self.tree_widget.item_added.connect(self._filter_item)
         self.tree_widget.fetch_complete.connect(self._refresh_match_count)
-        self.search_action.triggered.connect(self._show_search_fields_menu)
 
         # Bind keys using KeyBinder for _history navigation
-        KeyBinder.bind_key('Enter', self, self.activate)
-        KeyBinder.bind_key('Return', self, self.activate)
-        KeyBinder.bind_key('Escape', self, self.clear)
-        KeyBinder.bind_key('Up', self, lambda: self._navigate_history(-1))
-        KeyBinder.bind_key('Down', self, lambda: self._navigate_history(1))
+        KeyBinder.bind_key('Enter', self.line_edit, self.activate)
+        KeyBinder.bind_key('Return', self.line_edit, self.activate)
+        KeyBinder.bind_key('Escape', self.line_edit, self.clear_search)
+        KeyBinder.bind_key('Up', self.line_edit, lambda: self._navigate_history(-1))
+        KeyBinder.bind_key('Down', self.line_edit, lambda: self._navigate_history(1))
+
+    def eventFilter(self, obj, event):
+        if obj == self.line_edit:
+            if event.type() == QtCore.QEvent.Type.FocusIn:
+                # Visually highlight SimpleSearchWidget when line edit is focused
+                self.setProperty('in-focus', True)
+                self.update_style()
+
+            elif event.type() == QtCore.QEvent.Type.FocusOut:
+                # Remove highlight when line edit loses focus
+                self.setProperty('in-focus', False)
+                self.update_style()
+
+        return super().eventFilter(obj, event)
 
     # Public Methods
     # --------------
-    def set_search_field(self, field: str, checked: bool = True):
+    def clear_search(self):
+        self.set_global_search_field()
+        self.line_edit.clear()
+
+    def set_default_search_fields(self, fields: Iterable[Union[str, int]] = set()):
+        """Set the default search fields to be used when clearing search."""
+        # Convert to set and assign default search fields
+        self.default_search_fields = set(fields)
+        self.clear_search()
+
+    def clear_search(self):
+        """Clear the search and restore the default search fields."""
+        if self.default_search_fields:
+            # Restore the default fields when clearing the search
+            self.set_search_fields(self.default_search_fields)
+        else:
+            # If no default fields set, fall back to global search (clears included fields)
+            self.set_global_search_field()
+        
+        # Clear the line edit text
+        self.line_edit.clear()
+
+    def set_global_search_field(self):
+        self.included_fields.clear()
+        self._update_search_field_text()
+
+    def set_search_field(self, field: Union[str, int], checked: bool = True, apply_update: bool = True):
         """Toggle whether the field is included in the search.
         """
+        if isinstance(field, int):
+            field = self.tree_widget.fields[field]
+
         if checked:
             self.included_fields.add(field)
         else:
             self.included_fields.discard(field)
+        
+        if apply_update:
+            self._update_search_field_text()
+            self.update()
+
+    def set_search_fields(self, fields: Iterable[Union[str, int]], checked: bool = True, clear_existing: bool = True, apply_update: bool = True):
+        """Set multiple fields for search with an option to clear existing fields or not."""
+        if clear_existing:
+            self.included_fields.clear()  # Clears all previous fields
+        
+        for field in fields:
+            self.set_search_field(field, checked=checked, apply_update=False)
+
         # Reapply search with updated settings
-        self.update()
+        if apply_update:
+            self._update_search_field_text()
+            self.update()
 
     def set_text_as_selection(self):
         """Update the search edit text with the text of the currently selected items in the tree widget.
         """
+        fields = {index.column() for index in self.tree_widget.selectedIndexes()}
         keywords = {f'"{index.data()}"' for index in self.tree_widget.selectedIndexes()}
-        self.setText('|'.join(keywords))
-        self.setFocus()
-        self.activate
+
+        self.set_search_fields(fields)             
+        self.line_edit.setText('|'.join(keywords))
+        self.line_edit.setFocus()
 
     def activate(self):
         """Activate the search functionality.
@@ -237,7 +322,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self.activated.emit()
 
         # Add to _history only if it's a new entry
-        current_text = self.text().strip()
+        current_text = self.line_edit.text().strip()
         if current_text and (not self._history or self._history[-1] != current_text):
             self._history.append(current_text)
             self._history_index = -1
@@ -280,28 +365,34 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
     # Private Methods
     # ---------------
+    def _update_search_field_text(self):
+        """Update the search field text based on the current search configuration."""
+        if not self.included_fields:
+            text = 'Global'
+        elif len(self.included_fields) == 1:
+            text = next(iter(self.included_fields))
+        else:
+            text = f'{len(self.included_fields)} fields'
+        self.search_field_button.setText(text)
+
     def _show_search_fields_menu(self):
         """Show a menu to select which fields to search by."""
-        # Create a QMenu and populate it with checkable actions for each column in the tree widget
-        menu = QtWidgets.QMenu()
+        self.search_field_menu.clear()
 
         # Add the global search action
-        global_search_action = menu.addAction("Global Search")
+        global_search_action = self.search_field_menu.addAction("Global Search")
         global_search_action.setCheckable(True)
         global_search_action.setChecked(not self.included_fields)
-        global_search_action.triggered.connect(self.included_fields.clear)
+        global_search_action.triggered.connect(self.set_global_search_field)
 
-        menu.addSeparator()
+        self.search_field_menu.addSeparator()
 
-        # Iterate over the columns of the tree widget and add checkable actions to the menu
+        # Add field-specific search actions
         for field in self.tree_widget.fields:
-            action = menu.addAction(field)
+            action = self.search_field_menu.addAction(field)
             action.setCheckable(True)
             action.setChecked(field in self.included_fields)
             action.triggered.connect(lambda checked, field=field: self.set_search_field(field, checked))
-
-        # Show the menu at the position of the search icon
-        menu.exec_(self.mapToGlobal(self.rect().topLeft()))
 
     def _filter_item(self, tree_item: 'QtWidgets.QTreeWidgetItem'):
         """Filter a item to see if it matches the search filter.
@@ -309,7 +400,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         Args:
             tree_item (QtWidgets.QTreeWidgetItem): The item that was added to the tree widget.
         """
-        keyword = self.text().strip()
+        keyword = self.line_edit.text().strip()
         if not keyword:
             return
 
@@ -380,7 +471,7 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         self._clear_highlights()
 
         # Return if the keyword is empty
-        if not (keyword := self.text().strip()):
+        if not (keyword := self.line_edit.text().strip()):
             return
 
         # Extract terms from the keyword for search filtering
@@ -436,11 +527,11 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
 
         if self._history_index == len(self._history):
             # Beyond the last item, clear the line edit and reset _history_index
-            self.clear()
+            self.line_edit.clear()
             self._history_index = -1
         else:
             # Set the text to the _history item
-            self.setText(self._history[self._history_index])
+            self.line_edit.setText(self._history[self._history_index])
 
     def _apply_search(self):
         """Apply the filters specified by the user to the tree widget.
@@ -459,6 +550,54 @@ class SimpleSearchEdit(QtWidgets.QLineEdit):
         TreeUtil.show_all_items(self.tree_widget)
 
         self._highlight_matching_items()
+
+class SearchEdit(QtWidgets.QLineEdit):
+    """Widget for simplified search functionality within a groupable tree widget. 
+    Supports keyword search, highlights matching items, and displays the total count of matches.
+
+    Attributes:
+        tree_widget (GroupableTreeWidget): The tree widget where search will be performed.
+        _is_active (bool): Indicates whether the search filter is currently applied.
+        _all_match_items (set): A set of items that match the current search criteria.
+        included_fields (set): A set of fields to include in the search.
+        _history (list): A list that stores the search _history.
+        _history_index (int): The current index in the search _history for navigation.
+    """
+
+    PLACEHOLDER_TEXT = 'Type to Search'
+
+    # Initialization and Setup
+    # ------------------------
+    def __init__(self, tree_widget: 'GroupableTreeWidget', parent: QtWidgets.QWidget = None):
+        """Initialize the widget with a reference to the tree widget and sets up
+        the UI components and signal connections.
+
+        Args:
+            tree_widget (GroupableTreeWidget): The tree widget to be searched.
+            parent (QtWidgets.QWidget, optional): The parent widget. Defaults to None.
+        """
+        # Initialize the super class
+        super().__init__(parent, placeholderText=self.PLACEHOLDER_TEXT)
+
+        # Store the arguments
+        self.tree_widget = tree_widget
+
+        # Initialize setup
+        self.__init_ui()
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        # Set the UI properties
+        self.setProperty('widget-style', 'borderless')
+        self.setProperty('has-placeholder', True)
+        self.update_style()
+
+    def update_style(self):
+        """Update the button's style based on its state.
+        """
+        self.style().unpolish(self)
+        self.style().polish(self)
 
 
 # Main Function
@@ -484,17 +623,17 @@ def main():
     tree_widget.add_items(ID_TO_DATA_DICT)
 
     # Create an instance of the widget and set it as the central widget
-    search_edit = SimpleSearchEdit(tree_widget, parent=window)
+    search_widget = SimpleSearchWidget(tree_widget, parent=window)
 
     main_widget = QtWidgets.QWidget()
     main_layout = QtWidgets.QVBoxLayout(main_widget)
 
-    main_layout.addWidget(search_edit)
+    main_layout.addWidget(search_widget)
     main_layout.addWidget(tree_widget)
 
-    # search_edit.set_search_column('Name')
+    # search_widget.set_search_column('Name')
     shortcut = QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+F'), main_widget)
-    shortcut.activated.connect(search_edit.set_text_as_selection)
+    shortcut.activated.connect(search_widget.set_text_as_selection)
 
     # Create the scalable view and set the tree widget as its central widget
     scalable_view = ScalableView(widget=main_widget)

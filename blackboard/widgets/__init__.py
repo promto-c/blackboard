@@ -9,7 +9,7 @@ from .filter_widget import (
     NumericFilterWidget,
 )
 from .calendar_widget import RangeCalendarWidget
-from .simple_search_widget import SimpleSearchEdit
+from .simple_search_widget import SimpleSearchWidget
 from .groupable_tree_widget import GroupableTreeWidget, TreeUtilityToolBar, TreeWidgetItem
 from .scalable_view import ScalableView
 from .item_delegate import HighlightItemDelegate, AdaptiveColorMappingDelegate, HighlightTextDelegate, ThumbnailDelegate
@@ -31,7 +31,7 @@ __all__ = [
     'FileTypeFilterWidget',
     'BooleanFilterWidget',
     'NumericFilterWidget',
-    'SimpleSearchEdit',
+    'SimpleSearchWidget',
     'GroupableTreeWidget', 'TreeUtilityToolBar', 'TreeWidgetItem',
     'ScalableView',
     'HighlightItemDelegate', 'AdaptiveColorMappingDelegate', 'HighlightTextDelegate', 'ThumbnailDelegate',

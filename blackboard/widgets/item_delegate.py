@@ -26,7 +26,7 @@ from blackboard.utils.tree_utils import TreeItemUtil
 # Class Definitions
 # -----------------
 class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
-    """Custom item delegate class that highlights the rows specified by the `target_model_indexes` list.
+    """Custom item delegate class that highlights the rows specified by the `target_model_indexes` set.
     """
     # Define default highlight color
     DEFAULT_HIGHLIGHT_COLOR = QtGui.QColor(165, 165, 144, 65)
@@ -52,10 +52,10 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
         self.highlight_color = highlight_color
         self.selection_color = selection_color
 
-        # Initialize lists of target model indexes for different types of highlighting
-        self._target_model_indexes: List[QtCore.QModelIndex] = []
-        self._target_focused_model_indexes: List[QtCore.QModelIndex] = []
-        self._target_selected_model_indexes: List[QtCore.QModelIndex] = []
+        # Use sets to store target model indexes for different types of highlighting
+        self._target_model_indexes: Set[QtCore.QModelIndex] = set()
+        self._target_focused_model_indexes: Set[QtCore.QModelIndex] = set()
+        self._target_selected_model_indexes: Set[QtCore.QModelIndex] = set()
 
     # Public Methods
     # --------------
@@ -73,7 +73,7 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
             tree_items (List[QtWidgets.QTreeWidgetItem]): A list of QTreeWidgetItem objects
                 whose model indexes will be extracted and set as the target selected model indexes.
         """
-        self._target_selected_model_indexes = TreeItemUtil.get_model_indexes(tree_items)
+        self._target_selected_model_indexes = set(TreeItemUtil.get_model_indexes(tree_items))
         self.highlight_changed.emit()
 
     def add_highlight_items(self, tree_items: List['QtWidgets.QTreeWidgetItem'], focused_column_index: int = None):
@@ -82,11 +82,11 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
         if not tree_items:
             return
 
-        # Add the model indexes of the current tree item to the target properties
-        self._target_model_indexes.extend(TreeItemUtil.get_model_indexes(tree_items))
+        # Add model indexes of current tree item to the target sets
+        self._target_model_indexes.update(TreeItemUtil.get_model_indexes(tree_items))
 
         if focused_column_index is not None:
-            self._target_focused_model_indexes.extend(TreeItemUtil.get_model_indexes(tree_items, column_index=focused_column_index))
+            self._target_focused_model_indexes.update(TreeItemUtil.get_model_indexes(tree_items, column_index=focused_column_index))
 
         self.highlight_changed.emit()
 
@@ -100,7 +100,7 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
             option (QtWidgets.QStyleOptionViewItem): The style option to use for drawing.
             model_index (QtCore.QModelIndex): The model index of the item to be painted.
         """
-        # Check if the current model index is not in the target list
+        # Check if the current model index is not in the target sets
         if model_index not in self._target_selected_model_indexes and model_index not in self._target_model_indexes:
             # If not, paint the item normally using the parent implementation
             super().paint(painter, option, model_index)
@@ -109,7 +109,7 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
         # Initialize color from the painter's background
         color = painter.background().color()
 
-        # Check if the model_index is in various target lists and blend colors accordingly
+        # Check if model_index is in various target sets and blend colors accordingly
         if model_index in self._target_model_indexes:
             color = ColorUtils.blend_colors(color, self.highlight_color)
         if model_index in self._target_focused_model_indexes:
@@ -117,7 +117,7 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
         if model_index in self._target_selected_model_indexes:
             color = ColorUtils.blend_colors(color, self.selection_color)
 
-        # If the current model index is in the target list, set the background color and style
+        # Set the background color and style
         option.backgroundBrush.setColor(color)
         option.backgroundBrush.setStyle(QtCore.Qt.BrushStyle.SolidPattern)
 
@@ -126,6 +126,7 @@ class HighlightItemDelegate(QtWidgets.QStyledItemDelegate):
 
         # Paint the item normally using the parent implementation
         super().paint(painter, option, model_index)
+
 
 class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
     """Delegate class for adaptive color mapping in Qt items.

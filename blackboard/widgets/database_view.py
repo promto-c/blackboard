@@ -139,7 +139,7 @@ class DataViewWidget(QtWidgets.QWidget):
             |--[W1]: filter_bar_widget--|
 
             +---------------------------------------------------+ -+
-            | [Filter 1][Filter 2][+]       [[W2]: search_edit] |  | -> [L1]: top_bar_area_layout
+            | [Filter 1][Filter 2][+]     [[W2]: search_widget] |  | -> [L1]: top_bar_area_layout
             +---------------------------------------------------+ -+
             | [W3]: general_tool_bar| - - | [W4]: view_tool_bar |  | -> [L2]: utility_area_layout
             |                                                   |  |
@@ -177,8 +177,8 @@ class DataViewWidget(QtWidgets.QWidget):
         self.tree_widget = widgets.GroupableTreeWidget(parent=self)
 
         # [W2]: Search field
-        self.search_edit = widgets.SimpleSearchEdit(tree_widget=self.tree_widget, parent=self)
-        self.search_edit.setMinimumWidth(200)
+        self.search_widget = widgets.SimpleSearchWidget(tree_widget=self.tree_widget, parent=self)
+        self.search_widget.setMinimumWidth(200)
 
         # [W3], [W4]: General tool bar and view utility bar
         self.general_tool_bar = QtWidgets.QToolBar(self)
@@ -189,7 +189,7 @@ class DataViewWidget(QtWidgets.QWidget):
         # Add [W1], [W2] to [L1]
         # Add left filter bar and right search edit to top bar layout
         self.top_bar_area_layout.addWidget(self.filter_bar_widget, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
-        self.top_bar_area_layout.addWidget(self.search_edit, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        self.top_bar_area_layout.addWidget(self.search_widget, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
 
         # Add [W3], [W4] to [L2]
         # Add left general tool bar and right view tool bar
@@ -205,7 +205,7 @@ class DataViewWidget(QtWidgets.QWidget):
         """
         # Connect signals to slots
         self.tree_widget.reload_requested.connect(self.activate_filter)
-        bb.utils.KeyBinder.bind_key('Ctrl+F', self.tree_widget, self.search_edit.set_text_as_selection)
+        bb.utils.KeyBinder.bind_key('Ctrl+F', self.tree_widget, self.search_widget.set_text_as_selection)
 
     # Public Methods
     # --------------
@@ -236,7 +236,7 @@ class DataViewWidget(QtWidgets.QWidget):
         # Add items to tree
         self.tree_widget.add_items(id_to_data_dict)
 
-        self.search_edit.update()
+        self.search_widget.update()
 
     # Special Methods
     # ---------------
@@ -1083,9 +1083,6 @@ class DatabaseViewWidget(DataViewWidget):
             filter_condition = filter_widget.get_filter_condition()
             values = filter_widget.filtered_list
 
-            if not filter_condition or values is None:
-                continue  # Skip if there's no condition or values
-
             # Generate the SQL condition for this filter
             sql_condition = self.generate_sql_query(column_name, filter_condition, values)
 
@@ -1115,7 +1112,7 @@ class DatabaseViewWidget(DataViewWidget):
         # Clear the tree widget and populate with new data
         self.tree_widget.clear()
         self.tree_widget.setHeaderLabels(all_fields)
-        if self.search_edit.is_active:
+        if self.search_widget.is_active:
             self.tree_widget.set_generator(results, is_fetch_all=True)
         else:
             self.tree_widget.set_generator(results)
@@ -1145,7 +1142,7 @@ def main():
     # Create an instance of the widget
     database_view_widget = DataViewWidget()
     database_view_widget.tree_widget.set_fields(work_file_query.fields)
-    database_view_widget.search_edit.set_search_field('shot_name')
+    database_view_widget.search_widget.set_default_search_fields(['shot_name'])
     database_view_widget.tree_widget.create_thumbnail_column('file_path')
     database_view_widget.tree_widget.set_generator(generator)
 
