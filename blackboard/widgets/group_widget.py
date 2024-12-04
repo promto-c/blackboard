@@ -18,8 +18,8 @@ class GroupWidget(QtWidgets.QWidget):
             widgets[0].setProperty("position", "first")
             widgets[-1].setProperty("position", "last")
 
-        for button in widgets:
-            layout.addWidget(button)
+        for widget in widgets:
+            layout.addWidget(widget)
 
         # Apply the stylesheet to the container (QFrame) only
         self.setStyleSheet("""

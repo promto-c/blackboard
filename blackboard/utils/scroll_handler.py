@@ -56,6 +56,8 @@ class MomentumScrollHandler(QtCore.QObject):
         self.horizontal_scroll_bar = self.widget.horizontalScrollBar()
         self.vertical_scroll_bar = self.widget.verticalScrollBar()
         self.timer = QtCore.QTimer(interval=self.frame_interval)
+        self._last_direction_x = None
+        self._last_direction_y = None
 
         # Initialize middle button pressed flag
         self._is_mouse_button_pressed = False
@@ -156,17 +158,6 @@ class MomentumScrollHandler(QtCore.QObject):
         #     # It's a regular mouse wheel event; let the default handler process it
         #     return False
 
-        # TODO: Reset self._time_deltas when direction changed
-        # Record the current time and calculate time delta from last event
-        current_time = time.time()
-        time_delta = max(current_time - self._last_wheel_event_time, 0.001)
-        self._time_deltas.append(time_delta)
-        self._last_wheel_event_time = current_time
-
-        # Calculate the moving average of the last 3 time deltas
-        filtered_time_deltas = [t for t in self._time_deltas if t < self.MAX_TIME_DELTA]
-        avg_time_delta = sum(filtered_time_deltas) / len(filtered_time_deltas) if filtered_time_deltas else time_delta
-
         # Get the pixel delta (high-resolution scrolling)
         pixel_delta = event.pixelDelta()
 
@@ -178,6 +169,39 @@ class MomentumScrollHandler(QtCore.QObject):
             pixel_delta = angle_delta / self.ANGLE_TO_PIXEL_RATIO
         else:
             is_stepping_wheel_event = False
+
+        # Determine the sign of the deltas to identify direction
+        new_direction_x = 1 if pixel_delta.x() > 0 else (-1 if pixel_delta.x() < 0 else 0)
+        new_direction_y = 1 if pixel_delta.y() > 0 else (-1 if pixel_delta.y() < 0 else 0)
+
+        # Check for direction change in x
+        if self._last_direction_x is not None and new_direction_x != self._last_direction_x:
+            direction_changed = True
+        # Check for direction change in y
+        elif self._last_direction_y is not None and new_direction_y != self._last_direction_y:
+            direction_changed = True
+        else:
+            direction_changed = False
+
+        # Record the current time and calculate time delta from last event
+        current_time = time.time()
+        time_delta = max(current_time - self._last_wheel_event_time, 0.001)
+        self._last_wheel_event_time = current_time
+
+        if direction_changed:
+            # Reset time deltas and last event time
+            self._time_deltas.clear()
+        else:
+            # Calculate time delta and append
+            self._time_deltas.append(time_delta)
+
+        # Update the last known directions
+        self._last_direction_x = new_direction_x
+        self._last_direction_y = new_direction_y
+
+        # Calculate the moving average of the last 3 time deltas
+        filtered_time_deltas = [t for t in self._time_deltas if t < self.MAX_TIME_DELTA]
+        avg_time_delta = (sum(filtered_time_deltas) / len(filtered_time_deltas)) if filtered_time_deltas else time_delta
 
         if not is_stepping_wheel_event:
             # Update the scroll bars immediately
