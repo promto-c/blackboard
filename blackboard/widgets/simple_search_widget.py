@@ -395,21 +395,28 @@ class SimpleSearchWidget(QtWidgets.QFrame):
             action.triggered.connect(lambda checked, field=field: self.set_search_field(field, checked))
 
     def _filter_item(self, tree_item: 'QtWidgets.QTreeWidgetItem'):
-        """Filter a item to see if it matches the search filter.
+        """Determines whether a newly added tree item matches the current search criteria and updates its visibility or highlighting accordingly.
 
         Args:
             tree_item (QtWidgets.QTreeWidgetItem): The item that was added to the tree widget.
         """
+        # Retrieve and sanitize the current search keyword from the input field
         keyword = self.line_edit.text().strip()
         if not keyword:
             return
 
-        tree_item.setHidden(True)
-
+        # If the item matches the search filter, add it to the matched items set and update the displayed match count
         if self._is_matching_filter(tree_item):
             self._all_match_items.add(tree_item)
-            tree_item.setHidden(False)
             self._refresh_match_count()
+
+            # If the search is not active, simply highlight the matching item
+            if not self.is_active:
+                self.tree_widget.highlight_items({tree_item})
+
+        # If the item doesn't match and the search is active, hide the item
+        elif self.is_active:
+            tree_item.setHidden(True)
 
     def _is_matching_filter(self, item: 'QtWidgets.QTreeWidgetItem') -> bool:
         """Check if an item matches the search filter.
