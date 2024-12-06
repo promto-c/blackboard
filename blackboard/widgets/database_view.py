@@ -697,7 +697,6 @@ class DatabaseViewWidget(DataViewWidget):
         """Initialize the attributes.
         """
         self._current_table = ''
-        self._visible_filter_columns = set()
         self._column_to_relation_chain_dict: Dict[str, str] = {}
 
     def __init_ui(self):
@@ -717,7 +716,6 @@ class DatabaseViewWidget(DataViewWidget):
         """
         # Connect signals to slots
         self.add_filter_button.clicked.connect(self.show_column_selection_menu)
-        self.filter_bar_widget.filter_widget_removed.connect(self._visible_filter_columns.discard)
         self.tree_widget.about_to_show_header_menu.connect(self.handle_header_context_menu)
         self.add_record_button.clicked.connect(self.show_add_record_dialog)
         self.delete_record_button.clicked.connect(self.delete_record)
@@ -928,10 +926,8 @@ class DatabaseViewWidget(DataViewWidget):
         menu = QtWidgets.QMenu(self)
 
         for column in self.tree_widget.fields:
-            # Only add columns to the menu that don't already have an active filter
-            if column not in self._visible_filter_columns:
-                action = menu.addAction(column)
-                action.triggered.connect(partial(self.create_filter_widget, column))
+            action = menu.addAction(column)
+            action.triggered.connect(partial(self.create_filter_widget, column))
 
         menu.exec_(QtGui.QCursor.pos())
 
@@ -983,7 +979,6 @@ class DatabaseViewWidget(DataViewWidget):
 
         if filter_widget:
             self.add_filter_widget(filter_widget)
-            self._visible_filter_columns.add(column_name)
 
     def add_relation_column(self, local_table: str, referenced_table: str, display_field: str, local_field: str, referenced_field: str):
         """Add a relation column to the tree widget.

@@ -1,7 +1,7 @@
 
 # Type Checking Imports
 # ---------------------
-from typing import Any, Optional, List, Union, Dict, Tuple, Type
+from typing import Any, Optional, List, Union, Dict, Tuple
 
 # Standard Library Imports
 # ------------------------
@@ -18,6 +18,7 @@ from tablerqicon import TablerQIcon
 # -------------
 import blackboard as bb
 from blackboard import widgets
+from blackboard.widgets.popup_menu import ResizablePopupMenu
 
 
 # Class Definitions
@@ -353,6 +354,7 @@ class FilterBarWidget(QtWidgets.QWidget):
         self.add_filter_button.setToolTip("Add Filter from Column")
         self.add_filter_button.setProperty('widget-style', 'round')
         self.add_filter_button.setFixedSize(24, 24)
+        self.add_filter_button.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
 
         # Add Widgets to Layouts
         self.main_layout.addWidget(self.add_filter_button)
@@ -432,129 +434,6 @@ class MoreOptionsButton(QtWidgets.QToolButton):
         """Display the menu at the button's position.
         """
         self.popup_menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
-
-class ResizablePopupMenu(QtWidgets.QMenu):
-    """A resizable popup menu with drag-and-resize functionality.
-
-    Attributes:
-        button (Optional[QtWidgets.QPushButton]): Optional button to position the menu relative to.
-        resized (QtCore.Signal): Signal emitted when the menu is resized.
-    """
-    # Constants
-    # ---------
-    RESIZE_HANDLE_SIZE = 20
-
-    # Signals
-    # -------
-    resized = QtCore.Signal(QtCore.QSize)
-
-    # Initialization and Setup
-    # ------------------------
-    def __init__(self, button: Optional[QtWidgets.QPushButton] = None):
-        """Initialize the popup menu and set up drag-resize functionality.
-
-        Args:
-            button (Optional[QtWidgets.QPushButton]): Optional button to position the menu relative to.
-        """
-        super().__init__()
-
-        # Store the arguments
-        self.button = button
-
-        # Initialize setup
-        self.__init_attributes()
-
-    def __init_attributes(self):
-        """Initialize drag functionality for resizing the menu.
-        """
-        self._is_dragging = False
-        self._drag_start_point = QtCore.QPoint()
-        self._initial_size = self.size()
-
-        # Set UI attributes
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-
-    # Overridden Methods
-    # ------------------
-    def keyPressEvent(self, event: QtGui.QKeyEvent):
-        """Handle key press events to prevent closing the popup on Enter or Return keys.
-        """
-        if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
-            # Do nothing, preventing the popup from closing
-            pass
-        else:
-            super().keyPressEvent(event)
-
-    def showEvent(self, event: QtGui.QShowEvent):
-        """Override show event to modify the position of the menu popup.
-        """
-        if self.button:
-            # Adjust the position
-            pos = self.button.mapToGlobal(QtCore.QPoint(0, self.button.height()))
-            self.move(pos)
-        super().showEvent(event)
-
-    def resizeEvent(self, event: QtGui.QResizeEvent):
-        """Handle the resize event and emit a signal with the new size.
-        """
-        self.resized.emit(self.size())
-        super().resizeEvent(event)
-
-    def mousePressEvent(self, event: QtGui.QMouseEvent):
-        """Handle the mouse press event for resizing the menu.
-        """
-        # Calculate the rectangle representing the resize handle area
-        handle_rect = QtCore.QRect(
-            self.width() - self.RESIZE_HANDLE_SIZE,
-            self.height() - self.RESIZE_HANDLE_SIZE,
-            self.RESIZE_HANDLE_SIZE,
-            self.RESIZE_HANDLE_SIZE
-        )
-
-        if handle_rect.contains(event.pos()):
-            # Only start dragging if the mouse is within the handle area
-            self._is_dragging = True
-            self._drag_start_point = event.pos()
-            self._initial_size = self.size()
-            self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.SizeFDiagCursor))
-        else:
-            super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
-        """Handle the mouse move event to resize the menu.
-        """
-        # If dragging, resize the widget
-        if self._is_dragging:
-            delta = event.pos() - self._drag_start_point
-            new_size = QtCore.QSize(
-                max(self._initial_size.width() + delta.x(), self.minimumWidth()),
-                max(self._initial_size.height() + delta.y(), self.minimumHeight())
-            )
-            self.resize(new_size)
-        else:
-            # TODO: Test
-            # Only change the cursor if the mouse is in the resize handle area
-            handle_rect = QtCore.QRect(
-                self.width() - self.RESIZE_HANDLE_SIZE,
-                self.height() - self.RESIZE_HANDLE_SIZE,
-                self.RESIZE_HANDLE_SIZE,
-                self.RESIZE_HANDLE_SIZE
-            )
-            if handle_rect.contains(event.pos()):
-                # Change to a diagonal resize cursor
-                self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.SizeFDiagCursor))
-            else:
-                # Reset to default cursor
-                self.unsetCursor()
-
-            # Call base implementation for default behavior
-            super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
-        """Handle the mouse release event to stop resizing the menu.
-        """
-        self._is_dragging = False
-        self.unsetCursor()
 
 class FilterPopupButton(QtWidgets.QPushButton):
 
@@ -1195,13 +1074,13 @@ class TextFilterWidget(FilterWidget):
         clear_action.setIcon(TablerQIcon.x)  # Icon for the clear button
         clear_action.setToolTip("Clear")
         clear_action.triggered.connect(self.text_edit.clear)
-        self.text_edit.addAction(clear_action, QtWidgets.QLineEdit.TrailingPosition)
+        self.text_edit.addAction(clear_action, QtWidgets.QLineEdit.ActionPosition.TrailingPosition)
 
         # Add the line edit to the specific content area of the widget
         self.widget_layout.addWidget(self.text_edit)
 
         # Set the initial focus widget to the condition combo box
-        self.set_initial_focus_widget(self.condition_combo_box)
+        self.set_initial_focus_widget(self.text_edit)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections for TextFilterWidget.
@@ -2000,23 +1879,15 @@ class BooleanFilterWidget(FilterWidget):
         super().__init__(filter_name=filter_name, parent=parent)
 
         # Initialize setup specific to BooleanFilterWidget
+        self._is_active = False
         self.__init_ui()
-        self.__init_signal_connections()
 
     def __init_ui(self):
         """Initialize the UI elements specific to the BooleanFilterWidget."""
         self.setIcon(TablerQIcon.checkbox)  # Set an appropriate icon for boolean filter
 
-        # Create condition combo box and add available conditions
-        self.condition_combo_box.clear()
-        self.condition_combo_box.addItems([condition.title for condition in self.CONDITIONS])
-
         # Set the initial focus widget to the condition combo box
         self.set_initial_focus_widget(self.condition_combo_box)
-
-    def __init_signal_connections(self):
-        """Initialize signal-slot connections for BooleanFilterWidget."""
-        self.condition_combo_box.currentIndexChanged.connect(self.handle_condition_change)
 
     # Slot Implementations
     # --------------------
@@ -2033,15 +1904,16 @@ class BooleanFilterWidget(FilterWidget):
         """Save the current state of the filter settings."""
         selected_condition = self.condition_combo_box.currentText()
         self.save_state('condition', selected_condition)
+        self._is_active = True
 
         # Emit signals with appropriate data
-        condition = FilterCondition[selected_condition.replace(" ", "_").upper()]
         self.label_changed.emit(selected_condition)
-        self.activated.emit([condition])
+        self.activated.emit([])
 
     def clear_filter(self):
         """Clear the filter settings and reset to the default state."""
         self.condition_combo_box.setCurrentIndex(0)
+        self._is_active = False
 
     # Class Properties
     # ----------------
@@ -2049,7 +1921,7 @@ class BooleanFilterWidget(FilterWidget):
     def is_active(self):
         """Check if the filter is active based on the current condition."""
         # If the current condition is anything other than 'IS_TRUE' or its equivalent, the filter is active.
-        return self.condition_combo_box.currentText() not in [FilterCondition.IS_TRUE.title, '']
+        return self._is_active
 
 class ToggleFilterWidget(FilterWidget):
     def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):

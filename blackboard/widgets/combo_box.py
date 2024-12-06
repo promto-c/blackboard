@@ -89,7 +89,10 @@ class FilterLineEdit(QtWidgets.QLineEdit):
         self.combo_box.setCurrentIndex(index)
         self.combo_box.hidePopup()
 
+
 class StaticLineEdit(QtWidgets.QLineEdit):
+    """Read-only line edit that triggers the combo box popup on click.
+    """
 
     # Initialization and Setup
     # ------------------------
@@ -208,7 +211,7 @@ class PopupComboBox(QtWidgets.QComboBox):
         """
         for row in range(model.rowCount(parent)):
             index = model.index(row, 0, parent)
-            if text == model.data(index, QtCore.Qt.DisplayRole):
+            if model.data(index, QtCore.Qt.DisplayRole) == text:
                 return index
             if model.hasChildren(index):
                 found_index = self.find_matching_index(model, text, index)
@@ -289,6 +292,8 @@ class PopupComboBox(QtWidgets.QComboBox):
             pass
 
 
+# Example Usage
+# -------------
 if __name__ == '__main__':
     app = QtWidgets.QApplication([])
     combo = PopupComboBox()
