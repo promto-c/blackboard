@@ -361,6 +361,7 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
 class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
     """Delegate that highlights text matches within items.
     """
+
     # Initialization and Setup
     # ------------------------
     def __init__(self, parent: QtWidgets.QWidget = None, 
@@ -385,10 +386,11 @@ class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
 
         # Get the QApplication instance (creating a new one if necessary) and retrieve the frame margin for highlight positioning.
         app_instance = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-        self.spacing = app_instance.style().pixelMetric(QtWidgets.QStyle.PixelMetric.PM_FocusFrameHMargin)
+        self.spacing = app_instance.style().pixelMetric(QtWidgets.QStyle.PixelMetric.PM_FocusFrameHMargin) * app_instance.devicePixelRatio()
 
         # Initialize the text to be highlighted
         self.highlight_text = ''
+        self.highlight_pattern = None
 
         # Create a pen with the custom color and style for the outline
         self.pen = QtGui.QPen(outline_color)
@@ -398,59 +400,63 @@ class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
     # --------------
     def set_highlight_text(self, text: str):
         """Update the delegate with the current filter text.
+
+        Args:
+            text: The text to highlight within the items.
         """
         self.highlight_text = text.lower()
+        if text:
+            pattern = re.escape(text)
+            self.highlight_pattern = re.compile(pattern, re.IGNORECASE)
+        else:
+            self.highlight_pattern = None
 
     # Overridden Methods
     # ------------------
-    def paint(self, painter, option, index):
+    def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex):
         """Paint the delegate's items, highlighting matches of the highlight text.
-        
+
         Args:
             painter: The QPainter instance used for painting the item.
             option: The style options for the item.
             index: The index of the item in the model.
         """
-        # Check if there is any text to highlight
-        if self.highlight_text:
-            # Retrieve the text from the model
-            text = index.data(QtCore.Qt.ItemDataRole.DisplayRole)
-            text = text.lower()
-
-            # Calculate the bounding rect for the highlight text
-            painter.save()
-
-            # Apply the highlight color and pen to the painter
-            painter.setBrush(self.highlight_color)
-            painter.setPen(self.pen)
-            font_metrics = painter.fontMetrics()
-
-            # Find all occurrences of the highlight text
-            start_pos = 0
-            while True:
-                start_pos = text.find(self.highlight_text, start_pos)
-                if start_pos == -1:
-                    break
-                end_pos = start_pos + len(self.highlight_text)
-
-                # Calculate the bounding rect for the highlight text
-                before_text_width = font_metrics.width(text[:start_pos])
-                highlight_text_width = font_metrics.width(text[start_pos:end_pos])
-
-                # Adjust highlight_rect to include padding
-                highlight_rect = QtCore.QRect(
-                    option.rect.left() + before_text_width + self.spacing, option.rect.top(),
-                    highlight_text_width + self.spacing, option.rect.height()
-                )
-        
-                # Fill the background of the highlight text
-                painter.drawRoundedRect(highlight_rect, self.highlight_radius, self.highlight_radius)
-                start_pos += len(self.highlight_text)
-
-            painter.restore()
-
-        # Paint the item using the base class implementation
+        # Proceed with the default painting
         super().paint(painter, option, index)
+
+        if not self.highlight_text:
+            return
+
+        # Retrieve the text from the model
+        text = index.data(QtCore.Qt.ItemDataRole.DisplayRole)
+
+        # Find all matches using regex
+        match_positions = [match.start() for match in self.highlight_pattern.finditer(text)]
+        if not match_positions:
+            return
+
+        # Apply the highlight color and pen to the painter
+        painter.save()
+        painter.setBrush(self.highlight_color)
+        painter.setPen(self.pen)
+        font_metrics = painter.fontMetrics()
+        highlight_text_width = font_metrics.horizontalAdvance(self.highlight_text)
+
+        for start_pos in match_positions:
+            # Define the rectangle for the highlight
+            before_text_width = font_metrics.horizontalAdvance(text[:start_pos])
+            highlight_rect = QtCore.QRect(
+                option.rect.left() + before_text_width + self.spacing*2,
+                option.rect.top(),
+                highlight_text_width,
+                option.rect.height()
+            )
+
+            # Draw the rounded rectangle highlight
+            painter.drawRoundedRect(highlight_rect, self.highlight_radius, self.highlight_radius)
+
+        painter.restore()
+
 
 class ThumbnailDelegate(QtWidgets.QStyledItemDelegate):
 
