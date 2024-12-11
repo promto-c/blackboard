@@ -1399,9 +1399,11 @@ class MultiSelectFilterWidget(FilterWidget):
         if is_proxy_model:
             self.tree_view.model().set_check_states(model_index_to_check_state)
 
-    def get_checked_state_dict(self, checked_state_dict: Dict[str, QtCore.Qt.CheckState] = dict(), parent_index: QtCore.QModelIndex = QtCore.QModelIndex()):
+    def get_checked_state_dict(self, parent_index: QtCore.QModelIndex = QtCore.QModelIndex()):
         """Return a dictionary of the checked state for each item.
         """
+        checked_state_dict = {}
+
         model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), parent_index)
         for model_index in model_indexes:
             text = model_index.data()

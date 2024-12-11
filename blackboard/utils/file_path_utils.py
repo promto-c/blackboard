@@ -1,6 +1,8 @@
 # Type Checking Imports
 # ---------------------
-from typing import Dict, List, Generator, Optional, Tuple, Union, Callable, Iterable
+from typing import TYPE_CHECKING, Dict, List, Generator, Optional, Tuple, Union, Callable, Iterable
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Standard Library Imports
 # ------------------------
@@ -829,7 +831,7 @@ class FilePathWalker:
         yield from _traverse(root)
 
     @staticmethod
-    def traverse_files(root: str, is_skip_hidden: bool = True, is_return_relative: bool = False,
+    def traverse_files(root: Union['Path', str], is_skip_hidden: bool = True, is_return_relative: bool = False,
                        excluded_folders: Optional[List[str]] = None, excluded_extensions: Optional[List[str]] = None,
                        use_sequence_format: bool = False, max_depth: Optional[int] = None,
                        sort_key: Optional[Callable[[os.DirEntry], any]] = None, reverse_sort: bool = False,
@@ -1085,7 +1087,7 @@ class FilePatternQuery:
         for search_path in search_paths:
             yield from glob.iglob(search_path)
 
-    def query_files(self, filters: Dict[str, List[str]] = dict(), use_sequence_format: bool = False, 
+    def query_files(self, filters: Optional[Dict[str, List[str]]] = None, use_sequence_format: bool = False, 
                     excluded_extensions: Optional[List[str]] = None, is_skip_hidden: bool = True
                    ) -> Generator[Dict[str, str], None, None]:
         """Query files matching the pattern and filters, returning their info.

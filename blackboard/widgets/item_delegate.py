@@ -168,8 +168,8 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
         max_value: Optional['Number'] = None,
         min_color: QtGui.QColor = COLOR_DICT['pastel_green'],
         max_color: QtGui.QColor = COLOR_DICT['pastel_red'],
-        keyword_color_dict: Dict[str, QtGui.QColor] = {},
-        date_color_dict: Dict[str, QtGui.QColor] = {},
+        keyword_color_dict: Optional[Dict[str, QtGui.QColor]] = None,
+        date_color_dict: Optional[Dict[str, QtGui.QColor]] = None,
         date_format: str = '%Y-%m-%d',
     ):
         """Initialize the AdaptiveColorMappingDelegate.
@@ -194,8 +194,8 @@ class AdaptiveColorMappingDelegate(QtWidgets.QStyledItemDelegate):
         self.max_value = max_value
         self.min_color = min_color
         self.max_color = max_color
-        self.keyword_color_dict = keyword_color_dict
-        self.date_color_dict = date_color_dict
+        self.keyword_color_dict = keyword_color_dict or {}
+        self.date_color_dict = date_color_dict or {}
         self.date_format = date_format
 
     # Private Methods
