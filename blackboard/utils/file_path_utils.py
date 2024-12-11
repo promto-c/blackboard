@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Dict, List, Generator, Optional, Tuple, Union, Callable
+from typing import Dict, List, Generator, Optional, Tuple, Union, Callable, Iterable
 
 # Standard Library Imports
 # ------------------------
@@ -137,6 +137,7 @@ class FileUtil:
         # Handle extremely large sizes that exceed petabytes
         return f"{size:.{precision}f} PB"
 
+
 class FormatStyle(Enum):
     """Enum for different placeholder formats for file sequences.
     """
@@ -155,6 +156,7 @@ class FormatStyle(Enum):
     def requires_separate_ranges(self) -> bool:
         """Determine if the format style requires separate ranges."""
         return self == FormatStyle.BRACKETS_SEPARATE_RANGES
+
 
 class SequenceFileUtil(FileUtil):
     """Utilities for working with sequence files."""
@@ -567,13 +569,13 @@ class SequenceFileUtil(FileUtil):
         return sequence_numbers
 
     @staticmethod
-    def convert_to_sequence_format(file_paths: List[str], format_style: 'FormatStyle' = FormatStyle.HASH,
+    def convert_to_sequence_format(file_paths: Iterable[str], format_style: 'FormatStyle' = FormatStyle.HASH,
                                    use_unique_padding: bool = True, is_skip_hidden: bool = True
                                   ) -> Generator[str, None, None]:
         """Convert a list of file paths to a list with sequence path formats.
 
         Args:
-            file_paths (List[str]): A list of file paths.
+            file_paths (Iterable[str]): An iterable of file paths.
             format_style (FormatStyle): The format style to use for padding.
             use_unique_padding (bool): Whether to include distinct formats for each sequence length.
             is_skip_hidden (bool): Whether to skip hidden files.
@@ -765,6 +767,7 @@ class SequenceFileUtil(FileUtil):
         }
         return details
 
+
 class FilePathWalker:
 
     @staticmethod
@@ -827,7 +830,7 @@ class FilePathWalker:
 
     @staticmethod
     def traverse_files(root: str, is_skip_hidden: bool = True, is_return_relative: bool = False,
-                       excluded_folders: List[str] = list(), excluded_extensions: List[str] = list(),
+                       excluded_folders: Optional[List[str]] = None, excluded_extensions: Optional[List[str]] = None,
                        use_sequence_format: bool = False, max_depth: Optional[int] = None,
                        sort_key: Optional[Callable[[os.DirEntry], any]] = None, reverse_sort: bool = False,
                       ) -> Generator[str, None, None]:
@@ -863,18 +866,18 @@ class FilePathWalker:
             """
             # Initialize a list to collect file paths if sequence format is used
             file_paths = []
-            
+
             # Check if the directory can be accessed, skip if not 
             if not os.access(directory, os.R_OK):
                 return
-            
-            # Traverse entries in the directory
+
+            # Retrieve and optionally sort directory entries
             if sort_key:
                 entries = sorted(os.scandir(directory), key=sort_key, reverse=reverse_sort)
             else:
                 entries = os.scandir(directory)
 
-            # Traverse entries in the directory
+            # Iterate over each directory entry
             for entry in entries:
                 # Skip hidden files/directories and excluded folders
                 if FilePathWalker._is_skip_directory(entry.name, is_skip_hidden, excluded_folders):
@@ -910,7 +913,7 @@ class FilePathWalker:
 
     @staticmethod
     def traverse_files_walk(search_root: str, is_skip_hidden: bool = True, use_sequence_format: bool = False,
-                            excluded_folders: List[str] = list(), included_extensions: Optional[List[str]] = None,
+                            excluded_folders: Optional[List[str]] = None, included_extensions: Optional[List[str]] = None,
                             excluded_extensions: Optional[List[str]] = None, max_depth: Optional[int] = None,
                             sort_key: Optional[Callable[[str], any]] = None, reverse_sort: bool = False,
                            ) -> Generator[str, None, None]:
@@ -973,25 +976,45 @@ class FilePathWalker:
             )
 
     @staticmethod
-    def _is_skip_file(file_name: str, is_skip_hidden: bool = False, excluded_extensions: List[str] = list(),
+    def _is_skip_file(file_name: str, is_skip_hidden: bool = False,
+                      excluded_extensions: Optional[List[str]] = None,
                       included_extensions: Optional[List[str]] = None) -> bool:
-        """Check if a file should be skipped based on the specified criteria.
+        """Check if a file should be skipped based on hidden status or extension filters.
+
+        Args:
+            file_name (str): The name of the file to check.
+            is_skip_hidden (bool): Whether to skip hidden files (starting with '.').
+            excluded_extensions (Optional[List[str]]): File extensions to exclude.
+            included_extensions (Optional[List[str]]): File extensions to include.
+
+        Returns:
+            bool: True if the file should be skipped, False otherwise.
         """
         file_extension = FileUtil.get_file_extension(file_name)
         return (
             (is_skip_hidden and file_name.startswith('.')) or 
-            (file_extension in excluded_extensions) or
+            (excluded_extensions and file_extension in excluded_extensions) or
             (included_extensions and file_extension not in included_extensions)
         )
 
     @staticmethod
-    def _is_skip_directory(dir_name: str, is_skip_hidden: bool = False, excluded_folders: List[str] = list()) -> bool:
-        """Check if a directory should be skipped based on the specified criteria.
+    def _is_skip_directory(dir_name: str, is_skip_hidden: bool = False, 
+                           excluded_folders: Optional[List[str]] = None) -> bool:
+        """Check if a directory should be skipped based on its name.
+
+        Args:
+            dir_name (str): The name of the directory to check.
+            is_skip_hidden (bool): Whether to skip hidden directories (starting with '.').
+            excluded_folders (Optional[List[str]]): Specific folder names to exclude.
+
+        Returns:
+            bool: True if the directory should be skipped, False otherwise.
         """
         return (
             (is_skip_hidden and dir_name.startswith('.')) or
-            (dir_name in excluded_folders)
+            (excluded_folders and dir_name in excluded_folders)
         )
+
 
 class FilePatternQuery:
     """Query files matching a specified pattern.
@@ -1063,7 +1086,7 @@ class FilePatternQuery:
             yield from glob.iglob(search_path)
 
     def query_files(self, filters: Dict[str, List[str]] = dict(), use_sequence_format: bool = False, 
-                    excluded_extensions: List[str] = list(), is_skip_hidden: bool = True
+                    excluded_extensions: Optional[List[str]] = None, is_skip_hidden: bool = True
                    ) -> Generator[Dict[str, str], None, None]:
         """Query files matching the pattern and filters, returning their info.
 
