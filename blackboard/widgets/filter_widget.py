@@ -529,9 +529,9 @@ class FilterWidget(QtWidgets.QWidget):
 
         UI Wireframe:
 
-            ( FilterPopupButton ⏷)
+            ( FilterPopupButton ▼ )
             +---------------------------------------------+
-            | Condition ⏷               [Clear] [Remove] |
+            | Condition ▼                    [Clear] [⋮] |
             | ------------------------------------------- |
             |                                             |
             |        Widget-specific content area         |
@@ -539,6 +539,10 @@ class FilterWidget(QtWidgets.QWidget):
             | ------------------------------------------- |
             |                     [Cancel] [Apply Filter] |
             +---------------------------------------------+
+
+            [⋮] 
+            - [Promote to Toggle Filter]
+            - [Remove]
 
         """
         self.setWindowTitle(self.filter_name)  # Set window title
@@ -583,6 +587,8 @@ class FilterWidget(QtWidgets.QWidget):
         # Vertical ellipsis button with menu
         self.more_options_button = MoreOptionsButton(self)
 
+        # TODO: Implement
+        self.promote_toggle_filter_action = self.more_options_button.addAction("Promote to Toggle Filter", self.tabler_icon.toggle_left)
         # Add "Remove Filter" action
         self.remove_action = self.more_options_button.addAction("Remove Filter", self.tabler_icon.trash)
         

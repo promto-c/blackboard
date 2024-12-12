@@ -206,28 +206,26 @@ class PopupComboBox(QtWidgets.QComboBox):
         copy_action.triggered.connect(self.copy_current_text)
         context_menu.exec(self.mapToGlobal(position))
 
-    def _find_first_filtered_index(self) -> QtCore.QModelIndex:
+    def _find_first_filtered_index(self, parent=QtCore.QModelIndex()) -> QtCore.QModelIndex:
         """Recursively find the first visible index in the proxy model that matches the filter.
         """
-        def recurse(parent=QtCore.QModelIndex()):
-            for row in range(self.proxy_model.rowCount(parent)):
-                index = self.proxy_model.index(row, 0, parent)
-                if not index.isValid():
-                    continue
+        for row in range(self.proxy_model.rowCount(parent)):
+            index = self.proxy_model.index(row, 0, parent)
+            if not index.isValid():
+                continue
 
-                # Check if the current index's data matches the filter text
-                item_text = index.data(QtCore.Qt.DisplayRole)
-                if item_text and self._filter_text in item_text.lower():
-                    return index
+            # Check if the current index's data matches the filter text
+            item_text = index.data(QtCore.Qt.ItemDataRole.DisplayRole)
+            if item_text and self._filter_text in item_text.lower():
+                return index
 
-                # If the current index has children, search recursively
-                if self.proxy_model.hasChildren(index):
-                    found = recurse(index)
-                    if found.isValid():
-                        return found
-            return QtCore.QModelIndex()
+            # If the current index has children, search recursively
+            if self.proxy_model.hasChildren(index):
+                found = self._find_first_filtered_index(index)
+                if found.isValid():
+                    return found
 
-        return recurse()
+        return QtCore.QModelIndex()
 
     # Overridden Methods
     # ------------------

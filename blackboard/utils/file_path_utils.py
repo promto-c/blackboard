@@ -402,6 +402,7 @@ class SequenceFileUtil(FileUtil):
         padding = SequenceFileUtil.get_padding(sequence_data, format_style=format_style)
 
         if not isinstance(frame, int):
+            # Convert frame to integer to maintain consistency in formatting
             frame = int(frame)
 
         # Construct the file path

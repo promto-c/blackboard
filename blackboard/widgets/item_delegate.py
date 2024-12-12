@@ -446,7 +446,7 @@ class HighlightTextDelegate(QtWidgets.QStyledItemDelegate):
             # Define the rectangle for the highlight
             before_text_width = font_metrics.horizontalAdvance(text[:start_pos])
             highlight_rect = QtCore.QRect(
-                option.rect.left() + before_text_width + self.spacing*2,
+                option.rect.left() + before_text_width + int(self.spacing*2),
                 option.rect.top(),
                 highlight_text_width,
                 option.rect.height()

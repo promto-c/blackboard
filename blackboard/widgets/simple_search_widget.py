@@ -39,7 +39,7 @@ class MatchCountButton(QtWidgets.QPushButton):
         Args:
             parent (QtWidgets.QWidget, optional): The parent widget of the button. Defaults to None.
         """
-        super().__init__(parent)
+        super().__init__(parent, toolTip="Click to clear search")
 
         # Initialize setup
         self.__init_attributes()
@@ -56,8 +56,6 @@ class MatchCountButton(QtWidgets.QPushButton):
         # Set up properties
         self.setProperty('widget-style', 'action-clear')
         self.setFixedHeight(16)
-        # Setting a default tooltip
-        self.setToolTip("Click to clear search")
 
     # Public Methods
     # --------------
@@ -405,42 +403,48 @@ class SimpleSearchWidget(QtWidgets.QFrame):
         if not keyword:
             return
 
+        # Get the matched field indexes (an empty list if not matched)
+        matched_field_indexes = self._get_matched_field_indexes(tree_item)
+
         # If the item matches the search filter, add it to the matched items set and update the displayed match count
-        if self._is_matching_filter(tree_item):
+        if matched_field_indexes:
             self._all_match_items.add(tree_item)
             self._refresh_match_count()
 
-            # If the search is not active, simply highlight the matching item
+            # If the search is not active, highlight the matching item fields
             if not self.is_active:
-                self.tree_widget.highlight_items({tree_item})
+                for matched_field_index in matched_field_indexes:
+                    self.tree_widget.highlight_items({tree_item}, matched_field_index)
 
-        # If the item doesn't match and the search is active, hide the item
+        # If the item doesn't match and the search is active, hide it
         elif self.is_active:
             tree_item.setHidden(True)
 
-    def _is_matching_filter(self, item: 'QtWidgets.QTreeWidgetItem') -> bool:
-        """Check if an item matches the search filter.
+    def _get_matched_field_indexes(self, item: 'QtWidgets.QTreeWidgetItem') -> list:
+        """Check if an item matches the search filter and return all matched field indexes.
 
         Args:
             item (QtWidgets.QTreeWidgetItem): The item to check.
 
         Returns:
-            bool: True if the item matches the filter, False otherwise.
+            list: A list of matched column indexes. If no match is found, returns an empty list.
         """
+        matched_indexes = []
         search_fields = self.included_fields or self.tree_widget.fields
         for field in search_fields:
-            column_index = self.tree_widget.get_column_index(field)
-            item_text = item.text(column_index)
+            field_index = self.tree_widget.get_column_index(field)
+            item_text = item.text(field_index)
 
             # Check quoted terms for exact match
             if any(item_text == term for term in self.quoted_terms):
-                return True
+                matched_indexes.append(field_index)
+                continue
 
             # Check unquoted terms with wildcard support
             if any(self._is_match_unquoted_term(item_text, term) for term in self.unquoted_terms):
-                return True
+                matched_indexes.append(field_index)
 
-        return False
+        return matched_indexes
 
     def _is_match_unquoted_term(self, item_text: str, term: str) -> bool:
         """Helper method to check if item_text matches the unquoted term.
