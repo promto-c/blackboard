@@ -7,7 +7,7 @@ from typing import Any, Optional, List, Union, Dict, Tuple
 # ------------------------
 import fnmatch
 from functools import partial
-from enum import Enum
+from enum import Enum, auto
 
 # Third Party Imports
 # -------------------
@@ -23,6 +23,15 @@ from blackboard.widgets.popup_menu import ResizablePopupMenu
 
 # Class Definitions
 # -----------------
+# TODO: Implement filter widget to support switch mode
+class FilterMode(Enum):
+    STANDARD = auto()
+    TOGGLE = auto()
+    ADVANCED = auto()
+
+    def __str__(self):
+        return self.name.capitalize()
+
 class FilterCondition(Enum):
     """Enum representing supported filter conditions for different data types.
     """
@@ -263,7 +272,7 @@ class FilterSelectionBar(QtWidgets.QToolBar):
     def _customize_toolbar_components(self):
         """Customize the toolbar components.
         """
-        self.qt_toolbar_ext_button = self.findChild(QtWidgets.QToolButton, 'qt_toolbar_ext_button')
+        self.qt_toolbar_ext_button: QtWidgets.QToolButton = self.findChild(QtWidgets.QToolButton, 'qt_toolbar_ext_button')
         self.qt_toolbar_ext_button.setStyleSheet('padding: 0;')
         self.qt_toolbar_ext_button.setFixedSize(20, 20)
         self.qt_toolbar_ext_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
@@ -274,7 +283,7 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         if self.qt_toolbar_ext_button.isHidden():
             return
 
-        if self.orientation() == QtCore.Qt.Vertical:
+        if self.orientation() == QtCore.Qt.Orientation.Vertical:
             # Move button to the bottom of the toolbar in vertical orientation
             new_y = self.height() - self.qt_toolbar_ext_button.height()
             if self.qt_toolbar_ext_button.y() != new_y:
@@ -292,7 +301,7 @@ class FilterSelectionBar(QtWidgets.QToolBar):
 
     def _apply_filter_action(self, filter_name: str, check_state: bool):
         """Apply the filter action logic, including exclusive selection if Ctrl is pressed."""
-        if QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.ControlModifier:
+        if QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.KeyboardModifier.ControlModifier:
             self.apply_exclusive_filter(filter_name)
         else:
             self.filter_changed.emit(filter_name, check_state)
@@ -588,10 +597,12 @@ class FilterWidget(QtWidgets.QWidget):
         self.more_options_button = MoreOptionsButton(self)
 
         # TODO: Implement
-        self.promote_toggle_filter_action = self.more_options_button.addAction("Promote to Toggle Filter", self.tabler_icon.toggle_left)
+        self.switch_to_toggle_filter_action = self.more_options_button.addAction("Switch to Toggle Filter", self.tabler_icon.toggle_left)
+        self.switch_to_toggle_filter_action.triggered.connect(self.switch_to_toggle_filter)
+
         # Add "Remove Filter" action
         self.remove_action = self.more_options_button.addAction("Remove Filter", self.tabler_icon.trash)
-        
+
         self.remove_action.setProperty('color', 'red')
         self.remove_action.setToolTip("Remove this filter from Quick Access")
 
@@ -763,7 +774,7 @@ class FilterWidget(QtWidgets.QWidget):
         """Check if the filter is active. Must be implemented in subclasses.
         """
         raise NotImplementedError('')
-    
+
     @property
     def selected_condition(self):
         return self.condition_combo_box.currentData(QtCore.Qt.ItemDataRole.UserRole)
@@ -818,6 +829,11 @@ class FilterWidget(QtWidgets.QWidget):
             self._is_filter_applied = False
         
         super().hideEvent(event)
+
+    def switch_to_toggle_filter(self):
+        self._button.setMenu(None)
+        self.setIcon(self.tabler_icon.toggle_left)
+        self.hide_popup()
 
 class DateRange(Enum):
     """Enum representing various date ranges.
