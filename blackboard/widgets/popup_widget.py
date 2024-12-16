@@ -1,3 +1,4 @@
+# NOTE: Not use
 from typing import Callable, Optional
 from qtpy import QtWidgets, QtCore, QtGui
 

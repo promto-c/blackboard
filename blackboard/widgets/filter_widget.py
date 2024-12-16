@@ -18,7 +18,7 @@ from tablerqicon import TablerQIcon
 # -------------
 import blackboard as bb
 from blackboard import widgets
-from blackboard.widgets.popup_menu import ResizablePopupMenu
+from blackboard.widgets.menu import ContextMenu, ResizableMenu
 
 
 # Class Definitions
@@ -426,7 +426,7 @@ class MoreOptionsButton(QtWidgets.QToolButton):
         self.setIcon(TablerQIcon(opacity=0.6).dots_vertical)
 
         # Create the menu
-        self.popup_menu = QtWidgets.QMenu()
+        self.popup_menu = ContextMenu()
 
         self.clicked.connect(self.show_menu)
 
@@ -444,41 +444,27 @@ class MoreOptionsButton(QtWidgets.QToolButton):
         """
         self.popup_menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
 
+
 class FilterButton(QtWidgets.QPushButton):
 
     MINIMUM_WIDTH, MINIMUM_HEIGHT  = 42, 24
 
     def __init__(self, parent = None):
-        super().__init__(parent)
+        super().__init__(
+            parent, focusPolicy=QtCore.Qt.FocusPolicy.StrongFocus,
+            checkable=True, cursor=QtCore.Qt.CursorShape.PointingHandCursor,
+            minimumSize=QtCore.QSize(self.MINIMUM_WIDTH, self.MINIMUM_HEIGHT),
+        )
 
         # Initialize setup
         self.__init_ui()
-        self.__init_accessibility()
 
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setCheckable(True)
-        self.__init_popup_menu()
-        self.__init_ui_properties()
-
-    def __init_popup_menu(self):
-        """Initialize the popup menu of the widget.
-        """
-        self.popup_menu = ResizablePopupMenu(button=self)
+        self.popup_menu = ResizableMenu(button=self)
         self.setMenu(self.popup_menu)
-
-    def __init_ui_properties(self):
-        """Initialize UI properties like size, cursor, etc.
-        """
-        self.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self.setMinimumSize(self.MINIMUM_WIDTH, self.MINIMUM_HEIGHT)
         self.setFixedHeight(self.MINIMUM_HEIGHT)
-
-    def __init_accessibility(self):
-        """Initialize accessibility features like keyboard navigation and screen reader support.
-        """
-        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
 
 
 class FilterWidget(QtWidgets.QWidget):
@@ -579,9 +565,15 @@ class FilterWidget(QtWidgets.QWidget):
 
         # Vertical ellipsis button with menu
         self.more_options_button = MoreOptionsButton(self)
+        switch_to_section = self.more_options_button.popup_menu.addSection('Swith to')
 
         # TODO: Implement
-        self.switch_to_toggle_filter_action = self.more_options_button.addAction("Switch to Toggle Filter", self.tabler_icon.toggle_left)
+        self.switch_to_standard_filter_action = QtWidgets.QAction(self.tabler_icon.filter, "Standard Filter")
+        switch_to_section.addAction(self.switch_to_standard_filter_action)
+        self.switch_to_toggle_filter_action = QtWidgets.QAction(self.tabler_icon.toggle_left, "Toggle Filter")
+        switch_to_section.addAction(self.switch_to_toggle_filter_action)
+        self.switch_to_advance_filter_action = QtWidgets.QAction(self.tabler_icon.filter_cog, "Advance Filter")
+        switch_to_section.addAction(self.switch_to_advance_filter_action)
         self.switch_to_toggle_filter_action.triggered.connect(lambda: self.set_filter_mode(FilterMode.TOGGLE))
 
         # Add "Remove Filter" action
