@@ -444,7 +444,7 @@ class MoreOptionsButton(QtWidgets.QToolButton):
         """
         self.popup_menu.popup(self.mapToGlobal(self.rect().bottomLeft()))
 
-class FilterPopupButton(QtWidgets.QPushButton):
+class FilterButton(QtWidgets.QPushButton):
 
     MINIMUM_WIDTH, MINIMUM_HEIGHT  = 42, 24
 
@@ -452,18 +452,13 @@ class FilterPopupButton(QtWidgets.QPushButton):
         super().__init__(parent)
 
         # Initialize setup
-        self.__init_attributes()
         self.__init_ui()
         self.__init_accessibility()
-
-    def __init_attributes(self):
-        """Initialize the attributes.
-        """
-        self.is_active = False
 
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
+        self.setCheckable(True)
         self.__init_popup_menu()
         self.__init_ui_properties()
 
@@ -485,18 +480,6 @@ class FilterPopupButton(QtWidgets.QPushButton):
         """
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
 
-    def set_active(self, state: bool = True):
-        """Set the active state of the button.
-        """
-        self.is_active = state
-        self.setProperty('active', self.is_active)
-        self.update_style()
-
-    def update_style(self):
-        """Update the button's style based on its state.
-        """
-        self.style().unpolish(self)
-        self.style().polish(self)
 
 class FilterWidget(QtWidgets.QWidget):
 
@@ -532,13 +515,14 @@ class FilterWidget(QtWidgets.QWidget):
         # ------------------
         self._initial_focus_widget: QtWidgets.QWidget = None
         self._saved_state = dict()
+        self._filter_mode: 'FilterMode' = FilterMode.STANDARD
 
     def __init_ui(self):
         """Initialize the UI of the widget.
 
         UI Wireframe:
 
-            ( FilterPopupButton ▼ )
+            ( FilterButton ▼ )
             +---------------------------------------------+
             | Condition ▼                    [Clear] [⋮] |
             | ------------------------------------------- |
@@ -577,7 +561,7 @@ class FilterWidget(QtWidgets.QWidget):
         # Create Widgets
         # --------------
         # Initialize the filter button
-        self._button = FilterPopupButton(self.parent())
+        self._button = FilterButton(self.parent())
         # self._button.set_filter_widget(self)
         self.set_button_text()
         self.__init_button_popup_menu()
@@ -598,7 +582,7 @@ class FilterWidget(QtWidgets.QWidget):
 
         # TODO: Implement
         self.switch_to_toggle_filter_action = self.more_options_button.addAction("Switch to Toggle Filter", self.tabler_icon.toggle_left)
-        self.switch_to_toggle_filter_action.triggered.connect(self.switch_to_toggle_filter)
+        self.switch_to_toggle_filter_action.triggered.connect(lambda: self.set_filter_mode(FilterMode.TOGGLE))
 
         # Add "Remove Filter" action
         self.remove_action = self.more_options_button.addAction("Remove Filter", self.tabler_icon.trash)
@@ -629,6 +613,8 @@ class FilterWidget(QtWidgets.QWidget):
         """Initialize signal-slot connections.
         """
         # Connect signals to slots
+        self._button.toggled.connect(self.set_active)
+
         self.apply_button.clicked.connect(self.apply_filter)
 
         self.cancel_button.clicked.connect(self.discard_change)
@@ -672,7 +658,7 @@ class FilterWidget(QtWidgets.QWidget):
     def _update_button_active_state(self):
         """Update the active state based on the filter widget's state.
         """
-        self._button.set_active(self.is_active)
+        self._button.setChecked(self.is_active)
 
     def _format_text(self, text: str) -> str:
         """Format the text to be displayed on the button.
@@ -724,11 +710,18 @@ class FilterWidget(QtWidgets.QWidget):
         # Update the button's text
         self._button.setText(text)
 
-    def setIcon(self, icon: QtGui.QIcon):
-        """Set the icon for the filter widget and button.
-        """
-        self.setWindowIcon(icon)
-        self._button.setIcon(icon)
+    def set_filter_mode(self, filter_mode: 'FilterMode'):
+        self._filter_mode = filter_mode
+
+        if filter_mode == FilterMode.TOGGLE:
+            self._button.setMenu(None)
+            self.setIcon(self.tabler_icon.toggle_left)
+        elif filter_mode == FilterMode.ADVANCED:
+            ...
+        else:
+            ...
+
+        self.hide_popup()
 
     def set_filter_applied(self):
         """Set the filter as applied.
@@ -761,6 +754,13 @@ class FilterWidget(QtWidgets.QWidget):
         self.removed.emit()
         self.hide_popup()
 
+    def set_active(self, state):
+        """Set the active state of the filter.
+        """
+        if self._filter_mode == FilterMode.TOGGLE:
+            icon = TablerQIcon.toggle_right if state else TablerQIcon.toggle_left
+            self.setIcon(icon)
+
     # Class Properties
     # ----------------
     @property
@@ -770,10 +770,14 @@ class FilterWidget(QtWidgets.QWidget):
         return self._button
 
     @property
+    def filter_mode(self):
+        return self._filter_mode
+
+    @property
     def is_active(self):
-        """Check if the filter is active. Must be implemented in subclasses.
+        """Check if the filter is active.
         """
-        raise NotImplementedError('')
+        return self._button.isChecked()
 
     @property
     def selected_condition(self):
@@ -830,10 +834,12 @@ class FilterWidget(QtWidgets.QWidget):
         
         super().hideEvent(event)
 
-    def switch_to_toggle_filter(self):
-        self._button.setMenu(None)
-        self.setIcon(self.tabler_icon.toggle_left)
-        self.hide_popup()
+    def setIcon(self, icon: QtGui.QIcon):
+        """Set the icon for the filter widget and button.
+        """
+        self.setWindowIcon(icon)
+        self._button.setIcon(icon)
+
 
 class DateRange(Enum):
     """Enum representing various date ranges.
@@ -1908,7 +1914,7 @@ class BooleanFilterWidget(FilterWidget):
 
     def __init_ui(self):
         """Initialize the UI elements specific to the BooleanFilterWidget."""
-        self.setIcon(TablerQIcon.checkbox)  # Set an appropriate icon for boolean filter
+        self.setIcon(TablerQIcon.checkbox)
 
         # Set the initial focus widget to the condition combo box
         self.set_initial_focus_widget(self.condition_combo_box)
@@ -1947,39 +1953,6 @@ class BooleanFilterWidget(FilterWidget):
         # If the current condition is anything other than 'IS_TRUE' or its equivalent, the filter is active.
         return self._is_active
 
-class ToggleFilterWidget(FilterWidget):
-    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
-        super().__init__(filter_name=filter_name, parent=parent)
-
-        self._is_active = False
-
-        self.__init_ui()
-
-    def __init_ui(self):
-        """Initialize the UI of the widget.
-        """
-        self.setIcon(TablerQIcon.toggle_left)
-        self.unset_popup()
-        self.button.clicked.connect(self.toggle_active)
-
-    def toggle_active(self):
-        """Toggle the active state of the filter.
-        """
-        self.set_active(not self._is_active)
-
-    def set_active(self, state: bool = True):
-        """Set the active state of the filter.
-        """
-        self._is_active = state
-        icon = TablerQIcon.toggle_right if state else TablerQIcon.toggle_left
-        self.setIcon(icon)
-        self.activated.emit([self._is_active])
-
-    @property
-    def is_active(self):
-        """Check if the filter is active.
-        """
-        return self._is_active
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication([])
@@ -2057,7 +2030,9 @@ if __name__ == '__main__':
     is_active_filter_widget = BooleanFilterWidget(filter_name='Is Active')
     is_active_filter_widget.activated.connect(print)
 
-    show_hidden_filter_widget = ToggleFilterWidget(filter_name='Show Hidden')
+    show_hidden_filter_widget = FilterWidget(filter_name='Show Hidden')
+    show_hidden_filter_widget.set_filter_mode(FilterMode.TOGGLE)
+    # TODO: ...
     show_hidden_filter_widget.activated.connect(print)
 
     numeric_filter_widget = NumericFilterWidget(filter_name='Value')
