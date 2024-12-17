@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Union, Optional
+from typing import Any, Union, Optional
 
 # Third Party Imports
 # -------------------
@@ -18,36 +18,56 @@ class SectionAction(QtWidgets.QWidgetAction):
 
         self.parent_menu = parent_menu
 
-        # Create a label widget with the specified text
-        self.label = QtWidgets.QLabel(text, self.parent_menu)
+        # Create a container widget
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
 
+        # Optional Icon
         if icon:
-            # NOTE: Not Implement
-            ...
+            self.icon_label = QtWidgets.QLabel()
+            pixmap = icon.pixmap(16, 16)  # Adjust size as needed
+            self.icon_label.setPixmap(pixmap)
+            layout.addWidget(self.icon_label)
+        else:
+            self.icon_label = None
 
-        # Disable the label to make it non-interactive
-        self.label.setDisabled(True)
+        # Text Label
+        self.text_label = QtWidgets.QLabel(text)
+        layout.addWidget(self.text_label)
 
-        # Set the label as its default widget
-        self.setDefaultWidget(self.label)
+        # Set the layout to the container
+        container.setLayout(layout)
 
+        # Set the container as the default widget for the action
+        self.setDefaultWidget(container)
+
+        # Add the action to the parent menu
         self.parent_menu.addAction(self)
+
+        # Add a separator after the section
         self.separator = self.parent_menu.addSeparator()
 
-    def addAction(self, action: Union[QtWidgets.QAction, str]) -> QtWidgets.QAction:
-        if isinstance(action, str):
-            action = QtWidgets.QAction(action, self.parent_menu)
+    def addAction(self, action: QtGui.QAction = None, icon: QtGui.QIcon = None, text: str = '', toolTip: str = None, 
+                  data: Any = None, *args, **kwargs) -> QtGui.QAction:
+        if not isinstance(action, QtGui.QAction):
+            toolTip = toolTip or text
+            action = QtGui.QAction(icon=icon, text=text, toolTip=toolTip, *args, **kwargs)
+            if data is not None:
+                action.setData(data)
+
         self.parent_menu.insertAction(self.separator, action)
 
         return action
-    
-    def addMenu(self, title: str) -> QtWidgets.QMenu:
 
-        menu = ContextMenu(title, self.parent_menu)
+    def addMenu(self, title: str, *args, **kwargs) -> QtWidgets.QMenu:
+        menu = ContextMenu(title, self.parent_menu, *args, **kwargs)
         self.parent_menu.insertMenu(self.separator, menu)
 
         return menu
-    
+
     def addSeparator(self) -> QtWidgets.QAction:
         return self.parent_menu.insertSeparator(self.separator)
 
@@ -55,8 +75,8 @@ class ContextMenu(QtWidgets.QMenu):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, title: str = '', parent: QtWidgets.QWidget = None):
-        super().__init__(title, parent)
+    def __init__(self, title: str = '', parent: QtWidgets.QWidget = None, *args, **kwargs):
+        super().__init__(title, parent, *args, **kwargs)
 
         # Set UI attributes
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
