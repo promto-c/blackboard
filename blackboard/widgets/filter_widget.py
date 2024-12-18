@@ -93,6 +93,18 @@ class FilterCondition(Enum):
         """
         return not self.num_params == 0
 
+    def validate_params(self, *args) -> bool:
+        """Validate the number of parameters provided against the requirement.
+
+        Args:
+            *args: Variable length argument list.
+        Returns:
+            bool: True if valid, False otherwise.
+        """
+        if self.num_params is None:
+            return len(args) >= 1  # At least one parameter needed
+        return len(args) == self.num_params
+
     def __str__(self):
         """Return the string representation of the filter condition."""
         return self.title
@@ -678,15 +690,25 @@ class FilterWidget(QtWidgets.QWidget):
         """
         self.filtered_list = filtered_list
 
-    def _update_button_active_state(self):
+    def _update_button_active_state(self, values: List[Any]):
         """Update the active state based on the filter widget's state.
         """
         self._button.setChecked(self.is_active)
+        # TODO:
+        # self._button.setText(self.format_label(values))
 
     def _format_text(self, text: str) -> str:
         """Format the text to be displayed on the button.
         """
         return f"{self.filter_name} • {text}"
+
+    # TODO: Implement this in subclass instead of emit `label_changed`
+    def format_label(self, values: List[Any], use_format: bool = True):
+        text = ', '.join(values)
+        # Format the text based on the 'use_format' flag.
+        text = self._format_text(text) if use_format else text
+
+        return text
 
     def _emit_clear_signals(self):
         """Emit signals to indicate that the filter condition is cleared.
@@ -694,7 +716,7 @@ class FilterWidget(QtWidgets.QWidget):
         # Emit the label_changed signal with an empty string to indicate that the condition is cleared
         self.label_changed.emit(str())
         # Emit the activated signal with an empty list to indicate no active date range
-        self.activated.emit(list())
+        self.activated.emit([])
 
     # Public Methods
     # --------------
@@ -725,6 +747,7 @@ class FilterWidget(QtWidgets.QWidget):
         self.save_change()
         self.hide_popup()
 
+    # TODO: Set button text after `activated`
     def set_button_text(self, text: str = str(), use_format: bool = True):
         """Update the button's text. Optionally format the text.
         """
@@ -784,6 +807,12 @@ class FilterWidget(QtWidgets.QWidget):
             icon = TablerQIcon.toggle_right if state else TablerQIcon.toggle_left
             self.setIcon(icon)
 
+        else:
+            self._button.setChecked(state)
+
+    def get_filter_condition(self) -> 'FilterCondition':
+        return self.condition_combo_box.currentData(QtCore.Qt.ItemDataRole.UserRole)
+
     # Class Properties
     # ----------------
     @property
@@ -827,9 +856,6 @@ class FilterWidget(QtWidgets.QWidget):
         """Set the filter. Must be implemented in subclasses.
         """
         raise NotImplementedError("Subclasses must implement set_filter")
-
-    def get_filter_condition(self) -> 'FilterCondition':
-        return self.condition_combo_box.currentData(QtCore.Qt.ItemDataRole.UserRole)
 
     def get_filter_values(self) -> Optional[Tuple[Any, ...]]:
         """Get the filter values. Must be implemented in subclasses.
@@ -1206,6 +1232,18 @@ class TextFilterWidget(FilterWidget):
         elif text_value:
             return f"{self.selected_condition.display_name}: {text_value}"
         return self.selected_condition.display_name
+
+    # def format_label(self, values: List[str]) -> str:
+    #     """Format the display label based on current inputs.
+    #     """
+    #     text_value = values[0]
+    #     if not self.selected_condition.requires_value():
+    #         text = self.selected_condition.display_name
+    #     elif text_value:
+    #         text = f"{self.selected_condition.display_name}: {text_value}"
+    #     text = self.selected_condition.display_name
+
+    #     super().format_label(text)
 
     # Class Properties
     # ----------------
@@ -1658,7 +1696,7 @@ class FileTypeFilterWidget(FilterWidget):
         # If none of the above conditions are met, return False
         return False
 
-    def get_selected_extensions(self):
+    def get_filter_values(self):
         """Get the selected file extensions.
         """
         selected_extensions = list()
@@ -1713,7 +1751,7 @@ class FileTypeFilterWidget(FilterWidget):
         self.save_state('checked_state', checked_state_dict)
 
         # 
-        selected_extensions = self.get_selected_extensions()
+        selected_extensions = self.get_filter_values()
 
         # Emit the signal with the selected file extensions
         self.label_changed.emit(", ".join(selected_extensions))

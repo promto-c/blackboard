@@ -50,11 +50,11 @@ class SectionAction(QtWidgets.QWidgetAction):
         # Add a separator after the section
         self.separator = self.parent_menu.addSeparator()
 
-    def addAction(self, action: QtGui.QAction = None, icon: QtGui.QIcon = None, text: str = '', toolTip: str = None, 
+    def addAction(self, action: QtGui.QAction = None, icon: QtGui.QIcon = QtGui.QIcon(), text: str = '', toolTip: str = None, 
                   data: Any = None, *args, **kwargs) -> QtGui.QAction:
         if not isinstance(action, QtGui.QAction):
             toolTip = toolTip or text
-            action = QtGui.QAction(icon=icon, text=text, toolTip=toolTip, *args, **kwargs)
+            action = QtGui.QAction(icon=icon, text=text, toolTip=toolTip, parent=self, *args, **kwargs)
             if data is not None:
                 action.setData(data)
 

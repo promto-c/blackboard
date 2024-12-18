@@ -555,14 +555,14 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         # [0] - Add 'Grouping' section with actions: 'Group by this column' and 'Ungroup all'
         grouping_section_action = self.header_menu.addSection('Grouping')
-        self.group_by_action = grouping_section_action.addAction('Group by this column')
-        ungroup_all_action = grouping_section_action.addAction('Ungroup all')
+        self.group_by_action = grouping_section_action.addAction(text='Group by this column')
+        ungroup_all_action = grouping_section_action.addAction(text='Ungroup all')
         # [1] - Add 'Visualization' section with actions: 'Set Color Adaptive', 'Reset All Color Adaptive', and 'Fit in View'
         visualization_section_action = self.header_menu.addSection('Visualization')
-        apply_color_adaptive_action = visualization_section_action.addAction('Set Color Adaptive')
-        reset_all_color_adaptive_action = visualization_section_action.addAction('Reset All Color Adaptive')
+        apply_color_adaptive_action = visualization_section_action.addAction(text='Set Color Adaptive')
+        reset_all_color_adaptive_action = visualization_section_action.addAction(text='Reset All Color Adaptive')
         visualization_section_action.addSeparator()
-        fit_column_in_view_action = visualization_section_action.addAction('Fit in View')
+        fit_column_in_view_action = visualization_section_action.addAction(text='Fit in View')
         # [2] - Add 'Manage Columns' section with actions for column management
         manage_columns_section_action = self.header_menu.addSection('Manage Columns')
         show_hide_column_menu = manage_columns_section_action.addMenu('Show/Hide Columns')
@@ -570,7 +570,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         column_management_widget_action = QtWidgets.QWidgetAction(self)
         column_management_widget_action.setDefaultWidget(self.column_management_widget)
         show_hide_column_menu.addAction(column_management_widget_action)
-        hide_this_column = manage_columns_section_action.addAction('Hide This Column')
+        hide_this_column = manage_columns_section_action.addAction(text='Hide This Column')
 
         # Connect actions to their corresponding methods
         self.group_by_action.triggered.connect(lambda: self.group_by_column(self._current_column_index))
