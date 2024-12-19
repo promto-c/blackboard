@@ -526,7 +526,6 @@ class FilterWidget(QtWidgets.QWidget):
 
     CONDITIONS: List[FilterCondition] = []
 
-    label_changed = QtCore.Signal(str)
     activated = QtCore.Signal(list)
     removed = QtCore.Signal()
 
@@ -607,7 +606,7 @@ class FilterWidget(QtWidgets.QWidget):
         # --------------
         # Initialize the filter button
         self._button = FilterButton(self, self.parent())
-        self.set_button_text()
+        self._button.setText(self._format_text(''))
 
         self.condition_combo_box = QtWidgets.QComboBox()
         self.condition_combo_box.setProperty('widget-style', 'clean')
@@ -668,7 +667,7 @@ class FilterWidget(QtWidgets.QWidget):
         self.clear_button.clicked.connect(self.set_filter_applied)
         self.clear_button.clicked.connect(self.clear_state)
         self.clear_button.clicked.connect(self.clear_filter)
-        self.clear_button.clicked.connect(self._emit_clear_signals)
+        self.clear_button.clicked.connect(lambda: self.activated.emit([]))
         self.clear_button.clicked.connect(self.hide_popup)
 
         self.remove_action.triggered.connect(self.remove_filter)
@@ -678,7 +677,6 @@ class FilterWidget(QtWidgets.QWidget):
         self.activated.connect(self._update_filtered_list)
 
         # Connect signals with the filter button
-        self.label_changed.connect(self.set_button_text)
         self.activated.connect(self._update_button_active_state)
 
         bb.utils.KeyBinder.bind_key('Enter', self, self.apply_filter)
@@ -694,8 +692,7 @@ class FilterWidget(QtWidgets.QWidget):
         """Update the active state based on the filter widget's state.
         """
         self._button.setChecked(self.is_active)
-        # TODO:
-        # self._button.setText(self.format_label(values))
+        self._button.setText(self.format_label(values))
 
     def _format_text(self, text: str) -> str:
         """Format the text to be displayed on the button.
@@ -703,20 +700,12 @@ class FilterWidget(QtWidgets.QWidget):
         return f"{self.filter_name} • {text}"
 
     # TODO: Implement this in subclass instead of emit `label_changed`
-    def format_label(self, values: List[Any], use_format: bool = True):
-        text = ', '.join(values)
+    def format_label(self, value: List[Any] = '', use_format: bool = True):
+        text = ', '.join(value) if isinstance(value, list) else value
         # Format the text based on the 'use_format' flag.
         text = self._format_text(text) if use_format else text
 
         return text
-
-    def _emit_clear_signals(self):
-        """Emit signals to indicate that the filter condition is cleared.
-        """
-        # Emit the label_changed signal with an empty string to indicate that the condition is cleared
-        self.label_changed.emit(str())
-        # Emit the activated signal with an empty list to indicate no active date range
-        self.activated.emit([])
 
     # Public Methods
     # --------------
@@ -746,15 +735,6 @@ class FilterWidget(QtWidgets.QWidget):
         self.set_filter_applied()
         self.save_change()
         self.hide_popup()
-
-    # TODO: Set button text after `activated`
-    def set_button_text(self, text: str = str(), use_format: bool = True):
-        """Update the button's text. Optionally format the text.
-        """
-        # Format the text based on the 'use_format' flag.
-        text = self._format_text(text) if use_format else text
-        # Update the button's text
-        self._button.setText(text)
 
     def set_filter_mode(self, filter_mode: 'FilterMode'):
         self._filter_mode = filter_mode
@@ -1011,17 +991,19 @@ class DateRangeFilterWidget(FilterWidget):
         self.save_state('date_range', date_range)
         self.save_state('filter_label', filter_label)
 
+        self.activated.emit(self.get_filter_values())
+
+    # TODO: Implement
+    def get_filter_values(self):
         start_date_str = self.start_date.toString(QtCore.Qt.DateFormat.ISODate) if self.start_date else str()
         end_date_str = self.end_date.toString(QtCore.Qt.DateFormat.ISODate) if self.end_date else str()
+        ...
 
-        if start_date_str or end_date_str:
-            date_list = bb.utils.DateUtil.get_date_list(start_date_str, end_date_str)
-        else:
-            date_list = list()
-            filter_label = str()
+        return ...
 
-        self.label_changed.emit(filter_label)
-        self.activated.emit(date_list)
+    def format_label(self, value = '', use_format = True):
+        ...
+        return super().format_label(value, use_format)
 
     def clear_filter(self):
         """Clear the selected date range and reset the relative date selector.
@@ -1059,6 +1041,7 @@ class DateRangeFilterWidget(FilterWidget):
 
         # Set the first item as the current item
         self.relative_date_combo_box.setCurrentIndex(0)
+
 
 # NOTE: WIP
 class DateTimeRangeFilterWidget(DateRangeFilterWidget):
@@ -1112,6 +1095,8 @@ class DateTimeRangeFilterWidget(DateRangeFilterWidget):
         self.save_state('start_time', start_time)
         self.save_state('end_time', end_time)
         # Combine date and time for emitting
+        # TODO: Implement `get_filter_values` and `format_label`
+        ...
         self.label_changed.emit(f"{self.start_date.toString(QtCore.Qt.DateFormat.ISODate)} {start_time} - {self.end_date.toString(QtCore.Qt.DateFormat.ISODate)} {end_time}")
 
     def discard_change(self):
@@ -1205,8 +1190,6 @@ class TextFilterWidget(FilterWidget):
             text_value = self.text_edit.text()
             values = [text_value]
 
-        label_text = self.format_label(text_value)
-        self.label_changed.emit(label_text)
         self.activated.emit(values)
 
     def clear_filter(self):
@@ -1224,26 +1207,17 @@ class TextFilterWidget(FilterWidget):
         else:
             self.text_edit.show()
 
-    def format_label(self, text_value: str) -> str:
+    def format_label(self, values: List[str]) -> str:
         """Format the display label based on current inputs.
         """
+        text_value = values[0]
         if not self.selected_condition.requires_value():
-            return self.selected_condition.display_name
+            text = self.selected_condition.display_name
         elif text_value:
-            return f"{self.selected_condition.display_name}: {text_value}"
-        return self.selected_condition.display_name
+            text = f"{self.selected_condition.display_name}: {text_value}"
+        text = self.selected_condition.display_name
 
-    # def format_label(self, values: List[str]) -> str:
-    #     """Format the display label based on current inputs.
-    #     """
-    #     text_value = values[0]
-    #     if not self.selected_condition.requires_value():
-    #         text = self.selected_condition.display_name
-    #     elif text_value:
-    #         text = f"{self.selected_condition.display_name}: {text_value}"
-    #     text = self.selected_condition.display_name
-
-    #     super().format_label(text)
+        return super().format_label(text)
 
     # Class Properties
     # ----------------
@@ -1622,10 +1596,11 @@ class MultiSelectFilterWidget(FilterWidget):
         checked_state_dict = self.get_checked_state_dict()
         self.save_state('checked_state', checked_state_dict)
 
-        tags = self.tag_list_view.get_tags()
+        self.activated.emit(self.get_filter_values())
 
-        self.label_changed.emit(', '.join(tags))
-        self.activated.emit(tags)
+    def get_filter_values(self) -> List[str]:
+        return self.tag_list_view.get_tags()
+
 
 class FileTypeFilterWidget(FilterWidget):
 
@@ -1750,12 +1725,8 @@ class FileTypeFilterWidget(FilterWidget):
         self.save_state('custom_input', custom_types)
         self.save_state('checked_state', checked_state_dict)
 
-        # 
-        selected_extensions = self.get_filter_values()
-
         # Emit the signal with the selected file extensions
-        self.label_changed.emit(", ".join(selected_extensions))
-        self.activated.emit(selected_extensions)
+        self.activated.emit(self.get_filter_values())
 
     def discard_change(self):
         """Revert any changes made.
@@ -1874,11 +1845,6 @@ class NumericFilterWidget(FilterWidget):
         self.save_state('upper_value', self.upper_value_edit.text())
 
         # Emit signals with appropriate data
-        lower_value = self.lower_value_edit.text()
-        upper_value = self.upper_value_edit.text()
-
-        label_text = self.format_label(lower_value, upper_value)
-        self.label_changed.emit(label_text)
         self.activated.emit(self.get_filter_values())
 
     def get_filter_values(self) -> Optional[Tuple[float, ...]]:
@@ -1945,18 +1911,34 @@ class NumericFilterWidget(FilterWidget):
         elif upper_value:
             self.condition_combo_box.setCurrentText(FilterCondition.LESS_THAN.display_name)
 
-    def format_label(self, lower_value: str, upper_value: str) -> str:
+    def format_label(self, values: Tuple[float, ...]) -> None:
         """Format the display label based on current inputs.
         """
-        if lower_value and upper_value:
-            if lower_value == upper_value:
-                return f"= {lower_value}"  # When both values are equal
-            return f"{lower_value} - {upper_value}"
-        elif lower_value:
-            return f"> {lower_value}"
-        elif upper_value:
-            return f"< {upper_value}"
-        return "Equal"
+        formatter_mapping: Dict[FilterCondition, str] = {
+            FilterCondition.BETWEEN: "{0} - {1}",
+            FilterCondition.NOT_BETWEEN: "Not between {0} - {1}",
+            FilterCondition.GREATER_THAN: "> {0}",
+            FilterCondition.LESS_THAN: "< {0}",
+            FilterCondition.EQUALS: "= {0}",
+            FilterCondition.NOT_EQUALS: "≠ {0}",
+        }
+
+        # Retrieve the format string based on the selected condition
+        format_str = formatter_mapping.get(self.selected_condition, self.selected_condition.display_name)
+
+        # Determine how to format the label based on the number of parameters
+        if self.selected_condition.num_params == 2:
+            # For conditions like BETWEEN and NOT_BETWEEN
+            text = format_str.format(*values)
+        elif self.selected_condition.num_params == 1:
+            # For conditions like >, <, =, ≠
+            text = format_str.format(values[0])
+        else:
+            # For conditions like IS_NULL and IS_NOT_NULL
+            text = format_str
+
+        # Update the label using the superclass method
+        return super().format_label(text)
 
     # Class Properties
     # ----------------
@@ -1989,7 +1971,6 @@ class BooleanFilterWidget(FilterWidget):
         super().__init__(filter_name=filter_name, parent=parent)
 
         # Initialize setup specific to BooleanFilterWidget
-        self._is_active = False
         self.__init_ui()
 
     def __init_ui(self):
@@ -2013,24 +1994,18 @@ class BooleanFilterWidget(FilterWidget):
     def save_change(self):
         """Save the current state of the filter settings."""
         self.save_state('condition', self.selected_condition.display_name)
-        self._is_active = True
+        self._button.setChecked(True)
 
         # Emit signals with appropriate data
-        self.label_changed.emit(self.selected_condition.display_name)
         self.activated.emit([])
+
+    def format_label(self, _values):
+        return super().format_label(self.selected_condition.display_name)
 
     def clear_filter(self):
         """Clear the filter settings and reset to the default state."""
         self.condition_combo_box.setCurrentIndex(0)
-        self._is_active = False
-
-    # Class Properties
-    # ----------------
-    @property
-    def is_active(self):
-        """Check if the filter is active based on the current condition."""
-        # If the current condition is anything other than 'IS_TRUE' or its equivalent, the filter is active.
-        return self._is_active
+        self._button.setChecked(False)
 
 
 if __name__ == '__main__':
