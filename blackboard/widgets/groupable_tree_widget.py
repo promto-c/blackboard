@@ -1104,7 +1104,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             global_row = all_items.index(tree_item)
             column = index.column()
 
-            cell_value = tree_item.get_value(column)
+            cell_value = tree_item.text(column)
             cell_text = '' if cell_value is None else str(cell_value)
             cell_text = f'"{cell_text}"' if ('\t' in cell_text or '\n' in cell_text) else cell_text
 

@@ -526,7 +526,7 @@ class FilterWidget(QtWidgets.QWidget):
 
     CONDITIONS: List[FilterCondition] = []
 
-    activated = QtCore.Signal(list)
+    activated = QtCore.Signal(bool)
     removed = QtCore.Signal()
 
     # Initialization and Setup
@@ -548,7 +548,6 @@ class FilterWidget(QtWidgets.QWidget):
         """
         # Attributes
         # ------------------
-        self.filtered_list = list()
         self.tabler_icon = TablerQIcon(opacity=0.6)
 
         # Private Attributes
@@ -606,7 +605,7 @@ class FilterWidget(QtWidgets.QWidget):
         # --------------
         # Initialize the filter button
         self._button = FilterButton(self, self.parent())
-        self._button.setText(self._format_text(''))
+        self._clear_button_text()
 
         self.condition_combo_box = QtWidgets.QComboBox()
         self.condition_combo_box.setProperty('widget-style', 'clean')
@@ -667,14 +666,12 @@ class FilterWidget(QtWidgets.QWidget):
         self.clear_button.clicked.connect(self.set_filter_applied)
         self.clear_button.clicked.connect(self.clear_state)
         self.clear_button.clicked.connect(self.clear_filter)
-        self.clear_button.clicked.connect(lambda: self.activated.emit([]))
+        self.clear_button.clicked.connect(lambda: self.activated.emit(False))
         self.clear_button.clicked.connect(self.hide_popup)
 
         self.remove_action.triggered.connect(self.remove_filter)
 
         self.switch_to_toggle_filter_action.triggered.connect(lambda: self.set_filter_mode(FilterMode.TOGGLE))
-
-        self.activated.connect(self._update_filtered_list)
 
         # Connect signals with the filter button
         self.activated.connect(self._update_button_active_state)
@@ -683,29 +680,24 @@ class FilterWidget(QtWidgets.QWidget):
 
     # Private Methods
     # ---------------
-    def _update_filtered_list(self, filtered_list: List[Any]):
-        """Update the filtered list with the provided list.
-        """
-        self.filtered_list = filtered_list
-
-    def _update_button_active_state(self, values: List[Any]):
+    def _update_button_active_state(self, state: bool):
         """Update the active state based on the filter widget's state.
         """
-        self._button.setChecked(self.is_active)
-        self._button.setText(self.format_label(values))
+        self._button.setChecked(state)
+        if state:
+            self._button.setText(self.format_label(self.get_filter_values()))
+        else:
+            self._clear_button_text()
+
+    def _clear_button_text(self):
+        """Clear the button text.
+        """
+        self._button.setText(self._format_text(''))
 
     def _format_text(self, text: str) -> str:
         """Format the text to be displayed on the button.
         """
         return f"{self.filter_name} • {text}"
-
-    # TODO: Implement this in subclass instead of emit `label_changed`
-    def format_label(self, value: List[Any] = '', use_format: bool = True):
-        text = ', '.join(value) if isinstance(value, list) else value
-        # Format the text based on the 'use_format' flag.
-        text = self._format_text(text) if use_format else text
-
-        return text
 
     # Public Methods
     # --------------
@@ -734,6 +726,7 @@ class FilterWidget(QtWidgets.QWidget):
         """
         self.set_filter_applied()
         self.save_change()
+        self.activated.emit(self.check_validity())
         self.hide_popup()
 
     def set_filter_mode(self, filter_mode: 'FilterMode'):
@@ -786,6 +779,7 @@ class FilterWidget(QtWidgets.QWidget):
         if self._filter_mode == FilterMode.TOGGLE:
             icon = TablerQIcon.toggle_right if state else TablerQIcon.toggle_left
             self.setIcon(icon)
+            self.activated.emit(state)
 
         else:
             self._button.setChecked(state)
@@ -841,6 +835,32 @@ class FilterWidget(QtWidgets.QWidget):
         """Get the filter values. Must be implemented in subclasses.
         """
         raise NotImplementedError("Subclasses must implement get_filter_values")
+
+    def format_label(self, value: List[Any] = '', use_format: bool = True):
+        """Apply additional formatting to the text.
+
+        This is a placeholder method intended to be overridden by subclasses 
+        to provide specific formatting logic.
+
+        Args:
+            text (str): The text to format.
+
+        Returns:
+            str: The formatted text.
+        """
+        text = ', '.join(value) if isinstance(value, list) else value
+        # Format the text based on the 'use_format' flag.
+        text = self._format_text(text) if use_format else text
+
+        return text
+
+    def check_validity(self) -> bool:
+        """Check if the current filter configuration is valid. Base implementation always returns True.
+        
+        Returns:
+            bool: True if valid, False otherwise.
+        """
+        return True
 
     # Override Methods
     # ----------------
@@ -956,15 +976,6 @@ class DateRangeFilterWidget(FilterWidget):
         self.relative_date_combo_box.currentIndexChanged.connect(self.select_relative_date_range)
         self.calendar.range_selected.connect(self.select_absolute_date_range)
 
-    # Class Properties
-    # ----------------
-    @property
-    def is_active(self):
-        return (
-            self.relative_date_combo_box.currentData() != DateRange.SELECTED_DATE_RANGE or
-            self.relative_date_combo_box.itemData(0) != DateRange.SELECTED_DATE_RANGE
-        )
-
     # Slot Implementations
     # --------------------
     def discard_change(self):
@@ -992,8 +1003,6 @@ class DateRangeFilterWidget(FilterWidget):
         self.save_state('current_index', current_index)
         self.save_state('date_range', date_range)
         self.save_state('filter_label', filter_label)
-
-        self.activated.emit(self.get_filter_values())
 
     def get_filter_values(self) -> List[QtCore.QDate]:
         """Retrieve the current date values based on the selected condition.
@@ -1031,6 +1040,12 @@ class DateRangeFilterWidget(FilterWidget):
 
         # Update the label using the superclass method
         return super().format_label(text)
+
+    def check_validity(self):
+        return (
+            self.relative_date_combo_box.currentText() != DateRange.SELECTED_DATE_RANGE.value or
+            self.relative_date_combo_box.itemData(0) != DateRange.SELECTED_DATE_RANGE
+        )
 
     def clear_filter(self):
         """Clear the selected date range and reset the relative date selector.
@@ -1124,7 +1139,6 @@ class DateTimeRangeFilterWidget(DateRangeFilterWidget):
         # Combine date and time for emitting
         # TODO: Implement `get_filter_values` and `format_label`
         ...
-        self.label_changed.emit(f"{self.start_date.toString(QtCore.Qt.DateFormat.ISODate)} {start_time} - {self.end_date.toString(QtCore.Qt.DateFormat.ISODate)} {end_time}")
 
     def discard_change(self):
         """Revert changes for both date and time."""
@@ -1210,6 +1224,7 @@ class TextFilterWidget(FilterWidget):
         self.save_state('condition', self.selected_condition.display_name)
         self.save_state('text', self.text_edit.text())
 
+    def get_filter_values(self):
         if not self.selected_condition.requires_value():
             text_value = ''
             values = []
@@ -1217,7 +1232,7 @@ class TextFilterWidget(FilterWidget):
             text_value = self.text_edit.text()
             values = [text_value]
 
-        self.activated.emit(values)
+        return values
 
     def clear_filter(self):
         """Clear all filter settings and reset to the default state.
@@ -1246,10 +1261,7 @@ class TextFilterWidget(FilterWidget):
 
         return super().format_label(text)
 
-    # Class Properties
-    # ----------------
-    @property
-    def is_active(self):
+    def check_validity(self):
         """Check if the filter is active based on current values.
         """
         return self.selected_condition.requires_value() or bool(self.text_edit.text())
@@ -1476,8 +1488,7 @@ class MultiSelectFilterWidget(FilterWidget):
         # Check each keyword against the text using fnmatch which supports wildcards like *
         return any(fnmatch.fnmatch(text, pattern) for pattern in keywords)
 
-    @property
-    def is_active(self):
+    def check_validity(self):
         """Check if the filter is active.
         """
         return bool(self.tag_list_view.get_tags())
@@ -1623,8 +1634,6 @@ class MultiSelectFilterWidget(FilterWidget):
         checked_state_dict = self.get_checked_state_dict()
         self.save_state('checked_state', checked_state_dict)
 
-        self.activated.emit(self.get_filter_values())
-
     def get_filter_values(self) -> List[str]:
         return self.tag_list_view.get_tags()
 
@@ -1683,8 +1692,7 @@ class FileTypeFilterWidget(FilterWidget):
         """
         ...
 
-    @property
-    def is_active(self):
+    def check_validity(self):
         """Check if the filter is active (any file type is selected or custom types are specified).
         """
         # Check if any checkbox is checked
@@ -1751,9 +1759,6 @@ class FileTypeFilterWidget(FilterWidget):
         # Save and add custom extensions
         self.save_state('custom_input', custom_types)
         self.save_state('checked_state', checked_state_dict)
-
-        # Emit the signal with the selected file extensions
-        self.activated.emit(self.get_filter_values())
 
     def discard_change(self):
         """Revert any changes made.
@@ -1871,9 +1876,6 @@ class NumericFilterWidget(FilterWidget):
         self.save_state('lower_value', self.lower_value_edit.text())
         self.save_state('upper_value', self.upper_value_edit.text())
 
-        # Emit signals with appropriate data
-        self.activated.emit(self.get_filter_values())
-
     def get_filter_values(self) -> Optional[Tuple[float, ...]]:
         if not self.selected_condition.requires_value():
             return []
@@ -1957,10 +1959,7 @@ class NumericFilterWidget(FilterWidget):
         # Update the label using the superclass method
         return super().format_label(text)
 
-    # Class Properties
-    # ----------------
-    @property
-    def is_active(self):
+    def check_validity(self):
         """Check if the filter is active based on current values.
         """
         return self.selected_condition.requires_value() or bool(self.lower_value_edit.text() or self.upper_value_edit.text())
@@ -1999,10 +1998,6 @@ class BooleanFilterWidget(FilterWidget):
 
     # Slot Implementations
     # --------------------
-    def handle_condition_change(self):
-        """Handle changes to the condition selection."""
-        self.save_change()
-
     def discard_change(self):
         """Revert the widget to its previously saved state."""
         saved_condition = self.load_state('condition', FilterCondition.IS_TRUE.title)
@@ -2014,7 +2009,7 @@ class BooleanFilterWidget(FilterWidget):
         self._button.setChecked(True)
 
         # Emit signals with appropriate data
-        self.activated.emit([])
+        self.activated.emit(True)
 
     def format_label(self, _values):
         return super().format_label(self.selected_condition.display_name)

@@ -1076,7 +1076,7 @@ class DatabaseViewWidget(DataViewWidget):
 
             # Get the filter condition and values from the filter widget
             filter_condition = filter_widget.get_filter_condition()
-            values = filter_widget.filtered_list
+            values = filter_widget.get_filter_values()
 
             # Generate the SQL condition for this filter
             sql_condition = self.generate_sql_query(column_name, filter_condition, values)
