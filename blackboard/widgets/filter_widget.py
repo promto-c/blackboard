@@ -913,6 +913,8 @@ class DateRangeFilterWidget(FilterWidget):
         FilterCondition.AFTER,
         FilterCondition.IN_RANGE,
         FilterCondition.NOT_IN_RANGE,
+        FilterCondition.EQUALS,
+        FilterCondition.NOT_EQUALS,
         FilterCondition.IS_NULL,
         FilterCondition.IS_NOT_NULL
     ]
@@ -993,17 +995,42 @@ class DateRangeFilterWidget(FilterWidget):
 
         self.activated.emit(self.get_filter_values())
 
-    # TODO: Implement
-    def get_filter_values(self):
+    def get_filter_values(self) -> List[QtCore.QDate]:
+        """Retrieve the current date values based on the selected condition.
+
+        Returns:
+            A list containing:
+                - For single-date conditions (BEFORE, AFTER): [date]
+                - For range conditions (IN_RANGE, NOT_IN_RANGE): [start_date, end_date]
+                - For no-date conditions (IS_NULL, IS_NOT_NULL): []
+        """
         start_date_str = self.start_date.toString(QtCore.Qt.DateFormat.ISODate) if self.start_date else str()
         end_date_str = self.end_date.toString(QtCore.Qt.DateFormat.ISODate) if self.end_date else str()
-        ...
 
-        return ...
+        if self.selected_condition.num_params == 2:
+            return [start_date_str, end_date_str]
+        elif self.selected_condition.num_params == 1:
+            return [start_date_str or end_date_str]
+        else:
+            return []
 
-    def format_label(self, value = '', use_format = True):
-        ...
-        return super().format_label(value, use_format)
+    def format_label(self, values):
+        # Define a mapping from FilterCondition to label formats
+        formatter_mapping = {
+            FilterCondition.BEFORE: "Before {0}",
+            FilterCondition.AFTER: "After {0}",
+            FilterCondition.IN_RANGE: "{0} to {1}",
+            FilterCondition.NOT_IN_RANGE: "Not between {0} and {1}",
+            FilterCondition.EQUALS: "Equals {0}",
+            FilterCondition.NOT_EQUALS: "Does Not Equal {0}",
+        }
+
+        # Retrieve the format string based on the selected condition
+        format_str = formatter_mapping.get(self.selected_condition, self.selected_condition.display_name)
+        text = format_str.format(*values)
+
+        # Update the label using the superclass method
+        return super().format_label(text)
 
     def clear_filter(self):
         """Clear the selected date range and reset the relative date selector.
@@ -1925,17 +1952,7 @@ class NumericFilterWidget(FilterWidget):
 
         # Retrieve the format string based on the selected condition
         format_str = formatter_mapping.get(self.selected_condition, self.selected_condition.display_name)
-
-        # Determine how to format the label based on the number of parameters
-        if self.selected_condition.num_params == 2:
-            # For conditions like BETWEEN and NOT_BETWEEN
-            text = format_str.format(*values)
-        elif self.selected_condition.num_params == 1:
-            # For conditions like >, <, =, ≠
-            text = format_str.format(values[0])
-        else:
-            # For conditions like IS_NULL and IS_NOT_NULL
-            text = format_str
+        text = format_str.format(*values)
 
         # Update the label using the superclass method
         return super().format_label(text)
