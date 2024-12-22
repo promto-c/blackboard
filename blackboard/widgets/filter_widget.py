@@ -19,6 +19,7 @@ from tablerqicon import TablerQIcon
 import blackboard as bb
 from blackboard import widgets
 from blackboard.widgets.menu import ContextMenu, ResizableMenu
+from blackboard.widgets.line_edit import LineEdit
 
 
 # Class Definitions
@@ -32,21 +33,23 @@ class FilterMode(Enum):
     def __str__(self):
         return self.name.capitalize()
 
+
 class FilterCondition(Enum):
     """Enum representing supported filter conditions for different data types.
     """
-
-    # Text Conditions
+     # Shared Conditions for Multiple Data Types
     CONTAINS = ("Contains", "{column} LIKE '%' || ? || '%'", 1)
     DOES_NOT_CONTAIN = ("Does Not Contain", "{column} NOT LIKE '%' || ? || '%'", 1)
     EQUALS = ("Equals", "{column} = ?", 1)
     NOT_EQUALS = ("Not Equals", "{column} != ?", 1)
-    STARTS_WITH = ("Starts With", "{column} LIKE ? || '%'", 1)
-    ENDS_WITH = ("Ends With", "{column} LIKE '%' || ?", 1)
     IS_NULL = ("Is Null", "{column} IS NULL", 0)
     IS_NOT_NULL = ("Is Not Null", "{column} IS NOT NULL", 0)
 
-    # Numeric Conditions
+    # Text Conditions
+    STARTS_WITH = ("Starts With", "{column} LIKE ? || '%'", 1)
+    ENDS_WITH = ("Ends With", "{column} LIKE '%' || ?", 1)
+
+    # Numeric and Date-Specific Conditions
     GREATER_THAN = ("Greater Than", "{column} > ?", 1)
     LESS_THAN = ("Less Than", "{column} < ?", 1)
     BETWEEN = ("Between", "{column} BETWEEN ? AND ?", 2)
@@ -55,8 +58,6 @@ class FilterCondition(Enum):
     # Date Conditions
     BEFORE = ("Before", "{column} < ?", 1)
     AFTER = ("After", "{column} > ?", 1)
-    IN_RANGE = ("In Range", "{column} BETWEEN ? AND ?", 2)
-    NOT_IN_RANGE = ("Not In Range", "{column} NOT BETWEEN ? AND ?", 2)
 
     # Boolean Conditions
     IS_TRUE = ("Is True", "{column} = 1", 0)
@@ -68,22 +69,29 @@ class FilterCondition(Enum):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, title: str, sql_format: str, num_params: int = 1):
-        """Initialize the FilterCondition enum with a title, SQL format, and number of parameters.
+    def __init__(self, display_name: str, query_format: str, num_params: int = 1):
+        """Initialize the FilterCondition enum with a display_name, SQL format, and number of parameters.
         """
-        self.title = title
-        self.sql_format = sql_format
-        self.num_params = num_params
+        self._display_name = display_name
+        self._query_format = query_format
+        self._num_params = num_params
 
     @property
     def display_name(self) -> str:
-        """Return the display name of the filter condition."""
-        return self.title
+        """Return the display name of the filter condition.
+        """
+        return self._display_name
 
     @property
     def query_format(self) -> str:
-        """Return the SQL query format for the filter condition."""
-        return self.sql_format
+        """Return the SQL query format for the filter condition.
+        """
+        return self._query_format
+
+    @property
+    def num_params(self) -> Optional[int]:
+        """Return the number of parameters required for the filter condition."""
+        return self._num_params
 
     def requires_value(self) -> bool:
         """Determine if the filter condition requires input values.
@@ -91,23 +99,90 @@ class FilterCondition(Enum):
         Returns:
             bool: True if values are required, False otherwise.
         """
-        return not self.num_params == 0
+        return not self._num_params == 0
 
     def validate_params(self, *args) -> bool:
         """Validate the number of parameters provided against the requirement.
 
         Args:
             *args: Variable length argument list.
+
         Returns:
             bool: True if valid, False otherwise.
         """
-        if self.num_params is None:
+        if self._num_params is None:
             return len(args) >= 1  # At least one parameter needed
-        return len(args) == self.num_params
+        return len(args) == self._num_params
 
     def __str__(self):
-        """Return the string representation of the filter condition."""
-        return self.title
+        """Return the string representation of the filter condition.
+        """
+        return self._display_name
+
+
+class DataType(Enum):
+    """Enum representing different data types and their associated filter conditions.
+    """
+    TEXT = ("Text", (
+        FilterCondition.CONTAINS,
+        FilterCondition.DOES_NOT_CONTAIN,
+        FilterCondition.EQUALS,
+        FilterCondition.NOT_EQUALS,
+        FilterCondition.STARTS_WITH,
+        FilterCondition.ENDS_WITH,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL,
+    ))
+    NUMERIC = ("Numeric", (
+        FilterCondition.EQUALS,
+        FilterCondition.NOT_EQUALS,
+        FilterCondition.GREATER_THAN,
+        FilterCondition.LESS_THAN,
+        FilterCondition.BETWEEN,
+        FilterCondition.NOT_BETWEEN,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL,
+    ))
+    DATE = ("Date", (
+        FilterCondition.BEFORE,
+        FilterCondition.AFTER,
+        FilterCondition.BETWEEN,
+        FilterCondition.NOT_BETWEEN,
+        FilterCondition.EQUALS,
+        FilterCondition.NOT_EQUALS,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL,
+    ))
+    BOOLEAN = ("Boolean", (
+        FilterCondition.IS_TRUE,
+        FilterCondition.IS_FALSE,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL,
+    ))
+    MULTI_VALUE = ("Multi-Value", (
+        FilterCondition.IN,
+        FilterCondition.NOT_IN,
+        FilterCondition.CONTAINS,
+        FilterCondition.DOES_NOT_CONTAIN,
+        FilterCondition.IS_NULL,
+        FilterCondition.IS_NOT_NULL,
+    ))
+
+    def __init__(self, display_name: str, filter_conditions: Tuple[FilterCondition, ...]):
+        """Initialize the DataType enum with a display name and associated filter conditions.
+
+        Args:
+            display_name (str): The display name of the data type.
+            filter_conditions (Tuple[FilterCondition, ...]): A tuple of associated FilterCondition enums.
+        """
+        self.display_name = display_name
+        self.filter_conditions = filter_conditions
+
+    def __str__(self):
+        """Return the string representation of the data type.
+        """
+        return self.display_name
+
 
 class FilterSelectionBar(QtWidgets.QToolBar):
     """A toolbar widget that manages filter actions.
@@ -581,7 +656,8 @@ class FilterWidget(QtWidgets.QWidget):
             - Remove Filter
 
         """
-        self.setWindowTitle(self.filter_name)  # Set window title
+        # Set window title
+        self.setWindowTitle(self.filter_name)
 
         # Create Layouts
         # --------------
@@ -834,7 +910,7 @@ class FilterWidget(QtWidgets.QWidget):
     def get_filter_values(self) -> Optional[Tuple[Any, ...]]:
         """Get the filter values. Must be implemented in subclasses.
         """
-        raise NotImplementedError("Subclasses must implement get_filter_values")
+        return []
 
     def format_label(self, value: List[Any] = '', use_format: bool = True):
         """Apply additional formatting to the text.
@@ -928,16 +1004,17 @@ class DateRange(Enum):
 
 class DateRangeFilterWidget(FilterWidget):
 
-    CONDITIONS = [
-        FilterCondition.BEFORE,
-        FilterCondition.AFTER,
-        FilterCondition.IN_RANGE,
-        FilterCondition.NOT_IN_RANGE,
-        FilterCondition.EQUALS,
-        FilterCondition.NOT_EQUALS,
-        FilterCondition.IS_NULL,
-        FilterCondition.IS_NOT_NULL
-    ]
+    CONDITIONS = DataType.DATE.filter_conditions
+
+    # Define a mapping from FilterCondition to label formats
+    FORMATTER_MAPPING: Dict[FilterCondition, str] = {
+        FilterCondition.BEFORE: "Before {0}",
+        FilterCondition.AFTER: "After {0}",
+        FilterCondition.BETWEEN: "{0} ↔ {1}",
+        FilterCondition.NOT_BETWEEN: "Not in {0} ↔ {1}",
+        FilterCondition.EQUALS: "Equals {0}",
+        FilterCondition.NOT_EQUALS: "Does Not Equal {0}",
+    }
 
     def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
@@ -1010,7 +1087,7 @@ class DateRangeFilterWidget(FilterWidget):
         Returns:
             A list containing:
                 - For single-date conditions (BEFORE, AFTER): [date]
-                - For range conditions (IN_RANGE, NOT_IN_RANGE): [start_date, end_date]
+                - For range conditions (BETWEEN, NOT_BETWEEN): [start_date, end_date]
                 - For no-date conditions (IS_NULL, IS_NOT_NULL): []
         """
         start_date_str = self.start_date.toString(QtCore.Qt.DateFormat.ISODate) if self.start_date else str()
@@ -1024,18 +1101,8 @@ class DateRangeFilterWidget(FilterWidget):
             return []
 
     def format_label(self, values):
-        # Define a mapping from FilterCondition to label formats
-        formatter_mapping = {
-            FilterCondition.BEFORE: "Before {0}",
-            FilterCondition.AFTER: "After {0}",
-            FilterCondition.IN_RANGE: "{0} to {1}",
-            FilterCondition.NOT_IN_RANGE: "Not between {0} and {1}",
-            FilterCondition.EQUALS: "Equals {0}",
-            FilterCondition.NOT_EQUALS: "Does Not Equal {0}",
-        }
-
         # Retrieve the format string based on the selected condition
-        format_str = formatter_mapping.get(self.selected_condition, self.selected_condition.display_name)
+        format_str = self.FORMATTER_MAPPING.get(self.selected_condition, self.selected_condition.display_name)
         text = format_str.format(*values)
 
         # Update the label using the superclass method
@@ -1091,10 +1158,9 @@ class DateTimeRangeFilterWidget(DateRangeFilterWidget):
         super().__init__(filter_name=filter_name, parent=parent)
 
         # Additional setup for time range filtering
-        self.__init_datetime_ui()
-        self.__init_datetime_signal_connections()
+        self.__init_ui()
 
-    def __init_datetime_ui(self):
+    def __init_ui(self):
         """Initialize UI elements for handling both date and time."""
         self.setIcon(TablerQIcon.calendar_clock)
 
@@ -1113,17 +1179,6 @@ class DateTimeRangeFilterWidget(DateRangeFilterWidget):
         # Add the time widgets to the UI layout
         self.time_layout.addWidget(self.time_start_label)
         self.time_layout.addWidget(self.time_end_label)
-
-    def __init_datetime_signal_connections(self):
-        """Initialize signal-slot connections for datetime handling."""
-        # Connect signals related to time selection
-        self.time_start_edit.timeChanged.connect(self.handle_time_change)
-        self.time_end_edit.timeChanged.connect(self.handle_time_change)
-
-    def handle_time_change(self):
-        """Handle changes in the time edits to keep date and time consistent."""
-        # Implement any logic needed to manage changes in time components
-        ...
 
     def save_change(self):
         """Save the date and time range."""
@@ -1162,16 +1217,7 @@ class TextFilterWidget(FilterWidget):
     """
 
     # Define supported conditions
-    CONDITIONS: List[FilterCondition] = [
-        FilterCondition.CONTAINS, 
-        FilterCondition.DOES_NOT_CONTAIN,
-        FilterCondition.EQUALS,
-        FilterCondition.NOT_EQUALS,
-        FilterCondition.STARTS_WITH,
-        FilterCondition.ENDS_WITH,
-        FilterCondition.IS_NULL,
-        FilterCondition.IS_NOT_NULL,
-    ]
+    CONDITIONS = DataType.TEXT.filter_conditions
 
     def __init__(self, filter_name: str = "Text Filter", parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
@@ -1186,16 +1232,7 @@ class TextFilterWidget(FilterWidget):
         self.setIcon(TablerQIcon.letter_case)
 
         # Add a line edit for entering the text to filter
-        self.text_edit = QtWidgets.QLineEdit(self)
-        self.text_edit.setPlaceholderText("Enter text to filter...")
-        self.text_edit.setProperty('has-placeholder', True)
-        self.text_edit.textChanged.connect(self.update_style)
-        # Create a clear action for the line edit
-        clear_action = QtWidgets.QAction(self)
-        clear_action.setIcon(TablerQIcon.x)  # Icon for the clear button
-        clear_action.setToolTip("Clear")
-        clear_action.triggered.connect(self.text_edit.clear)
-        self.text_edit.addAction(clear_action, QtWidgets.QLineEdit.ActionPosition.TrailingPosition)
+        self.text_edit = LineEdit(self, placeholderText="Enter text to filter...")
 
         # Add the line edit to the specific content area of the widget
         self.widget_layout.addWidget(self.text_edit)
@@ -1319,18 +1356,12 @@ class FilterEntryEdit(QtWidgets.QLineEdit):
         # Set the model for the completer
         self.completer().setModel(self.proxy_model)
 
+
 class MultiSelectFilterWidget(FilterWidget):
     """A widget representing a filter with a checkable tree.
     """
 
-    CONDITIONS = [
-        FilterCondition.IN,
-        FilterCondition.NOT_IN,
-        FilterCondition.CONTAINS, 
-        FilterCondition.DOES_NOT_CONTAIN,
-        FilterCondition.IS_NULL,
-        FilterCondition.IS_NOT_NULL,
-    ]
+    CONDITIONS = DataType.MULTI_VALUE.filter_conditions
 
     def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
@@ -1366,14 +1397,14 @@ class MultiSelectFilterWidget(FilterWidget):
         self.setIcon(TablerQIcon.list_check)
 
         # Tree view
-        self.tree_view = widgets.MomentumScrollTreeView(self)
-        self.tree_view.setHeaderHidden(True)
-        self.tree_view.setRootIsDecorated(False)
+        self.tree_view = widgets.MomentumScrollTreeView(
+            self, headerHidden=True,
+            rootIsDecorated = False
+        )
         self.proxy_model = bb.utils.CheckableProxyModel()
         self.tree_view.setModel(self.proxy_model)
 
         self.filter_entry_edit = FilterEntryEdit(self)
-        self.set_initial_focus_widget(self.filter_entry_edit)
         self.filter_entry_edit.setModel(self.tree_view.model())
 
         self.tag_list_view = widgets.TagListView(self, show_only_checked=True)
@@ -1390,12 +1421,13 @@ class MultiSelectFilterWidget(FilterWidget):
         self.widget_layout.addWidget(self.filter_entry_edit)
         self.widget_layout.addWidget(self.tree_view)
 
+        self.set_initial_focus_widget(self.filter_entry_edit)
+
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
         # Input text field
         self.filter_entry_edit.editingFinished.connect(self.update_checked_state)
-        # Connect completer's activated signal to add tags
         self.filter_entry_edit.completer().activated.connect(self.update_checked_state)
 
         self.copy_button.clicked.connect(self.copy_data_to_clipboard)
@@ -1640,12 +1672,7 @@ class MultiSelectFilterWidget(FilterWidget):
 
 class FileTypeFilterWidget(FilterWidget):
 
-    CONDITIONS = [
-        FilterCondition.IN,
-        FilterCondition.NOT_IN,
-        FilterCondition.IS_NULL,
-        FilterCondition.IS_NOT_NULL
-    ]
+    CONDITIONS = DataType.MULTI_VALUE.filter_conditions
 
     def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
@@ -1777,6 +1804,7 @@ class FileTypeFilterWidget(FilterWidget):
         custom_input_text = ', '.join(custom_input)
         self.custom_input.setText(custom_input_text)
 
+
 class NumericFilterWidget(FilterWidget):
     """A widget for filtering numeric data with dynamic two-way condition handling.
 
@@ -1791,16 +1819,16 @@ class NumericFilterWidget(FilterWidget):
         +----------------------------------+
     """
 
-    CONDITIONS = [
-        FilterCondition.EQUALS,
-        FilterCondition.NOT_EQUALS,
-        FilterCondition.GREATER_THAN,
-        FilterCondition.LESS_THAN,
-        FilterCondition.BETWEEN,
-        FilterCondition.NOT_BETWEEN,
-        FilterCondition.IS_NULL,
-        FilterCondition.IS_NOT_NULL
-    ]
+    CONDITIONS = DataType.NUMERIC.filter_conditions
+
+    FORMATTER_MAPPING: Dict[FilterCondition, str] = {
+        FilterCondition.BETWEEN: "{0} ↔ {1}",
+        FilterCondition.NOT_BETWEEN: "Not in {0} ↔ {1}",
+        FilterCondition.GREATER_THAN: "> {0}",
+        FilterCondition.LESS_THAN: "< {0}",
+        FilterCondition.EQUALS: "= {0}",
+        FilterCondition.NOT_EQUALS: "≠ {0}",
+    }
 
     def __init__(self, filter_name: str = "Numeric Filter", parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
@@ -1814,42 +1842,28 @@ class NumericFilterWidget(FilterWidget):
         """
         self.setIcon(TablerQIcon.filter)  # Set an appropriate icon for numeric filter
 
-        # Add line edits for entering numeric values with placeholders
-        self.lower_value_edit = QtWidgets.QLineEdit(self)
-        self.lower_value_edit.setPlaceholderText("Lower limit...")
-        self.lower_value_edit.setProperty('has-placeholder', True)
-        self.lower_value_edit.setValidator(QtGui.QDoubleValidator())  # Ensure numeric input only
-        self.lower_value_edit.textChanged.connect(self.update_style)
-        # Create a clear action for the line edit
-        clear_action = QtWidgets.QAction(self)
-        clear_action.setIcon(TablerQIcon.x)  # Icon for the clear button
-        clear_action.setToolTip("Clear")
-        clear_action.triggered.connect(self.lower_value_edit.clear)
-        self.lower_value_edit.addAction(clear_action, QtWidgets.QLineEdit.ActionPosition.TrailingPosition)
-        self.lower_value_label = widgets.LabelEmbedderWidget(self.lower_value_edit, 'From')
-
-        self.upper_value_edit = QtWidgets.QLineEdit(self)
-        self.upper_value_edit.setPlaceholderText("Upper limit......")
-        self.upper_value_edit.setProperty('has-placeholder', True)
-        self.upper_value_edit.setValidator(QtGui.QDoubleValidator())  # Ensure numeric input only
-        self.upper_value_edit.textChanged.connect(self.update_style)
-        # Create a clear action for the line edit
-        clear_action = QtWidgets.QAction(self)
-        clear_action.setIcon(TablerQIcon.x)  # Icon for the clear button
-        clear_action.setToolTip("Clear")
-        clear_action.triggered.connect(self.upper_value_edit.clear)
-        self.upper_value_edit.addAction(clear_action, QtWidgets.QLineEdit.ActionPosition.TrailingPosition)
-        self.upper_value_label = widgets.LabelEmbedderWidget(self.upper_value_edit, 'To')
-
-        # Add the line edits to the specific content area of the widget
+        # Create Layouts
+        # --------------
         self.value_layout = QtWidgets.QHBoxLayout()
-        self.value_layout.addWidget(self.lower_value_label)
-        self.value_layout.addWidget(QtWidgets.QLabel("--", self))  # Icon or writer to separate fields
-        self.value_layout.addWidget(self.upper_value_label)
         self.widget_layout.addLayout(self.value_layout)
 
+        # Create Widgets
+        # --------------
+        # Add line edits for entering numeric values with placeholders
+        self.lower_value_edit = LineEdit(self, placeholderText="Lower limit...", validator=QtGui.QDoubleValidator())
+        self.lower_value_label = widgets.LabelEmbedderWidget(self.lower_value_edit, 'From')
+        self.upper_value_edit = LineEdit(self, placeholderText="Upper limit...", validator=QtGui.QDoubleValidator())
+        self.upper_value_label = widgets.LabelEmbedderWidget(self.upper_value_edit, 'To')
+
+        # Add Widgets to Layouts
+        # ----------------------
+        # Add the line edits to the specific content area of the widget
+        self.value_layout.addWidget(self.lower_value_label)
+        self.value_layout.addWidget(QtWidgets.QLabel("↔", self))
+        self.value_layout.addWidget(self.upper_value_label)
+
         # Set the initial focus widget to the condition combo box
-        self.set_initial_focus_widget(self.condition_combo_box)
+        self.set_initial_focus_widget(self.lower_value_edit)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections for NumericFilterWidget.
@@ -1882,12 +1896,12 @@ class NumericFilterWidget(FilterWidget):
         lower_value = self.lower_value_edit.text()
         upper_value = self.upper_value_edit.text()
 
-        if self.selected_condition in (FilterCondition.BETWEEN, FilterCondition.NOT_BETWEEN):
+        if self.selected_condition.num_params == 2:
             if lower_value and upper_value:
                 return sorted([float(lower_value), float(upper_value)])
             else:
                 return []  # Cannot apply BETWEEN without both values
-        else:
+        elif self.selected_condition.num_params == 1:
             value = lower_value or upper_value
             if value:
                 return [float(value)]
@@ -1943,17 +1957,8 @@ class NumericFilterWidget(FilterWidget):
     def format_label(self, values: Tuple[float, ...]) -> None:
         """Format the display label based on current inputs.
         """
-        formatter_mapping: Dict[FilterCondition, str] = {
-            FilterCondition.BETWEEN: "{0} - {1}",
-            FilterCondition.NOT_BETWEEN: "Not between {0} - {1}",
-            FilterCondition.GREATER_THAN: "> {0}",
-            FilterCondition.LESS_THAN: "< {0}",
-            FilterCondition.EQUALS: "= {0}",
-            FilterCondition.NOT_EQUALS: "≠ {0}",
-        }
-
         # Retrieve the format string based on the selected condition
-        format_str = formatter_mapping.get(self.selected_condition, self.selected_condition.display_name)
+        format_str = self.FORMATTER_MAPPING.get(self.selected_condition, self.selected_condition.display_name)
         text = format_str.format(*values)
 
         # Update the label using the superclass method
@@ -1976,12 +1981,7 @@ class BooleanFilterWidget(FilterWidget):
         +----------------------------------+
     """
 
-    CONDITIONS = [
-        FilterCondition.IS_TRUE,
-        FilterCondition.IS_FALSE,
-        FilterCondition.IS_NULL,
-        FilterCondition.IS_NOT_NULL
-    ]
+    CONDITIONS = DataType.BOOLEAN.filter_conditions
 
     def __init__(self, filter_name: str = "Boolean Filter", parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, parent=parent)
@@ -2000,16 +2000,12 @@ class BooleanFilterWidget(FilterWidget):
     # --------------------
     def discard_change(self):
         """Revert the widget to its previously saved state."""
-        saved_condition = self.load_state('condition', FilterCondition.IS_TRUE.title)
+        saved_condition = self.load_state('condition', FilterCondition.IS_TRUE.display_name)
         self.condition_combo_box.setCurrentText(saved_condition)
 
     def save_change(self):
         """Save the current state of the filter settings."""
         self.save_state('condition', self.selected_condition.display_name)
-        self._button.setChecked(True)
-
-        # Emit signals with appropriate data
-        self.activated.emit(True)
 
     def format_label(self, _values):
         return super().format_label(self.selected_condition.display_name)
@@ -2017,7 +2013,6 @@ class BooleanFilterWidget(FilterWidget):
     def clear_filter(self):
         """Clear the filter settings and reset to the default state."""
         self.condition_combo_box.setCurrentIndex(0)
-        self._button.setChecked(False)
 
 
 if __name__ == '__main__':
