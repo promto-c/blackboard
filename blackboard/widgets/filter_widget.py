@@ -596,6 +596,15 @@ class FilterButton(QtWidgets.QPushButton):
 
         self.setIcon(self._filter_widget.windowIcon())
 
+    def setText(self, text: str):
+        """Override the setText method to set both the button text and the tooltip.
+
+        Args:
+            text (str): The text to set on the button and as the tooltip.
+        """
+        super().setText(text)
+        self.setToolTip(text)
+
 
 class FilterWidget(QtWidgets.QWidget):
 
@@ -647,13 +656,13 @@ class FilterWidget(QtWidgets.QWidget):
             |                     [Cancel] [Apply Filter] |
             +---------------------------------------------+
 
-            [⋮] 
+            [⋮]
+            Manage
+            - Remove Filter
             Switch to
             - Standard Filter
             - Toggle Filter
             - Advance Filter
-            Manage
-            - Remove Filter
 
         """
         # Set window title
@@ -694,12 +703,6 @@ class FilterWidget(QtWidgets.QWidget):
 
         # Vertical ellipsis button with menu
         self.more_options_button = MoreOptionsButton(self)
-        switch_to_section = self.more_options_button.popup_menu.addSection('Switch to')
-
-        # TODO: Implement
-        self.switch_to_standard_filter_action = switch_to_section.addAction(icon=self.tabler_icon.filter, text="Standard Filter")
-        self.switch_to_toggle_filter_action = switch_to_section.addAction(icon=self.tabler_icon.toggle_left, text="Toggle Filter")
-        self.switch_to_advance_filter_action = switch_to_section.addAction(icon=self.tabler_icon.filter_cog, text="Advance Filter")
 
         # Add "Remove Filter" action
         manage_section = self.more_options_button.popup_menu.addSection('Manage')
@@ -709,10 +712,18 @@ class FilterWidget(QtWidgets.QWidget):
         )
         self.remove_action.setProperty('color', 'red')
 
+        # Add "Switch Filter" action
+        switch_to_section = self.more_options_button.popup_menu.addSection('Switch to')
+
+        # TODO: Implement
+        self.switch_to_standard_filter_action = switch_to_section.addAction(icon=self.tabler_icon.filter, text="Standard Filter")
+        self.switch_to_toggle_filter_action = switch_to_section.addAction(icon=self.tabler_icon.toggle_left, text="Toggle Filter")
+        self.switch_to_advance_filter_action = switch_to_section.addAction(icon=self.tabler_icon.filter_cog, text="Advance Filter")
+
         # Add Confirm and Cancel buttons
-        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button = QtWidgets.QPushButton("Cancel", cursor=QtCore.Qt.CursorShape.PointingHandCursor)
         self.cancel_button.setProperty('widget-style', 'dialog')
-        self.apply_button = QtWidgets.QPushButton("Apply Filter")
+        self.apply_button = QtWidgets.QPushButton("Apply Filter", cursor=QtCore.Qt.CursorShape.PointingHandCursor)
         self.apply_button.setProperty('widget-style', 'dialog')
         self.apply_button.setProperty('color', 'blue')
 
@@ -760,10 +771,11 @@ class FilterWidget(QtWidgets.QWidget):
         """Update the active state based on the filter widget's state.
         """
         self._button.setChecked(state)
-        if state:
-            self._button.setText(self.format_label(self.get_filter_values()))
-        else:
-            self._clear_button_text()
+        if self.filter_mode == FilterMode.STANDARD:
+            if state:
+                self._button.setText(self.format_label(self.get_filter_values()))
+            else:
+                self._clear_button_text()
 
     def _clear_button_text(self):
         """Clear the button text.
@@ -810,7 +822,7 @@ class FilterWidget(QtWidgets.QWidget):
 
         if filter_mode == FilterMode.TOGGLE:
             self._button.setMenu(None)
-            self.setIcon(self.tabler_icon.toggle_left)
+            self.setIcon(TablerQIcon.toggle_left)
         elif filter_mode == FilterMode.ADVANCED:
             ...
         else:

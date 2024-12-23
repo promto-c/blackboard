@@ -36,6 +36,9 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         id (Any): The ID of the item.
     """
 
+    # Maximum number of bytes to display
+    MAX_BYTES_DISPLAY = 16
+
     # Initialization and Setup
     # ------------------------
     def __init__(self, parent: Union[QtWidgets.QTreeWidget, QtWidgets.QTreeWidgetItem], 
@@ -66,7 +69,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         self._set_user_role_data(item_values)
 
     def _convert_to_str(self, value: Any) -> str:
-        """Convert a given value to a string, decoding bytes if necessary.
+        """Convert a given value to a string, decoding bytes if necessary, with size limitation.
 
         Args:
             value (Any): The value to convert to a string.
@@ -75,6 +78,10 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
             str: The string representation of the value.
         """
         if isinstance(value, bytes):
+            if len(value) > self.MAX_BYTES_DISPLAY:
+                # Truncate the bytes and append an indicator
+                truncated = value[:self.MAX_BYTES_DISPLAY]
+                return truncated.hex() + '... (truncated)'
             return value.hex()
         elif isinstance(value, list):
             return ''

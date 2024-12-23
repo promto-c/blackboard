@@ -663,7 +663,7 @@ class DBWidget(QtWidgets.QWidget):
         # Create Widgets
         # --------------
         # Create a splitter
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
 
         self.__init_left_widget()
         self.__init_data_view_widget()
@@ -696,25 +696,23 @@ class DBWidget(QtWidgets.QWidget):
     def __init_left_widget(self):
         """Create and configure the left widget.
         """
+        # Create Layouts
+        # --------------
         self.left_widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(self.left_widget)
 
         top_layout = QtWidgets.QHBoxLayout()
         layout.addLayout(top_layout)
 
-        self.db_path_line_edit = QtWidgets.QLineEdit()
-        self.db_path_line_edit.setReadOnly(True)
+        # Create Widgets
+        # --------------
+        self.db_path_line_edit = QtWidgets.QLineEdit(readOnly=True)
         self.db_path_label = LabelEmbedderWidget(self.db_path_line_edit, 'Database Path')
 
-        self.open_db_button = QtWidgets.QPushButton(TablerQIcon.folder_open, '')
-        self.open_db_button.setToolTip('Open Database')
-        self.create_db_button = QtWidgets.QPushButton(TablerQIcon.folder_plus, '')
-        self.create_db_button.setToolTip('Create Database')
-        self.refresh_button = QtWidgets.QPushButton(TablerQIcon.refresh, '')
-        self.refresh_button.setToolTip('Refresh')
-
-        self.add_table_button = QtWidgets.QPushButton(TablerQIcon.plus, '')
-        self.add_table_button.setToolTip('Add Table')
+        self.open_db_button = QtWidgets.QPushButton(TablerQIcon.folder_open, '', toolTip="Open Database")
+        self.create_db_button = QtWidgets.QPushButton(TablerQIcon.folder_plus, '', toolTip="Create Database")
+        self.refresh_button = QtWidgets.QPushButton(TablerQIcon.refresh, '', toolTip="Refresh")
+        self.add_table_button = QtWidgets.QPushButton(TablerQIcon.plus, '', toolTip="Add Table")
 
         self.tables_list_widget = QtWidgets.QListWidget()
         self.tables_label = LabelEmbedderWidget(self.tables_list_widget, 'Tables')
@@ -722,12 +720,9 @@ class DBWidget(QtWidgets.QWidget):
         self.delete_table_button = ItemOverlayButton()
         self.delete_table_button.register_to(self.tables_list_widget)
 
-        self.add_field_button = QtWidgets.QPushButton(TablerQIcon.plus, '')
-        self.add_field_button.setToolTip('Add Field')
-        self.add_relation_field_button = QtWidgets.QPushButton(TablerQIcon.link_plus, '')
-        self.add_relation_field_button.setToolTip('Add Relation Field')
-        self.add_m2m_field_button = QtWidgets.QPushButton(TablerQIcon.webhook, '')
-        self.add_m2m_field_button.setToolTip('Add Many-to-Many Field')
+        self.add_field_button = QtWidgets.QPushButton(TablerQIcon.plus, '', toolTip="Add Field")
+        self.add_relation_field_button = QtWidgets.QPushButton(TablerQIcon.link_plus, '', toolTip="Add Relation Field")
+        self.add_m2m_field_button = QtWidgets.QPushButton(TablerQIcon.webhook, '', toolTip="Add Many-to-Many Field")
 
         self.fields_list_widget = QtWidgets.QListWidget()
         self.fields_label = LabelEmbedderWidget(self.fields_list_widget, 'Fields')
@@ -741,10 +736,10 @@ class DBWidget(QtWidgets.QWidget):
         top_layout.addWidget(self.open_db_button)
         top_layout.addWidget(self.create_db_button)
         top_layout.addWidget(self.refresh_button)
-        top_layout.setAlignment(self.db_path_label, QtCore.Qt.AlignBottom)
-        top_layout.setAlignment(self.open_db_button, QtCore.Qt.AlignBottom)
-        top_layout.setAlignment(self.create_db_button, QtCore.Qt.AlignBottom)
-        top_layout.setAlignment(self.refresh_button, QtCore.Qt.AlignBottom)
+        top_layout.setAlignment(self.db_path_label, QtCore.Qt.AlignmentFlag.AlignBottom)
+        top_layout.setAlignment(self.open_db_button, QtCore.Qt.AlignmentFlag.AlignBottom)
+        top_layout.setAlignment(self.create_db_button, QtCore.Qt.AlignmentFlag.AlignBottom)
+        top_layout.setAlignment(self.refresh_button, QtCore.Qt.AlignmentFlag.AlignBottom)
         layout.addWidget(self.tables_label)
         layout.addWidget(self.fields_label)
 

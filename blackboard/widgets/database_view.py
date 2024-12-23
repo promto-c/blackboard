@@ -25,6 +25,7 @@ from tablerqicon import TablerQIcon
 import blackboard as bb
 from blackboard import widgets
 from blackboard.widgets.filter_widget import FilterCondition
+from blackboard.widgets.momentum_scroll_widget import MomentumScrollArea
 
 
 # Class Definitions
@@ -297,7 +298,10 @@ class FileBrowseWidget(QtWidgets.QWidget):
         """
         return self.line_edit.text()
 
+
 class AddEditRecordDialog(QtWidgets.QDialog):
+    """A dialog for adding or editing records in the database.
+    """
 
     # Initialization and Setup
     # ------------------------
@@ -328,26 +332,40 @@ class AddEditRecordDialog(QtWidgets.QDialog):
 
         # Create Layouts
         # --------------
-        layout = QtWidgets.QVBoxLayout(self)
+        # Create Main Layout
+        main_layout = QtWidgets.QVBoxLayout(self)
 
-        # Create Widgets
-        # --------------
+        # Create Scroll Area
+        scroll_area = MomentumScrollArea(self)
+        scroll_area.setWidgetResizable(True)  # Ensure the scroll area resizes its content widget
+
+        # Create Content Widget for Scroll Area
+        scroll_content = QtWidgets.QWidget()
+        scroll_area.setWidget(scroll_content)
+
+        # Create a vertical layout for the content widget
+        form_layout = QtWidgets.QVBoxLayout(scroll_content)
+        form_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)  # Align widgets to the top
+
+        # Create Widgets for Each Field
         for field_name, field_info in self.field_name_to_info.items():
             # Skip the primary key field; it is usually auto-managed by SQLite
             if field_info.type == 'INTEGER' and field_info.is_primary_key:
                 continue
 
             input_widget = self.create_input_widget(field_info)
-            label = widgets.LabelEmbedderWidget(input_widget, field_name)
-            layout.addWidget(label)
+            label_widget = widgets.LabelEmbedderWidget(input_widget, field_name)
+            form_layout.addWidget(label_widget)
             self.field_name_to_input_widgets[field_name] = input_widget
 
+        # Handle Many-to-Many Fields
         for track_field_name, many_to_many_field in self.many_to_many_fields.items():
             m2m_widget = self.create_many_to_many_widget(many_to_many_field)
-            label = widgets.LabelEmbedderWidget(m2m_widget, track_field_name)
-            layout.addWidget(label)
+            label_widget = widgets.LabelEmbedderWidget(m2m_widget, track_field_name)
+            form_layout.addWidget(label_widget)
             self.field_name_to_input_widgets[track_field_name] = m2m_widget
 
+        # Populate Widgets with Existing Data (for Edit Mode)
         if self.data_dict:
             for field, value in self.data_dict.items():
                 if field not in self.field_name_to_input_widgets:
@@ -355,11 +373,14 @@ class AddEditRecordDialog(QtWidgets.QDialog):
 
                 self.set_input_value(field, value)
 
+        # Create Submit Button
         self.submit_button = QtWidgets.QPushButton("Submit")
 
         # Add Widgets to Layouts
         # ----------------------
-        layout.addWidget(self.submit_button, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        # Add the scroll area and button to the main layout
+        main_layout.addWidget(scroll_area)
+        main_layout.addWidget(self.submit_button, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
@@ -370,6 +391,8 @@ class AddEditRecordDialog(QtWidgets.QDialog):
     # Public Methods
     # --------------
     def update_record(self):
+        """Handle the submission of the form.
+        """
         new_values = self.get_record_data()
 
         # Check only required fields, excluding INTEGER PRIMARY KEY fields
@@ -389,7 +412,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             if not updated_data_dict:
                 QtWidgets.QMessageBox.information(self, "No Changes", "No changes were made.")
                 return
- 
+
             # Get the primary key field name and its value
             pk_field = self.model.get_primary_keys()[0]
             pk_value = self.data_dict.get(pk_field)
@@ -414,18 +437,20 @@ class AddEditRecordDialog(QtWidgets.QDialog):
 
         self.accept()
 
-    def create_input_widget(self, field_info: 'FieldInfo'):
+    def create_input_widget(self, field_info: 'FieldInfo') -> QtWidgets.QWidget:
+        """Create an appropriate input widget based on the field information.
+        """
         if field_info.is_foreign_key:
             # Handle foreign keys by offering a dropdown of related records
             fk = field_info.fk
             referenced_model = self.db_manager.get_model(fk.referenced_table)
             display_field = self.model.get_display_field(field_info.name)
-            display_field_info = referenced_model.get_field(display_field)
+            widget = QtWidgets.QComboBox()
 
             if display_field:
                 related_records = list(referenced_model.query(fields=[fk.referenced_field, display_field], as_dict=True))
+                display_field_info = referenced_model.get_field(display_field)
 
-                widget = QtWidgets.QComboBox()
                 for record in related_records:
                     if not display_field_info.is_unique:
                         display_value = self.format_combined_display(record[display_field], record[fk.referenced_field], fk.referenced_field)
@@ -435,7 +460,21 @@ class AddEditRecordDialog(QtWidgets.QDialog):
                     key_value = record[fk.referenced_field]
                     widget.addItem(display_value, key_value)
 
-                return widget
+            else:
+                # Fallback: Use foreign key field
+                related_records = list(
+                    referenced_model.query(
+                        fields=[fk.referenced_field],
+                        as_dict=True
+                    )
+                )
+
+                for record in related_records:
+                    key_value = record[fk.referenced_field]
+                    display_value = str(key_value)  # Convert to string for display
+                    widget.addItem(display_value, key_value)
+
+            return widget
 
         if enum_table_name := self.db_manager.get_enum_table_name(self.model.name, field_info.name):
             enum_values = self.db_manager.get_enum_values(enum_table_name)
@@ -443,6 +482,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             widget.addItems(enum_values)
             return widget
 
+        # Handle Different Data Types
         if field_info.type == "INTEGER":
             widget = QtWidgets.QSpinBox()
             widget.setRange(-2147483648, 2147483647)
@@ -457,7 +497,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         elif field_info.type == "BLOB":
             return FileBrowseWidget()
         elif field_info.type == "DATETIME":
-            return QtWidgets.QDateTimeEdit(QtCore.QDateTime.currentDateTime())
+            return QtWidgets.QDateTimeEdit(QtCore.QDateTime.currentDateTime(), calendarPopup=True)
         else:
             return QtWidgets.QLineEdit()
 
@@ -466,7 +506,9 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         """
         return f"{display_value} ({key_name}: {key_value})"
 
-    def set_input_value(self, field_name, value):
+    def set_input_value(self, field_name: str, value: Any):
+        """Set the value of the input widget associated with the given field name.
+        """
         input_widget = self.field_name_to_input_widgets.get(field_name)
         field_info = self.field_name_to_info.get(field_name)
 
@@ -476,23 +518,20 @@ class AddEditRecordDialog(QtWidgets.QDialog):
                 fk = field_info.fk
                 referenced_model = self.db_manager.get_model(fk.referenced_table)
                 display_field = self.model.get_display_field(field_info.name)
-                display_field_info = referenced_model.get_field(display_field)
 
                 if display_field:
+                    # Case 1: Display field is set
+                    display_field_info = referenced_model.get_field(display_field)
                     display_text = referenced_model.fetch_one(display_field, fk.referenced_field, value)
                     display_text = self.format_combined_display(display_text, value, fk.referenced_field) if display_field_info.is_unique else display_text
 
                     input_widget.setCurrentText(display_text)
-                    return
 
-            # Fallback to using the value directly if no display field is set
-            index = input_widget.findText(value)
-            if index == -1:
-                input_widget.addItem(value)
-                index = input_widget.findText(value)
-            input_widget.setCurrentIndex(index)
+                else:
+                    # Case 2: Display field is NOT set
+                    input_widget.setCurrentText(str(value))
 
-        elif isinstance(input_widget, QtWidgets.QSpinBox) or isinstance(input_widget, QtWidgets.QDoubleSpinBox):
+        elif isinstance(input_widget, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
             if value is None or value == 'None':
                 input_widget.clear()
             else:
@@ -511,13 +550,17 @@ class AddEditRecordDialog(QtWidgets.QDialog):
                 item_value = item.data(QtCore.Qt.ItemDataRole.UserRole)
                 item.setCheckState(QtCore.Qt.Checked if item_value in selected_values else QtCore.Qt.Unchecked)
 
-    def get_record_data(self):
+    def get_record_data(self) -> Dict[str, Any]:
+        """Retrieve data from all input widgets.
+        """
         return {field: self.get_input_value(input_widget) for field, input_widget in self.field_name_to_input_widgets.items()}
 
-    def get_input_value(self, input_widget):
+    def get_input_value(self, input_widget: QtWidgets.QWidget) -> Any:
+        """Retrieve the value from a single input widget.
+        """
         if isinstance(input_widget, QtWidgets.QComboBox):
             return input_widget.currentData() or input_widget.currentText()
-        elif isinstance(input_widget, QtWidgets.QSpinBox) or isinstance(input_widget, QtWidgets.QDoubleSpinBox):
+        elif isinstance(input_widget, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
             return input_widget.value()
         elif isinstance(input_widget, QtWidgets.QLineEdit):
             return input_widget.text() or None
@@ -536,7 +579,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
 
         return None
 
-    def create_many_to_many_widget(self, many_to_many_field: 'ManyToManyField'):
+    def create_many_to_many_widget(self, many_to_many_field: 'ManyToManyField') -> QtWidgets.QListWidget:
         """Create a QListWidget with checkable items for a many-to-many relationship.
         """
         widget = QtWidgets.QListWidget()
@@ -552,12 +595,13 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         # Add items to the list widget
         for record in related_records:
             item = QtWidgets.QListWidgetItem(record[display_field])
-            item.setData(QtCore.Qt.UserRole, record[many_to_many_field.local_fk.referenced_field])
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
-            item.setCheckState(QtCore.Qt.Unchecked)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, record[many_to_many_field.local_fk.referenced_field])
+            item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(QtCore.Qt.CheckState.Unchecked)
             widget.addItem(item)
 
         return widget
+
 
 # NOTE: WIP
 SAFE_OPERATORS = {
@@ -818,9 +862,9 @@ class DatabaseViewWidget(DataViewWidget):
         """
         if filter_condition in (FilterCondition.IN, FilterCondition.NOT_IN):
             placeholders = ', '.join('?' for _ in values)
-            sql_condition = filter_condition.sql_format.format(column=column_name, placeholders=placeholders)
+            sql_condition = filter_condition.query_format.format(column=column_name, placeholders=placeholders)
         else:
-            sql_condition = filter_condition.sql_format.format(column=column_name)
+            sql_condition = filter_condition.query_format.format(column=column_name)
         return sql_condition
 
     # NOTE: WIP
@@ -880,7 +924,7 @@ class DatabaseViewWidget(DataViewWidget):
         if not self._current_table:
             return
 
-        dialog = AddEditRecordDialog(self.db_manager, self._current_model, parent=self)
+        dialog = AddEditRecordDialog(self.db_manager, self._current_model)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             self.load_table_data()
 
@@ -888,7 +932,7 @@ class DatabaseViewWidget(DataViewWidget):
         """Edit the selected record from the tree widget.
         """
         row_data = {self.tree_widget.headerItem().text(col): item.get_value(col) for col in range(self.tree_widget.columnCount())}
-        dialog = AddEditRecordDialog(self.db_manager, self._current_model, row_data, self)
+        dialog = AddEditRecordDialog(self.db_manager, self._current_model, row_data)
 
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             self.load_table_data()
