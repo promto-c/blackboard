@@ -1239,8 +1239,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         if not self.fetch_manager.has_more_items_to_fetch:
             return
-        scroll_bar = self.verticalScrollBar()
-        if value >= scroll_bar.maximum() - self.fetch_manager.THRESHOLD_TO_FETCH_MORE:
+        if value >= self.verticalScrollBar().maximum() - self.fetch_manager.THRESHOLD_TO_FETCH_MORE:
             self.fetch_manager.fetch_more()
 
     def _restore_color_adaptive_column(self, columns: List[int]):

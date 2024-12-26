@@ -1,10 +1,11 @@
 # Type Checking Imports
 # ---------------------
-from typing import Optional, Generator
+from typing import Optional, Generator, Deque, Dict, Any
 
 # Standard Library Imports
 # ------------------------
 from itertools import islice
+from collections import deque
 
 # Third Party Imports
 # -------------------
@@ -46,7 +47,10 @@ class DataFetcher(QtCore.QObject):
         """
         self.generator = None
         self.has_more_items_to_fetch = False
-        self._current_task = None
+        # NOTE: A queue (using deque or list) is used instead of a single task object to store current tasks. 
+        #       This approach avoids issues with concurrent task handling, ensuring each task is stopped 
+        #       before starting a new one, and prevents old tasks from running after a new task begins.
+        self._current_tasks: Deque[GeneratorWorker] = deque()
         self._result_connection = None
 
     # Public Methods
@@ -56,7 +60,6 @@ class DataFetcher(QtCore.QObject):
         self.stop_fetch()
         self.generator = generator
         self.has_more_items_to_fetch = True
-        self._clear_task()
 
     def fetch(self, batch_size: int):
         """Fetch more data in batches."""
@@ -72,22 +75,17 @@ class DataFetcher(QtCore.QObject):
 
     def pause_fetch(self):
         """Pause the current data fetching task."""
-        if not self._current_task:
-            return
-        self._current_task.pause()
+        while self._current_tasks:
+            task = self._current_tasks.popleft()
+            task.pause()
 
     def stop_fetch(self):
         """Stop the current data fetching task."""
-        if not self._current_task:
-            return
-
-        # Disconnect any existing signal connections before stopping the task
-        if self._result_connection:
-            self._current_task.result.disconnect(self._result_connection)
+        while self._current_tasks:
+            task = self._current_tasks.popleft()
+            task.result.disconnect(self._result_connection)
             self._result_connection = None
-
-        self._current_task.stop()
-        self._clear_task()
+            task.stop()
 
     # Private Methods
     # ---------------
@@ -97,32 +95,38 @@ class DataFetcher(QtCore.QObject):
         Args:
             batch_size (Optional[int]): The batch size to fetch. If None, fetch all remaining data.
         """
-        if self._current_task is not None or not self.has_more_items_to_fetch:
+        if self._current_tasks or not self.has_more_items_to_fetch:
             return
 
         items_to_fetch = islice(self.generator, batch_size) if batch_size else self.generator
 
         # Create the current_task
-        self._current_task = GeneratorWorker(items_to_fetch, desired_size=batch_size)
+        task = GeneratorWorker(items_to_fetch, desired_size=batch_size)
         # Connect signals
-        self._result_connection = self._current_task.result.connect(self.data_fetched.emit)
-        self._current_task.started.connect(self.started.emit)
-        self._current_task.finished.connect(self._on_task_finished)
-        self._current_task.loaded_all.connect(self._handle_no_more_items)
+        self._result_connection = task.result.connect(self._on_data_fetched)
+        task.started.connect(self.started.emit)
+        task.finished.connect(self._on_task_finished)
+        task.loaded_all.connect(self._handle_no_more_items)
 
         # Start the task
-        ThreadPoolManager.thread_pool().start(self._current_task.run)
+        ThreadPoolManager.thread_pool().start(task.run)
+        self._current_tasks.append(task)
 
-    def _clear_task(self):
-        self._current_task = None
+    def _on_data_fetched(self, data: Dict[Any, Any]):
+        # NOTE: Prevents data from stopped tasks from incorrectly triggering further actions
+        if self.sender() not in self._current_tasks:
+            return
+        self.data_fetched.emit(data)
 
     def _on_task_finished(self):
-        self._clear_task()
+        if self.sender() in self._current_tasks:
+            self._current_tasks.remove(self.sender())
         self.finished.emit()
 
     def _handle_no_more_items(self):
         self.has_more_items_to_fetch = False
         self.loaded_all.emit()
+
 
 class FetchManager(DataFetcher):
     """Handles the fetching state, actions, and data fetching logic.
