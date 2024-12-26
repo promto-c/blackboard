@@ -448,12 +448,22 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             widget = QtWidgets.QComboBox()
 
             if display_field:
-                related_records = list(referenced_model.query(fields=[fk.referenced_field, display_field], as_dict=True))
+                # Case 1: Display field is set
+                related_records = list(
+                    referenced_model.query(
+                        fields=[fk.referenced_field, display_field],
+                        as_dict=True
+                    )
+                )
                 display_field_info = referenced_model.get_field(display_field)
 
                 for record in related_records:
                     if not display_field_info.is_unique:
-                        display_value = self.format_combined_display(record[display_field], record[fk.referenced_field], fk.referenced_field)
+                        display_value = self.format_combined_display(
+                            record[display_field],
+                            record[fk.referenced_field],
+                            fk.referenced_field
+                        )
                     else:
                         display_value = record[display_field]
 
@@ -461,7 +471,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
                     widget.addItem(display_value, key_value)
 
             else:
-                # Fallback: Use foreign key field
+                # Case 2: Display field is NOT set
                 related_records = list(
                     referenced_model.query(
                         fields=[fk.referenced_field],
@@ -476,6 +486,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
 
             return widget
 
+        # Handle Enum Fields
         if enum_table_name := self.db_manager.get_enum_table_name(self.model.name, field_info.name):
             enum_values = self.db_manager.get_enum_values(enum_table_name)
             widget = QtWidgets.QComboBox()
@@ -548,7 +559,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             for i in range(input_widget.count()):
                 item = input_widget.item(i)
                 item_value = item.data(QtCore.Qt.ItemDataRole.UserRole)
-                item.setCheckState(QtCore.Qt.Checked if item_value in selected_values else QtCore.Qt.Unchecked)
+                item.setCheckState(QtCore.Qt.CheckState.Checked if item_value in selected_values else QtCore.Qt.CheckState.Unchecked)
 
     def get_record_data(self) -> Dict[str, Any]:
         """Retrieve data from all input widgets.
