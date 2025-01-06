@@ -636,7 +636,7 @@ class SQLiteModel(AbstractModel):
             ValueError: If the field does not represent a many-to-many relationship.
         """
         if not self._table_name.isidentifier() or not field_name.isidentifier():
-            raise ValueError("Invalid table or field name")
+            raise ValueError("Invalid field name")
 
         # Check if the _meta_many_to_many table exists
         if not self._database.is_table_exists('_meta_many_to_many'):
@@ -802,7 +802,7 @@ class SQLiteModel(AbstractModel):
             ValueError: If the table name, field names, or order_by fields are invalid Python identifiers.
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        fields = fields or self.get_field_names(self._table_name)
+        fields = fields or self.get_field_names()
         # Ensure all fields are valid identifiers
         if not all(field.isidentifier() for field in fields):
             raise ValueError("Invalid field name")

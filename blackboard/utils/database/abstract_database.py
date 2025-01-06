@@ -68,7 +68,7 @@ class AbstractDatabase(ABC):
         Returns:
             AbstractModel: An instance of AbstractModel representing the table.
         """
-        pass
+        return AbstractModel(self, table_name)
 
     @abstractmethod
     def close(self):
