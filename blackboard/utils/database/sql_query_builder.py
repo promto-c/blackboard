@@ -1,6 +1,4 @@
-# NOTE: WIP
-
-from typing import Dict, Any, List, Tuple, Optional, Union
+from typing import Dict, Any, List, Tuple, Optional, Union, Generator, Iterable
 from enum import Enum
 
 
@@ -68,26 +66,9 @@ class FilterOperation(Enum):
         """Return True if the operation supports multiple values."""
         return self._num_values == -1
 
-    def validate_values(self, *values) -> bool:
-        """Validate the number of values provided against the requirement.
-
-        Args:
-            *values: Variable length argument list.
-
-        Returns:
-            bool: True if valid, False otherwise.
-        """
-        if self._num_values == -1:
-            return len(values) >= 1  # At least one value needed
-        return len(values) == self._num_values
-
     @classmethod
-    def is_valid(cls, key: str) -> bool:
-        try:
-            cls[key.upper()]  # Try to access the enum by the string value
-            return True
-        except KeyError:
-            return False
+    def from_string(cls, name: str) -> 'FilterOperation':
+        return cls[name.upper()]
 
     def __str__(self):
         """Return the string representation of the filter operation.
@@ -125,6 +106,9 @@ class GroupOperator(Enum):
 
 
 class SQLQueryBuilder:
+
+    # Utility Methods
+    # ---------------
     @staticmethod
     def build_select_clause(select: Optional[Union[str, List[str]]]) -> str:
         """Build the SELECT clause of the query.
@@ -188,71 +172,66 @@ class SQLQueryBuilder:
             >>> SQLQueryBuilder.build_where_clause({
             ...     "AND": {
             ...         "age": {"gte": 18},
-            ...         "OR": {
-            ...             "status": {"eq": "active"},
-            ...             "status": {"eq": "pending"}
-            ...         }
+            ...         "OR": [
+            ...             {"status": "active"},
+            ...             {"status": {"eq": "pending"}}
+            ...         ]
             ...     }
             ... })
-            ('age >= ? AND (status = ? OR status = ?)', [18, 'active', 'pending'])
+            ('(age >= ? AND (status = ? OR status = ?))', [18, 'active', 'pending'])
 
             >>> SQLQueryBuilder.build_where_clause({
-            ...     "OR": [
-            ...         {"age": {"lt": 18}},
-            ...         {"AND": {
+            ...     "OR": {
+            ...         "age": {"lt": 18},
+            ...         "AND": {
             ...             "status": {"eq": "inactive"},
             ...             "id": {"gte": 100}
             ...         }
-            ...     ]
+            ...     }
             ... })
-            ('age < ? OR (status = ? AND id >= ?)', [18, 'inactive', 100])
+            ('(age < ? OR (status = ? AND id >= ?))', [18, 'inactive', 100])
         """
         if not where:
             return "", []
 
         where_clauses = []
-        params = []
+        values = []
 
-        for field, condition in where.items():
+        for key, value in SQLQueryBuilder._extract_key_value_pairs(where):
+            # Handle key as `GroupOperator`
+            if isinstance(key, GroupOperator) or GroupOperator.is_valid(key):
+                sub_where_clauses, sub_values = SQLQueryBuilder.build_where_clause(value, key)
+                where_clauses.append(f"({sub_where_clauses})")
+                values.extend(sub_values)
+                continue
 
-            if not isinstance(condition, dict):
+            # Handle 
+            if not isinstance(value, dict):
                 operator = FilterOperation.EQ
-                value = condition
             else:
                 # Extract the operator and value
-                operator, value = next(iter(condition.items()))
-
-            # TODO: Handle `GroupOperator`
-            if isinstance(field, GroupOperator) or GroupOperator.is_valid(field):
-                sub_where_clauses, sub_params = SQLQueryBuilder.build_where_clause(value, field)
-                where_clauses.append(f"({sub_where_clauses})")
-                params.extend(sub_params)
+                operator, value = next(iter(value.items()))
 
             if not isinstance(operator, FilterOperation):
-                if FilterOperation.is_valid(operator):
-                    operator = FilterOperation[operator.upper()]
-                else:
-                    raise ValueError(f"Unsupported filter operation '{operator}' for field {field}")
+                operator = FilterOperation.from_string(operator)
 
             # Handle special case for IN and NOT IN
             if operator.is_multi_value():
-                if not isinstance(value, (list, tuple)):
-                    raise ValueError(f"For '{operator}' operation, value should be a list or tuple")
+                if not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
+                    raise ValueError(f"For '{operator}' operation, value should be an iterable (but not a string or bytes)")
                 placeholders = ', '.join(['?'] * len(value))
-                where_clauses.append(f"{field} {operator.sql_operator} ({placeholders})")
-                params.extend(value)
+                where_clauses.append(f"{key} {operator.sql_operator} ({placeholders})")
+                values.extend(value)
             else:
-                if not operator.validate_values(value):
-                    raise ValueError(f"Invalid parameters for operation '{operator}' on field '{field}'")
-                where_clauses.append(f"{field} {operator.sql_operator}")
-                params.append(value)
+                where_clauses.append(f"{key} {operator.sql_operator}")
+                values.append(value)
 
         if isinstance(group_operator, GroupOperator):
             group_operator_str = group_operator.sql_operator
         else:
             group_operator_str = group_operator.upper()
 
-        return f" {group_operator_str} ".join(where_clauses), params
+        return f" {group_operator_str} ".join(where_clauses), values
 
     @staticmethod
     def build_order_by_clause(order_by: Optional[Dict[str, SortOrder]]) -> str:
@@ -278,6 +257,14 @@ class SQLQueryBuilder:
             [f"{field} {str(direction).upper()}" for field, direction in order_by.items()]
         )
 
+    @staticmethod
+    def _extract_key_value_pairs(where: Union[Dict[str, any], List[Dict[str, any]]]) -> Generator[Tuple[str, any], None, None]:
+        if isinstance(where, dict):  # Case where `where` is a dictionary
+            yield from where.items()
+        else:  # Case where `where` is a list of dictionaries
+            for condition_dict in where:
+                yield next(iter(condition_dict.items()))
+
 
 # If you want to run doctests manually, you can include this code block:
 if __name__ == "__main__":
@@ -289,13 +276,12 @@ if __name__ == "__main__":
         "age": {"gte": 18},
         "status": {"in": ["active", "pending", "suspended"]},
         "name": {"contains": "John"},
-        "group": {
-            "or": {
+        GroupOperator.OR: {
                 "role": {"eq": "admin"},
                 "permission": {"in": ["read", "write"]}
             }
         }
-    })
+    )
 
     print(where_clause)
     # ("age >= ? AND status IN (?, ?, ?) AND name LIKE '%' || ? || '%' AND (role = ? OR permission IN (?, ?))"
