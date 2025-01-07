@@ -26,6 +26,8 @@ class FilterOperation(Enum):
     IS_NOT_NULL = ("is_not_null", "IS NOT NULL", 0)  # Checks for NOT NULL values
     IN = ("in", "IN", -1)  # Special case for IN query, variable number of arguments
     NOT_IN = ("not_in", "NOT IN", -1)  # Special case for NOT IN query, variable number of arguments
+    BETWEEN = ("between", "BETWEEN ? AND ?", 2)  # Special case for BETWEEN operator, requires two values
+    NOT_BETWEEN = ("not_between", "NOT BETWEEN ? AND ?", 2)  # Special case for NOT BETWEEN operator, requires two values
 
     # Initialization and Setup
     # ------------------------
@@ -135,7 +137,8 @@ class SQLQueryBuilder:
 
     @staticmethod
     def build_where_clause(where: Optional[Dict[Union[GroupOperator, str], Any]], 
-                           group_operator: Union[GroupOperator, str] = GroupOperator.AND) -> Tuple[str, List[Any]]:
+                           group_operator: Union[GroupOperator, str] = GroupOperator.AND,
+                           relationships: Optional[Dict[str, str]] = None) -> Tuple[str, List[Any]]:
         """Build the WHERE clause of the query.
 
         Examples:
@@ -190,6 +193,20 @@ class SQLQueryBuilder:
             ...     }
             ... })
             ('(age < ? OR (status = ? AND id >= ?))', [18, 'inactive', 100])
+
+            >>> SQLQueryBuilder.build_where_clause({
+            ...     "OR": {
+            ...         "author.name": {"contains": "John"},
+            ...         "AND": {
+            ...             "publisher.name": {"eq": "Penguin"},
+            ...             "title": {"contains": "Classic"}
+            ...         }
+            ...     }
+            ... }, relationships={
+            ...     "author": "Authors.id",
+            ...     "publisher": "Publishers.id"
+            ... })
+            ("(author IN (SELECT id FROM Authors WHERE name LIKE '%' || ? || '%') OR (publisher IN (SELECT id FROM Publishers WHERE name = ?) AND title LIKE '%' || ? || '%'))", ['John', 'Penguin', 'Classic'])
         """
         if not where:
             return "", []
@@ -200,7 +217,7 @@ class SQLQueryBuilder:
         for key, value in SQLQueryBuilder._extract_key_value_pairs(where):
             # Handle key as `GroupOperator`
             if isinstance(key, GroupOperator) or GroupOperator.is_valid(key):
-                sub_where_clauses, sub_values = SQLQueryBuilder.build_where_clause(value, key)
+                sub_where_clauses, sub_values = SQLQueryBuilder.build_where_clause(value, key, relationships)
                 where_clauses.append(f"({sub_where_clauses})")
                 values.extend(sub_values)
                 continue
@@ -215,23 +232,33 @@ class SQLQueryBuilder:
             if not isinstance(operator, FilterOperation):
                 operator = FilterOperation.from_string(operator)
 
-            # Handle special case for IN and NOT IN
             if operator.is_multi_value():
                 if not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
                     raise ValueError(f"For '{operator}' operation, value should be an iterable (but not a string or bytes)")
                 placeholders = ', '.join(['?'] * len(value))
-                where_clauses.append(f"{key} {operator.sql_operator} ({placeholders})")
+
+            if '.' in key:  # Related field (e.g., "publisher.name")
+                local_field, relation_field = key.split('.', 1)
+                related_table, related_field = SQLQueryBuilder._parse_relationship(relationships[local_field])
+                if operator.is_multi_value():
+                    where_clause = f"{local_field} IN (SELECT {related_field} FROM {related_table} WHERE {relation_field} {operator.sql_operator} ({placeholders}))"
+                else:
+                    where_clause = f"{local_field} IN (SELECT {related_field} FROM {related_table} WHERE {relation_field} {operator.sql_operator})"
+            else:
+                if operator.is_multi_value():
+                    where_clause = f"{key} {operator.sql_operator} ({placeholders})"
+                else:
+                    where_clause = f"{key} {operator.sql_operator}"
+
+            where_clauses.append(where_clause)
+
+            # Handle special case for IN and NOT IN
+            if operator.is_multi_value():
                 values.extend(value)
             else:
-                where_clauses.append(f"{key} {operator.sql_operator}")
                 values.append(value)
 
-        if isinstance(group_operator, GroupOperator):
-            group_operator_str = group_operator.sql_operator
-        else:
-            group_operator_str = group_operator.upper()
-
-        return f" {group_operator_str} ".join(where_clauses), values
+        return SQLQueryBuilder._join_where_clauses(where_clauses, group_operator), values
 
     @staticmethod
     def build_order_by_clause(order_by: Optional[Dict[str, SortOrder]]) -> str:
@@ -265,6 +292,21 @@ class SQLQueryBuilder:
             for condition_dict in where:
                 yield next(iter(condition_dict.items()))
 
+    @staticmethod
+    def _parse_relationship(relationship: str):
+        """Parse a simplified relationship string into components.
+        """
+        return relationship.split('.')
+    
+    @staticmethod
+    def _join_where_clauses(where_clauses: List[str], group_operator: Union[GroupOperator, str]) -> str:
+        if isinstance(group_operator, GroupOperator):
+            group_operator_str = group_operator.sql_operator
+        else:
+            group_operator_str = group_operator.upper()
+
+        return f" {group_operator_str} ".join(where_clauses)
+
 
 # If you want to run doctests manually, you can include this code block:
 if __name__ == "__main__":
@@ -282,8 +324,29 @@ if __name__ == "__main__":
             }
         }
     )
-
     print(where_clause)
-    # ("age >= ? AND status IN (?, ?, ?) AND name LIKE '%' || ? || '%' AND (role = ? OR permission IN (?, ?))"
+    # age >= ? AND status IN (?, ?, ?) AND name LIKE '%' || ? || '%' AND (role = ? OR permission IN (?, ?))
+    print(params)
+    # [18, 'active', 'pending', 'suspended', 'John', 'admin', 'read', 'write'])
+
+    filters = {
+        "OR": {
+            "author.name": {"contains": "John"},
+            "AND": {
+                "publisher.name": {"eq": "Penguin"},
+                "title": {"contains": "Classic"}
+            }
+        }
+    }
+    relationships = {
+        "author": "Authors.id",  # books.author -> Authors.id
+        "publisher": "Publishers.id"  # books.publisher -> Publishers.id
+    }
+
+    where_clause, params = SQLQueryBuilder.build_where_clause(
+        where=filters, relationships=relationships
+    )
+    print(where_clause)
+    # (author IN (SELECT id FROM Authors WHERE name LIKE '%' || ? || '%') OR (publisher IN (SELECT id FROM Publishers WHERE name = ?) AND title LIKE '%' || ? || '%'))
     print(params)
     # [18, 'active', 'pending', 'suspended', 'John', 'admin', 'read', 'write'])
