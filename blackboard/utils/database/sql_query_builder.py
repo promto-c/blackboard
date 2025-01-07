@@ -207,6 +207,18 @@ class SQLQueryBuilder:
             ...     "publisher": "Publishers.id"
             ... })
             ("(author IN (SELECT id FROM Authors WHERE name LIKE '%' || ? || '%') OR (publisher IN (SELECT id FROM Publishers WHERE name = ?) AND title LIKE '%' || ? || '%'))", ['John', 'Penguin', 'Classic'])
+
+            >>> SQLQueryBuilder.build_where_clause({
+            ...     "OR": {
+            ...         "author.name": {"contains": "John"},
+            ...         "author.publisher.country": {"eq": "USA"},
+            ...         "author.publisher.name": {"eq": "Penguin"},
+            ...         }
+            ... }, relationships={
+            ...     "author": "Authors.id",
+            ...     "author.publisher": "Publishers.id"
+            ... })
+            ("(author IN (SELECT id FROM Authors WHERE name LIKE '%' || ? || '%') OR author IN (SELECT id FROM Authors WHERE publisher IN (SELECT id FROM Publishers WHERE country = ?)) OR author IN (SELECT id FROM Authors WHERE publisher IN (SELECT id FROM Publishers WHERE name = ?)))", ['John', 'USA', 'Penguin'])
         """
         if not where:
             return "", []
@@ -236,20 +248,11 @@ class SQLQueryBuilder:
                 if not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
                     raise ValueError(f"For '{operator}' operation, value should be an iterable (but not a string or bytes)")
                 placeholders = ', '.join(['?'] * len(value))
-
-            if '.' in key:  # Related field (e.g., "publisher.name")
-                local_field, relation_field = key.split('.', 1)
-                related_table, related_field = SQLQueryBuilder._parse_relationship(relationships[local_field])
-                if operator.is_multi_value():
-                    where_clause = f"{local_field} IN (SELECT {related_field} FROM {related_table} WHERE {relation_field} {operator.sql_operator} ({placeholders}))"
-                else:
-                    where_clause = f"{local_field} IN (SELECT {related_field} FROM {related_table} WHERE {relation_field} {operator.sql_operator})"
+                sql_operator = f"{operator.sql_operator} ({placeholders})"
             else:
-                if operator.is_multi_value():
-                    where_clause = f"{key} {operator.sql_operator} ({placeholders})"
-                else:
-                    where_clause = f"{key} {operator.sql_operator}"
+                sql_operator = operator.sql_operator
 
+            where_clause = SQLQueryBuilder._generate_where_clause(key, relationships, sql_operator)
             where_clauses.append(where_clause)
 
             # Handle special case for IN and NOT IN
@@ -259,6 +262,18 @@ class SQLQueryBuilder:
                 values.append(value)
 
         return SQLQueryBuilder._join_where_clauses(where_clauses, group_operator), values
+
+    @staticmethod
+    def _generate_where_clause(key: str, relationships, operator=None):
+        if '.' not in key: # Related field (e.g., "publisher.name")
+            return f"{key} {operator}"
+
+        key, relation_field = key.rsplit('.', 1)
+        related_table, related_field = SQLQueryBuilder._parse_relationship(relationships[key])
+        operator = f"IN (SELECT {related_field} FROM {related_table} WHERE {relation_field} {operator})"
+        where_clause = SQLQueryBuilder._generate_where_clause(key, relationships, operator)
+
+        return where_clause
 
     @staticmethod
     def build_order_by_clause(order_by: Optional[Dict[str, SortOrder]]) -> str:
@@ -350,3 +365,20 @@ if __name__ == "__main__":
     # (author IN (SELECT id FROM Authors WHERE name LIKE '%' || ? || '%') OR (publisher IN (SELECT id FROM Publishers WHERE name = ?) AND title LIKE '%' || ? || '%'))
     print(params)
     # [18, 'active', 'pending', 'suspended', 'John', 'admin', 'read', 'write'])
+
+filters = {
+    "OR": {
+        "author.name": {"contains": "John"},
+        "author.publisher.country": {"eq": "USA"},
+        "author.publisher.name": {"eq": "Penguin"},
+    }
+}
+
+key = "author.publisher.country"
+
+relationships = {
+    "author": "Authors.id",  # books.author -> Authors.id
+    "author.publisher": "Publishers.id",  # authors.publisher -> Publishers.id
+}
+where_clause = SQLQueryBuilder._generate_where_clause(key, relationships, FilterOperation.BETWEEN.sql_operator)
+print(where_clause)
