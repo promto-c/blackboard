@@ -62,7 +62,7 @@ class FilterOperation(Enum):
         Returns:
             bool: True if values are required, False otherwise.
         """
-        return not self._num_values == 0
+        return self._num_values > 0
 
     def is_multi_value(self) -> bool:
         """Return True if the operation supports multiple values."""
@@ -112,7 +112,7 @@ class SQLQueryBuilder:
     # Utility Methods
     # ---------------
     @staticmethod
-    def build_select_clause(select: Optional[Union[str, List[str]]]) -> str:
+    def build_select_clause(select: Optional[Union[str, List[str]]] = None) -> str:
         """Build the SELECT clause of the query.
         
         If `select` is a single string, treat it as a single field.
@@ -229,8 +229,10 @@ class SQLQueryBuilder:
         for key, value in SQLQueryBuilder._extract_key_value_pairs(where):
             # Handle key as `GroupOperator`
             if isinstance(key, GroupOperator) or GroupOperator.is_valid(key):
-                sub_where_clauses, sub_values = SQLQueryBuilder.build_where_clause(value, key, relationships)
-                where_clauses.append(f"({sub_where_clauses})")
+                sub_where_clause, sub_values = SQLQueryBuilder.build_where_clause(
+                    value, group_operator=key, relationships=relationships
+                )
+                where_clauses.append(f"({sub_where_clause})")
                 values.extend(sub_values)
                 continue
 
@@ -256,9 +258,9 @@ class SQLQueryBuilder:
             where_clauses.append(where_clause)
 
             # Handle special case for IN and NOT IN
-            if operator.is_multi_value():
+            if operator.num_values > 1:
                 values.extend(value)
-            else:
+            elif operator.requires_value():
                 values.append(value)
 
         return SQLQueryBuilder._join_where_clauses(where_clauses, group_operator), values
@@ -268,10 +270,10 @@ class SQLQueryBuilder:
         if '.' not in key: # Related field (e.g., "publisher.name")
             return f"{key} {operator}"
 
-        key, relation_field = key.rsplit('.', 1)
-        related_table, related_field = SQLQueryBuilder._parse_relationship(relationships[key])
+        local_field, relation_field = SQLQueryBuilder._parse_relationship(key)
+        related_table, related_field = SQLQueryBuilder._parse_relationship(relationships[local_field])
         operator = f"IN (SELECT {related_field} FROM {related_table} WHERE {relation_field} {operator})"
-        where_clause = SQLQueryBuilder._generate_where_clause(key, relationships, operator)
+        where_clause = SQLQueryBuilder._generate_where_clause(local_field, relationships, operator)
 
         return where_clause
 
@@ -300,7 +302,7 @@ class SQLQueryBuilder:
         )
 
     @staticmethod
-    def _extract_key_value_pairs(where: Union[Dict[str, any], List[Dict[str, any]]]) -> Generator[Tuple[str, any], None, None]:
+    def _extract_key_value_pairs(where: Union[Dict[str, Any], List[Dict[str, Any]]]) -> Generator[Tuple[str, Any], None, None]:
         if isinstance(where, dict):  # Case where `where` is a dictionary
             yield from where.items()
         else:  # Case where `where` is a list of dictionaries
@@ -311,7 +313,7 @@ class SQLQueryBuilder:
     def _parse_relationship(relationship: str):
         """Parse a simplified relationship string into components.
         """
-        return relationship.split('.')
+        return relationship.rsplit('.', 1)
     
     @staticmethod
     def _join_where_clauses(where_clauses: List[str], group_operator: Union[GroupOperator, str]) -> str:
