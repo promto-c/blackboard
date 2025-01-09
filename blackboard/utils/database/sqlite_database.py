@@ -28,6 +28,7 @@ class SQLiteDatabase(AbstractDatabase):
         """
         self._db_name = db_name
         self._connection = sqlite3.connect(self._db_name, check_same_thread=False)
+        self._connection.row_factory = sqlite3.Row
         self._cursor = self._connection.cursor()
 
     # Public Methods
@@ -834,7 +835,7 @@ class SQLiteModel(AbstractModel):
 
             if handle_m2m:
                 for row in cursor:
-                    row_dict = dict(zip(fields, row))
+                    row_dict = dict(row)
                     for m2m_field in many_to_many_field_names:
                         m2m_data = self.get_many_to_many_data(m2m_field, [row_dict[self.get_primary_keys()[0]]])
                         if not m2m_data:
@@ -848,9 +849,9 @@ class SQLiteModel(AbstractModel):
 
             else:
                 if as_dict:
-                    yield from (dict(zip(fields, row)) for row in cursor)
+                    yield from map(dict, cursor)
                 else:
-                    yield from cursor
+                    yield from map(tuple, cursor)
 
         finally:
             cursor.close()
