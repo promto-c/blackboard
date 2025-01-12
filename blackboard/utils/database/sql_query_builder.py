@@ -66,7 +66,7 @@ class FilterOperation(Enum):
 
     def is_multi_value(self) -> bool:
         """Return True if the operation supports multiple values."""
-        return self._num_values == -1
+        return self._num_values > 1 or self._num_values == -1
 
     @classmethod
     def from_string(cls, name: str) -> 'FilterOperation':
@@ -112,76 +112,202 @@ class SQLQueryBuilder:
     # Utility Methods
     # ---------------
     @staticmethod
-    def build_select_clause(select: Optional[Union[str, List[str]]] = None) -> str:
-        """Build the SELECT clause of the query.
-        
-        If `select` is a single string, treat it as a single field.
-        If `select` is a list, join the elements as comma-separated fields.
-        If `select` is None, select all fields (*).
-        
-        >>> SQLQueryBuilder.build_select_clause("name")
-        'name'
-        >>> SQLQueryBuilder.build_select_clause(["id", "name", "email"])
-        'id, name, email'
-        >>> SQLQueryBuilder.build_select_clause(None)
-        '*'
+    def propagate_hierarchies(fields: List[str], separator: str = '.', prune_leaves: int = 0) -> List[str]:
+        """Propagate and ensure all levels of hierarchy are referenced, with an option to prune levels from the leaves.
+
+        Args:
+            fields (list of str): List of hierarchical strings.
+            separator (str): Separator used to split the hierarchy strings. Default is '.'.
+            prune_leaves (int): Number of levels to prune from the end of each hierarchy. Default is 0.
+
+        Returns:
+            list of str: Unique propagated hierarchy references.
+
+        Examples:
+            >>> SQLQueryBuilder.propagate_hierarchies([
+            ...     "shot.sequence.project.name", 
+            ...     "shot.name", 
+            ...     "name", 
+            ...     "status", 
+            ...     "user.name"
+            ... ], prune_leaves=1)
+            ['shot', 'shot.sequence', 'shot.sequence.project', 'user']
+
+            >>> SQLQueryBuilder.propagate_hierarchies([
+            ...     "department.team.lead.name",
+            ...     "department.team.project.status",
+            ...     "company.department.team.lead",
+            ...     "company.department",
+            ...     "team.member.task"
+            ... ], prune_leaves=1)
+            ['company', 'company.department', 'company.department.team', 'department', 'department.team', 'department.team.lead', 'department.team.project', 'team', 'team.member']
+
+            >>> SQLQueryBuilder.propagate_hierarchies(["a.b.c.d", "a.b.c", "x.y.z"], prune_leaves=2)
+            ['a', 'a.b', 'x']
+
+            >>> SQLQueryBuilder.propagate_hierarchies(["level1/level2", "level1/level2/level3"], separator='/')
+            ['level1', 'level1/level2', 'level1/level2/level3']
+
+            >>> SQLQueryBuilder.propagate_hierarchies(["root.branch.leaf"], prune_leaves=3)
+            []
         """
-        if select is None:
-            return "*"
-        elif isinstance(select, str):
-            return select
-        elif isinstance(select, list):
-            return ", ".join(select)
-        else:
-            raise ValueError("select must be a string or a list of strings")
+        prefixes = set()
+
+        for field in fields:
+            parts = field.split(separator)
+            for i in range(len(parts) - prune_leaves):
+                prefix = separator.join(parts[:i+1])
+                prefixes.add(prefix)
+        return sorted(prefixes)
 
     @staticmethod
-    def build_where_clause(where: Optional[Dict[Union[GroupOperator, str], Any]], 
+    def build_select_clause(fields: Union[List[str], Dict[str, str]]):
+        """Build the SELECT part of the query.
+
+        Arguments:
+            fields (Union[List[str], Dict[str, str]]): 
+                List of field strings or a dictionary mapping field names to alias names.
+            
+        Returns:
+            str: The SELECT clause in SQL format.
+
+        Example:
+            >>> SQLQueryBuilder.build_select_clause(["shot.sequence.project.name", "shot.name", "name", "status"])
+            "SELECT\\n\\t'shot.sequence.project'.name AS 'shot.sequence.project.name',\\n\\t'shot'.name AS 'shot.name',\\n\\t_.name AS 'name',\\n\\t_.status AS 'status'"
+
+            >>> SQLQueryBuilder.build_select_clause({"shot.sequence.project.name": "project_name", "shot.name": "shot_name"})
+            "SELECT\\n\\t'shot.sequence.project'.name AS 'project_name',\\n\\t'shot'.name AS 'shot_name'"
+        """
+        # Convert input into a list of tuples: [(field, alias)]
+        if isinstance(fields, list):
+            # If it's a list, assume no alias is provided
+            fields = [(field, field) for field in fields]
+        elif isinstance(fields, dict):
+            # If it's a dictionary, map the field to its alias
+            fields = [(field, outer_alias) for field, outer_alias in fields.items()]
+
+        # Handle both list of tuples (field, alias)
+        select_parts = [
+            f"{SQLQueryBuilder._build_inner_alias(field)} AS '{outer_alias}'" 
+            for field, outer_alias in fields
+        ]
+
+        select_parts_str = ',\n\t'.join(select_parts)
+        select_clause = f'SELECT\n\t{select_parts_str}'
+
+        return select_clause
+
+    @staticmethod
+    def build_from_clause(current_model: str) -> str:
+        """Build the FROM part of the query.
+
+        Arguments:
+            current_model (str): The main table (e.g., 'Tasks') for the query.
+
+        Returns:
+            str: The FROM clause in SQL format.
+
+        Example:
+            >>> SQLQueryBuilder.build_from_clause("Tasks")
+            'FROM\\n\\tTasks AS _'
+        """
+        return f"FROM\n\t{current_model} AS _"
+
+    @staticmethod
+    def build_join_clause(fields: List[str], current_model: str, relationships: Dict[str, str]) -> str:
+        """Build the JOIN part of the query.
+
+        Arguments:
+            relationships (Dict[str, str]): A dictionary of relationships between tables.
+
+        Returns:
+            str: The JOIN clause in SQL format.
+
+        Example:
+            >>> SQLQueryBuilder.build_join_clause(
+            ...     fields=["shot.sequence.project.name", "shot.name", "name", "status"],
+            ...     current_model="Tasks",
+            ...     relationships={
+            ...         "Tasks.shot": "Shots.id", 
+            ...         "Shots.sequence": "Sequences.id",
+            ...         "Sequences.project": "Projects.id",
+            ...     }
+            ... )
+            "LEFT JOIN\\n\\tShots AS 'shot' ON _.shot = 'shot'.id\\nLEFT JOIN\\n\\tSequences AS 'shot.sequence' ON 'shot'.sequence = 'shot.sequence'.id\\nLEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 'shot.sequence.project'.id"
+        """
+        relation_chains = SQLQueryBuilder.propagate_hierarchies(fields, prune_leaves=1)
+        if not relation_chains:
+            return ''
+
+        join_clauses = []
+        relation_chain_to_model = {}
+
+        for relation_chain in relation_chains:
+            if '.' not in relation_chain:
+                reference_model = current_model
+                reference_field = relation_chain
+            else:
+                reference_chain, reference_field = SQLQueryBuilder._parse_relationship(relation_chain)
+                reference_model = relation_chain_to_model[reference_chain]
+
+            reference_model_field = f'{reference_model}.{reference_field}'
+            related_model_field = relationships[reference_model_field]
+            related_model, related_field = SQLQueryBuilder._parse_relationship(related_model_field)
+
+            relation_chain_to_model[relation_chain] = related_model
+
+            related_model_alias = f"'{relation_chain}'"
+            reference_field_alias = SQLQueryBuilder._build_inner_alias(relation_chain)
+            join_clause = f"LEFT JOIN\n\t{related_model} AS {related_model_alias} ON {reference_field_alias} = {related_model_alias}.{related_field}"
+            join_clauses.append(join_clause)
+
+        return '\n'.join(join_clauses)
+
+    @staticmethod
+    def build_where_clause(conditions: Optional[Dict[Union[GroupOperator, str], Any]], 
                            group_operator: Union[GroupOperator, str] = GroupOperator.AND,
-                           relationships: Optional[Dict[str, str]] = None) -> Tuple[str, List[Any]]:
+                           build_where_root: bool = True) -> Tuple[str, List[Any]]:
         """Build the WHERE clause of the query.
 
         Examples:
             >>> SQLQueryBuilder.build_where_clause({"name": "John"})
-            ('name = ?', ['John'])
+            ('WHERE\\n\\t_.name = ?', ['John'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "age": {"gte": 18},
             ...     "name": {"contains": "John"}
-            ... })
-            ("age >= ? AND name LIKE '%' || ? || '%'", [18, 'John'])
+            ... }, build_where_root=False)
+            ("_.age >= ? AND _.name LIKE '%' || ? || '%'", [18, 'John'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "status": {"in": ["active", "pending", "suspended"]}
-            ... })
-            ('status IN (?, ?, ?)', ['active', 'pending', 'suspended'])
+            ... }, build_where_root=False)
+            ('_.status IN (?, ?, ?)', ['active', 'pending', 'suspended'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "status": {"not_in": ["inactive", "deleted"]}
-            ... })
-            ('status NOT IN (?, ?)', ['inactive', 'deleted'])
+            ... }, build_where_root=False)
+            ('_.status NOT IN (?, ?)', ['inactive', 'deleted'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "age": {"lt": 25},
             ...     "name": {"contains": "John"}
-            ... })
-            ("age < ? AND name LIKE '%' || ? || '%'", [25, 'John'])
+            ... }, build_where_root=False)
+            ("_.age < ? AND _.name LIKE '%' || ? || '%'", [25, 'John'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "id": 123
-            ... })
-            ('id = ?', [123])
+            ... }, build_where_root=False)
+            ('_.id = ?', [123])
 
             >>> SQLQueryBuilder.build_where_clause({
-            ...     "AND": {
-            ...         "age": {"gte": 18},
-            ...         "OR": [
-            ...             {"status": "active"},
-            ...             {"status": {"eq": "pending"}}
-            ...         ]
-            ...     }
+            ...    "OR": {
+            ...        "shot.sequence.project.name": {"contains": "Forest"},
+            ...        "shot.status": {"eq": "Completed"},
+            ...        "assigned_to.role": {"eq": "Artist"}
+            ...    }
             ... })
-            ('(age >= ? AND (status = ? OR status = ?))', [18, 'active', 'pending'])
+            ("WHERE\\n\\t('shot.sequence.project'.name LIKE '%' || ? || '%' OR 'shot'.status = ? OR 'assigned_to'.role = ?)", ['Forest', 'Completed', 'Artist'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "OR": {
@@ -192,45 +318,19 @@ class SQLQueryBuilder:
             ...         }
             ...     }
             ... })
-            ('(age < ? OR (status = ? AND id >= ?))', [18, 'inactive', 100])
-
-            >>> SQLQueryBuilder.build_where_clause({
-            ...     "OR": {
-            ...         "author.name": {"contains": "John"},
-            ...         "AND": {
-            ...             "publisher.name": {"eq": "Penguin"},
-            ...             "title": {"contains": "Classic"}
-            ...         }
-            ...     }
-            ... }, relationships={
-            ...     "author": "Authors.id",
-            ...     "publisher": "Publishers.id"
-            ... })
-            ("(author IN (SELECT id FROM Authors WHERE name LIKE '%' || ? || '%') OR (publisher IN (SELECT id FROM Publishers WHERE name = ?) AND title LIKE '%' || ? || '%'))", ['John', 'Penguin', 'Classic'])
-
-            >>> SQLQueryBuilder.build_where_clause({
-            ...     "OR": {
-            ...         "author.name": {"contains": "John"},
-            ...         "author.publisher.country": {"eq": "USA"},
-            ...         "author.publisher.name": {"eq": "Penguin"},
-            ...         }
-            ... }, relationships={
-            ...     "author": "Authors.id",
-            ...     "author.publisher": "Publishers.id"
-            ... })
-            ("(author IN (SELECT id FROM Authors WHERE name LIKE '%' || ? || '%') OR author IN (SELECT id FROM Authors WHERE publisher IN (SELECT id FROM Publishers WHERE country = ?)) OR author IN (SELECT id FROM Authors WHERE publisher IN (SELECT id FROM Publishers WHERE name = ?)))", ['John', 'USA', 'Penguin'])
+            ('WHERE\\n\\t(_.age < ? OR (_.status = ? AND _.id >= ?))', [18, 'inactive', 100])
         """
-        if not where:
+        if not conditions:
             return "", []
 
         where_clauses = []
         values = []
 
-        for key, value in SQLQueryBuilder._extract_key_value_pairs(where):
+        for key, value in SQLQueryBuilder._extract_key_value_pairs(conditions):
             # Handle key as `GroupOperator`
             if isinstance(key, GroupOperator) or GroupOperator.is_valid(key):
                 sub_where_clause, sub_values = SQLQueryBuilder.build_where_clause(
-                    value, group_operator=key, relationships=relationships
+                    value, group_operator=key, build_where_root=False
                 )
                 where_clauses.append(f"({sub_where_clause})")
                 values.extend(sub_values)
@@ -254,28 +354,20 @@ class SQLQueryBuilder:
             else:
                 sql_operator = operator.sql_operator
 
-            where_clause = SQLQueryBuilder._generate_where_clause(key, relationships, sql_operator)
+            where_clause = f"{SQLQueryBuilder._build_inner_alias(key)} {sql_operator}"
             where_clauses.append(where_clause)
 
             # Handle special case for IN and NOT IN
-            if operator.num_values > 1:
+            if operator.is_multi_value():
                 values.extend(value)
             elif operator.requires_value():
                 values.append(value)
 
-        return SQLQueryBuilder._join_where_clauses(where_clauses, group_operator), values
+        where_clauses_str = SQLQueryBuilder._join_where_clauses(where_clauses, group_operator)
+        if build_where_root:
+            where_clauses_str = f'WHERE\n\t{where_clauses_str}'
 
-    @staticmethod
-    def _generate_where_clause(key: str, relationships, operator=None):
-        if '.' not in key: # Related field (e.g., "publisher.name")
-            return f"{key} {operator}"
-
-        local_field, relation_field = SQLQueryBuilder._parse_relationship(key)
-        related_table, related_field = SQLQueryBuilder._parse_relationship(relationships[local_field])
-        operator = f"IN (SELECT {related_field} FROM {related_table} WHERE {relation_field} {operator})"
-        where_clause = SQLQueryBuilder._generate_where_clause(local_field, relationships, operator)
-
-        return where_clause
+        return where_clauses_str, values
 
     @staticmethod
     def build_order_by_clause(order_by: Optional[Dict[str, SortOrder]]) -> str:
@@ -302,11 +394,31 @@ class SQLQueryBuilder:
         )
 
     @staticmethod
-    def _extract_key_value_pairs(where: Union[Dict[str, Any], List[Dict[str, Any]]]) -> Generator[Tuple[str, Any], None, None]:
-        if isinstance(where, dict):  # Case where `where` is a dictionary
-            yield from where.items()
+    def build_query(model: str, fields = None, conditions = None, relationships = None, order_by: Optional[Dict[str, SortOrder]] = None):
+        query_clauses = [
+            SQLQueryBuilder.build_select_clause(fields),
+            SQLQueryBuilder.build_from_clause(model),
+        ]
+
+        join_clause = SQLQueryBuilder.build_join_clause(fields, model, relationships)
+        where_clause, values = SQLQueryBuilder.build_where_clause(conditions)
+        order_by_clause = SQLQueryBuilder.build_order_by_clause(order_by)
+
+        if join_clause:
+            query_clauses.append(join_clause)
+        if where_clause:
+            query_clauses.append(where_clause)
+        if order_by_clause:
+            query_clauses.append(order_by_clause)
+
+        return '\n'.join(query_clauses), values
+
+    @staticmethod
+    def _extract_key_value_pairs(conditions: Union[Dict[str, Any], List[Dict[str, Any]]]) -> Generator[Tuple[str, Any], None, None]:
+        if isinstance(conditions, dict):  # Case where `where` is a dictionary
+            yield from conditions.items()
         else:  # Case where `where` is a list of dictionaries
-            for condition_dict in where:
+            for condition_dict in conditions:
                 yield next(iter(condition_dict.items()))
 
     @staticmethod
@@ -314,7 +426,7 @@ class SQLQueryBuilder:
         """Parse a simplified relationship string into components.
         """
         return relationship.rsplit('.', 1)
-    
+
     @staticmethod
     def _join_where_clauses(where_clauses: List[str], group_operator: Union[GroupOperator, str]) -> str:
         if isinstance(group_operator, GroupOperator):
@@ -324,63 +436,53 @@ class SQLQueryBuilder:
 
         return f" {group_operator_str} ".join(where_clauses)
 
+    @staticmethod
+    def _build_inner_alias(field: str) -> str:
+        if '.' in field:
+            relation_chain, relation_field = field.rsplit('.', 1)
+            inner_alias = f"'{relation_chain}'.{relation_field}"
+        else:
+            inner_alias = f'_.{field}'
 
-# If you want to run doctests manually, you can include this code block:
+        return inner_alias
+
+
+# Example usage
 if __name__ == "__main__":
     import doctest
     doctest.testmod()
 
-    # Example usage for a condition with logical operators and multi-value support:
-    where_clause, params = SQLQueryBuilder.build_where_clause({
-        "age": {"gte": 18},
-        "status": {"in": ["active", "pending", "suspended"]},
-        "name": {"contains": "John"},
-        GroupOperator.OR: {
-                "role": {"eq": "admin"},
-                "permission": {"in": ["read", "write"]}
-            }
-        }
-    )
-    print(where_clause)
-    # age >= ? AND status IN (?, ?, ?) AND name LIKE '%' || ? || '%' AND (role = ? OR permission IN (?, ?))
-    print(params)
-    # [18, 'active', 'pending', 'suspended', 'John', 'admin', 'read', 'write'])
+    # Example 1: Using List[str]
+    current_model = 'Tasks'
 
-    filters = {
+    fields = [
+        "shot.sequence.project.name",
+        "shot.name",
+        "name",
+        "status",
+        "parent_task.name",
+        "start_date",
+        "due_date",
+        "assigned_to.email"
+    ]
+
+    conditions = {
         "OR": {
-            "author.name": {"contains": "John"},
-            "AND": {
-                "publisher.name": {"eq": "Penguin"},
-                "title": {"contains": "Classic"}
-            }
+            "shot.sequence.project.name": {"contains": "Forest"},
+            "shot.status": {"eq": "Completed"},
+            "assigned_to.role": {"eq": "Artist"}
         }
     }
+
     relationships = {
-        "author": "Authors.id",  # books.author -> Authors.id
-        "publisher": "Publishers.id"  # books.publisher -> Publishers.id
+        "Tasks.shot": "Shots.id",
+        "Shots.sequence": "Sequences.id",
+        "Sequences.project": "Projects.id",
+        "Tasks.assigned_to": "Users.id",
+        "Tasks.parent_task": "Tasks.id"
     }
 
-    where_clause, params = SQLQueryBuilder.build_where_clause(
-        where=filters, relationships=relationships
-    )
-    print(where_clause)
-    # (author IN (SELECT id FROM Authors WHERE name LIKE '%' || ? || '%') OR (publisher IN (SELECT id FROM Publishers WHERE name = ?) AND title LIKE '%' || ? || '%'))
-    print(params)
-    # [18, 'active', 'pending', 'suspended', 'John', 'admin', 'read', 'write'])
 
-filters = {
-    "OR": {
-        "author.name": {"contains": "John"},
-        "author.publisher.country": {"eq": "USA"},
-        "author.publisher.name": {"eq": "Penguin"},
-    }
-}
-
-key = "author.publisher.country"
-
-relationships = {
-    "author": "Authors.id",  # books.author -> Authors.id
-    "author.publisher": "Publishers.id",  # authors.publisher -> Publishers.id
-}
-where_clause = SQLQueryBuilder._generate_where_clause(key, relationships, FilterOperation.BETWEEN.sql_operator)
-print(where_clause)
+    quary_clause, values = SQLQueryBuilder.build_query(model=current_model, fields=fields, conditions=conditions, relationships=relationships)
+    print(quary_clause)
+    print(values)
