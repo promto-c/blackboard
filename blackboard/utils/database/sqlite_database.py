@@ -12,6 +12,7 @@ import sqlite3
 # -------------
 from .abstract_database import AbstractDatabase, AbstractModel
 from .schema import FieldInfo, ManyToManyField, ForeignKey
+from .sql_query_builder import SQLQueryBuilder, SortOrder
 
 
 # Class Definitions
@@ -781,15 +782,15 @@ class SQLiteModel(AbstractModel):
         ]
 
     def query(self, fields: Optional[List[str]] = None, where_clause: Optional[str] = None,
-              parameters: Optional[List[Any]] = None, as_dict: bool = False, handle_m2m: bool = False,
-              order_by: Optional[List[Tuple[str, str]]] = None,
+              values: Optional[List[Any]] = None, as_dict: bool = False, handle_m2m: bool = False,
+              order_by: Optional[Dict[str, SortOrder]] = None, relationships=None
               ) -> Union[Generator[Tuple, None, None], Generator[Dict[str, Union[int, str, float, None]], None, None]]:
         """Retrieve data from a specified table as a generator.
 
         Args:
             fields (Optional[List[str]]): Specific fields to retrieve. Defaults to all fields.
             where_clause (Optional[str]): Optional SQL WHERE clause to filter results. Defaults to None.
-            parameters (Optional[List[Any]]): Parameters to substitute into the SQL query, preventing SQL injection. Defaults to None.
+            values (Optional[List[Any]]): Parameters to substitute into the SQL query, preventing SQL injection. Defaults to None.
             as_dict (bool): If True, yield rows as dictionaries. Defaults to False.
             handle_m2m (bool): Whether to retrieve many-to-many related data as well. Defaults to False.
             order_by (Optional[List[Tuple[str, str]]]): A list of tuples specifying fields and sort direction ("ASC" or "DESC"). Defaults to None.
@@ -804,32 +805,23 @@ class SQLiteModel(AbstractModel):
             sqlite3.Error: If there is an error executing the SQL command.
         """
         fields = fields or self.get_field_names()
-        # Ensure all fields are valid identifiers
-        if not all(field.isidentifier() for field in fields):
-            raise ValueError("Invalid field name")
-
-        # Validate order_by fields
-        if order_by:
-            if not all(isinstance(ob, tuple) and len(ob) == 2 and ob[0].isidentifier() and ob[1].upper() in {"ASC", "DESC"} for ob in order_by):
-                raise ValueError("Invalid order_by format. Must be a list of tuples with (field, 'ASC' or 'DESC').")
 
         many_to_many_field_names = self.get_many_to_many_field_names() if handle_m2m else []
         fields = [field for field in fields if field not in many_to_many_field_names]
-        fields_quoted = [f'"{field}"' for field in fields]
-        fields_str = ', '.join(fields_quoted)
 
-        query = f"SELECT {fields_str} FROM '{self._table_name}'"
-        if where_clause:
-            query += f" WHERE {where_clause}"
-
-        if order_by:
-            order_by_str = ', '.join(f'"{field}" {direction}' for field, direction in order_by)
-            query += f" ORDER BY {order_by_str}"
+        query, values = SQLQueryBuilder.build_query(
+            model=self._table_name,
+            fields=fields,
+            conditions=where_clause,
+            relationships=relationships,
+            order_by=order_by,
+            values=values
+        )
 
         cursor = self._connection.cursor()
         try:
-            if parameters:
-                cursor.execute(query, parameters)
+            if values:
+                cursor.execute(query, values)
             else:
                 cursor.execute(query)
 

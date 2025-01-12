@@ -320,6 +320,9 @@ class SQLQueryBuilder:
             ... })
             ('WHERE\\n\\t(_.age < ? OR (_.status = ? AND _.id >= ?))', [18, 'inactive', 100])
         """
+        if isinstance(conditions, str):
+            return f'WHERE\n\t{conditions}', []
+
         if not conditions:
             return "", []
 
@@ -394,14 +397,15 @@ class SQLQueryBuilder:
         )
 
     @staticmethod
-    def build_query(model: str, fields = None, conditions = None, relationships = None, order_by: Optional[Dict[str, SortOrder]] = None):
+    def build_query(model: str, fields = None, conditions = None, relationships = None, order_by: Optional[Dict[str, SortOrder]] = None, values = None):
         query_clauses = [
             SQLQueryBuilder.build_select_clause(fields),
             SQLQueryBuilder.build_from_clause(model),
         ]
 
         join_clause = SQLQueryBuilder.build_join_clause(fields, model, relationships)
-        where_clause, values = SQLQueryBuilder.build_where_clause(conditions)
+        where_clause, extracted_values = SQLQueryBuilder.build_where_clause(conditions)
+        values = values or extracted_values
         order_by_clause = SQLQueryBuilder.build_order_by_clause(order_by)
 
         if join_clause:
