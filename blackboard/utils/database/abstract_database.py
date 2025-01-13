@@ -97,6 +97,10 @@ class AbstractModel(ABC):
     def name(self) -> str:
         return self._table_name
 
+    @property
+    def field_names(self) -> List[str]:
+        return self.get_field_names()
+
     @abstractmethod
     def add_field(self, field_name: str, field_definition: str, foreign_key: Optional[str] = None, enum_values: Optional[List[str]] = None, enum_table_name: Optional[str] = None):
         """Add a new field to an existing table, optionally with a foreign key or enum constraint."""

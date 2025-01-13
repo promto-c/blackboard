@@ -565,6 +565,23 @@ class SQLiteModel(AbstractModel):
 
         return foreign_key
 
+    def get_relationships(self) -> Dict[str, str]:
+        related_table = set()
+        relationships = {}
+
+        def construct_relationships(table_name: str):
+            related_table.add(table_name)
+            foreign_keys = self.get_foreign_keys(table_name)
+
+            for foreign_key in foreign_keys:
+                relationships[f'{foreign_key.local_table}.{foreign_key.local_field}'] = f'{foreign_key.referenced_table}.{foreign_key.referenced_field}'
+                if foreign_key.referenced_table in related_table:
+                    continue
+                construct_relationships(foreign_key.referenced_table)
+
+        construct_relationships(self._table_name)
+        return relationships
+
     def get_many_to_many_fields(self) -> Dict[str, 'ManyToManyField']:
         """Retrieve all many-to-many relationships for a specified table.
 
@@ -781,6 +798,16 @@ class SQLiteModel(AbstractModel):
             for row in results
         ]
 
+    def get_table_from_chain(self, relation_chain: str, sep: str = '.') -> str:
+        if sep not in relation_chain:
+            return
+        relationships = self.get_relationships()
+        chains = relation_chain.split(sep)
+        current_table = self._table_name
+        for field in chains[:-1]:
+            current_table = relationships[f'{current_table}.{field}'].split(sep)[0]
+        return current_table
+
     def query(self, fields: Optional[List[str]] = None, where_clause: Optional[str] = None,
               values: Optional[List[Any]] = None, as_dict: bool = False, handle_m2m: bool = False,
               order_by: Optional[Dict[str, SortOrder]] = None, relationships=None
@@ -804,7 +831,8 @@ class SQLiteModel(AbstractModel):
             ValueError: If the table name, field names, or order_by fields are invalid Python identifiers.
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        fields = fields or self.get_field_names()
+        fields = fields or self.field_names
+        relationships = relationships or self.get_relationships()
 
         many_to_many_field_names = self.get_many_to_many_field_names() if handle_m2m else []
         fields = [field for field in fields if field not in many_to_many_field_names]

@@ -623,7 +623,7 @@ SAFE_OPERATORS = {
 }
 
 class FunctionalColumnDialog(QtWidgets.QDialog):
-    def __init__(self, db_manager, model, sample_data, parent=None):
+    def __init__(self, db_manager, model: 'AbstractModel', sample_data, parent=None):
         super().__init__(parent)
         self.db_manager = db_manager
         self.model = model
@@ -797,8 +797,8 @@ class DatabaseViewWidget(DataViewWidget):
         # TODO: Store relation path in header item to be extract from item directly
         # Check if the column header includes a related table
         if '.' in tree_column_name:
-            # The column represents a relation, split to get the table name
-            local_table, local_field = tree_column_name.split('.')
+            local_table = self._current_model.get_table_from_chain(tree_column_name)
+            local_field = tree_column_name.rsplit('.', 1)[-1]
         else:
             # Use the original current table
             local_table = self._current_table
@@ -837,22 +837,16 @@ class DatabaseViewWidget(DataViewWidget):
                 self.add_relation_column_menu.setEnabled(True)
             return
 
-        # If a direct foreign key relation is found, handle it as before
-        referenced_table = related_fk.referenced_table
-        referenced_field = related_fk.referenced_field
-
-        referenced_model = self.db_manager.get_model(referenced_table)
-
         # Retrieve fields from the related table
+        referenced_model = self.db_manager.get_model(related_fk.referenced_table)
         related_field_names = referenced_model.get_field_names()
 
         # Create a menu action for each foreign key relation
         for display_field in related_field_names[1:]:
-            action = QtWidgets.QAction(f"{referenced_table}.{display_field}", self)
-
-            # Pass the correct arguments to add_relation_column
+            relation_chain = f"{tree_column_name}.{display_field}"
+            action = QtWidgets.QAction(relation_chain, self)
             action.triggered.connect(
-                partial(self.add_relation_column, local_table, referenced_table, display_field, local_field, referenced_field)
+                partial(self.add_relation_column, relation_chain)
             )
 
             self.add_relation_column_menu.addAction(action)
@@ -1035,7 +1029,8 @@ class DatabaseViewWidget(DataViewWidget):
         if filter_widget:
             self.add_filter_widget(filter_widget)
 
-    def add_relation_column(self, local_table: str, referenced_table: str, display_field: str, local_field: str, referenced_field: str):
+    # TODO: Add a reference to the view to query this added relation column when fetching more data.
+    def add_relation_column(self, relation_chain: str):
         """Add a relation column to the tree widget.
 
         Args:
@@ -1048,31 +1043,21 @@ class DatabaseViewWidget(DataViewWidget):
         current_column_names = self.tree_widget.fields.copy()
 
         # Check if the related column header already exists
-        target_column_name = f"{referenced_table}.{display_field}"
-        if target_column_name not in current_column_names:
-            current_column_names.append(target_column_name)
+        if relation_chain not in current_column_names:
+            current_column_names.append(relation_chain)
             self.tree_widget.setHeaderLabels(current_column_names)
 
-        # TODO: Set `relation_chain` in tooltip of header column
-        column_name = local_field if local_table == self._current_table else f'{local_table}.{local_field}'
-        relation_chain = self._column_to_relation_chain_dict.get(column_name, f'{local_table}.{local_field}')
-        relation_chain +=  f'.{display_field}'
-        self._column_to_relation_chain_dict[target_column_name] = relation_chain
-
-        local_model = self.db_manager.get_model(local_table)
-        referenced_model = self.db_manager.get_model(referenced_table)
+        pk = self._current_model.get_primary_keys()[0]
 
         # Fetch data from the current table
-        data_tuples = local_model.query(fields=[local_field])
+        data_tuples = self._current_model.query(fields=[pk, relation_chain], as_dict=False)
 
         # Update the tree widget with the new column data
-        for i, data_tuple in enumerate(list(data_tuples)):
-            target_value = referenced_model.fetch_one(display_field, referenced_field, data_tuple[0])
-
-            # TODO: Handle when grouping
-            item: 'TreeWidgetItem' = self.tree_widget.topLevelItem(i)
-            if item:
-                item.set_value(target_column_name, target_value)
+        for pk_value, value in data_tuples:
+            item = self.tree_widget.get_item_by_id((pk_value,))
+            if not item:
+                continue
+            item.set_value(relation_chain, value)
 
     def add_relation_column_m2m(self, local_table: str, display_field: str, m2m_field: 'ManyToManyField', display_column_label: str):
         """Add a many-to-many relation column to the tree widget.
