@@ -66,7 +66,7 @@ class FilterOperation(Enum):
 
     def is_multi_value(self) -> bool:
         """Return True if the operation supports multiple values."""
-        return self._num_values > 1 or self._num_values == -1
+        return self._num_values == -1
 
     @classmethod
     def from_string(cls, name: str) -> 'FilterOperation':
@@ -161,7 +161,7 @@ class SQLQueryBuilder:
         return sorted(prefixes)
 
     @staticmethod
-    def build_select_clause(fields: Union[List[str], Dict[str, str]]):
+    def build_select_clause(fields: Union[List[str], Dict[str, str]] = None):
         """Build the SELECT part of the query.
 
         Arguments:
@@ -179,7 +179,11 @@ class SQLQueryBuilder:
             "SELECT\\n\\t'shot.sequence.project'.name AS 'project_name',\\n\\t'shot'.name AS 'shot_name'"
         """
         # Convert input into a list of tuples: [(field, alias)]
-        if isinstance(fields, list):
+        if not fields:
+            return 'SELECT *'
+        elif isinstance(fields, str):
+            return f"SELECT\n\t{fields}"
+        elif isinstance(fields, list):
             # If it's a list, assume no alias is provided
             fields = [(field, field) for field in fields]
         elif isinstance(fields, dict):
@@ -209,9 +213,9 @@ class SQLQueryBuilder:
 
         Example:
             >>> SQLQueryBuilder.build_from_clause("Tasks")
-            'FROM\\n\\tTasks AS _'
+            "FROM\\n\\t'Tasks' AS _"
         """
-        return f"FROM\n\t{current_model} AS _"
+        return f"FROM\n\t'{current_model}' AS _"
 
     @staticmethod
     def build_join_clause(fields: List[str], current_model: str, relationships: Dict[str, str]) -> str:
@@ -361,7 +365,7 @@ class SQLQueryBuilder:
             where_clauses.append(where_clause)
 
             # Handle special case for IN and NOT IN
-            if operator.is_multi_value():
+            if operator.is_multi_value() or operator.num_values > 1:
                 values.extend(value)
             elif operator.requires_value():
                 values.append(value)
@@ -380,24 +384,29 @@ class SQLQueryBuilder:
         ...     "createdAt": SortOrder.DESC,
         ...     "name": SortOrder.ASC
         ... })
-        'createdAt DESC, name ASC'
+        'ORDER BY\\n\\tcreatedAt DESC, name ASC'
         
         >>> SQLQueryBuilder.build_order_by_clause({
         ...     "createdAt": "desc",
         ...     "name": "asc"
         ... })
-        'createdAt DESC, name ASC'
+        'ORDER BY\\n\\tcreatedAt DESC, name ASC'
         """
         if not order_by:
             return ""
+        
+        if isinstance(order_by, str):
+            return f'ORDER BY\n\t{order_by}'
 
         # Ensure that the input for order_by values are `SortOrder` or strings
-        return ", ".join(
+        order_by_clause = ", ".join(
             [f"{field} {str(direction).upper()}" for field, direction in order_by.items()]
         )
 
+        return f"ORDER BY\n\t{order_by_clause}"
+
     @staticmethod
-    def build_query(model: str, fields = None, conditions = None, relationships = None, order_by: Optional[Dict[str, SortOrder]] = None, values = None):
+    def build_query(model: str, fields = None, conditions = None, relationships = None, order_by: Optional[Dict[str, SortOrder]] = None, limit: int = None, values = None):
         query_clauses = [
             SQLQueryBuilder.build_select_clause(fields),
             SQLQueryBuilder.build_from_clause(model),
@@ -414,6 +423,8 @@ class SQLQueryBuilder:
             query_clauses.append(where_clause)
         if order_by_clause:
             query_clauses.append(order_by_clause)
+        if limit:
+            query_clauses.append(f'LIMIT\n\t{limit}')
 
         return '\n'.join(query_clauses), values
 
@@ -486,7 +497,6 @@ if __name__ == "__main__":
         "Tasks.parent_task": "Tasks.id"
     }
 
-
-    quary_clause, values = SQLQueryBuilder.build_query(model=current_model, fields=fields, conditions=conditions, relationships=relationships)
+    quary_clause, values = SQLQueryBuilder.build_query(model=current_model, fields=fields, conditions=conditions, relationships=relationships, limit=5)
     print(quary_clause)
     print(values)
