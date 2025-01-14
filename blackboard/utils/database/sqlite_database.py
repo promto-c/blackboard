@@ -808,7 +808,7 @@ class SQLiteModel(AbstractModel):
             current_table = relationships[f'{current_table}.{field}'].split(sep)[0]
         return current_table
 
-    def query(self, fields: Optional[List[str]] = None, where_clause: Optional[str] = None,
+    def query(self, fields: Optional[List[str]] = None, conditions: Optional[str] = None,
               values: Optional[List[Any]] = None, as_dict: bool = False, handle_m2m: bool = False,
               order_by: Optional[Dict[str, SortOrder]] = None, relationships=None
               ) -> Union[Generator[Tuple, None, None], Generator[Dict[str, Union[int, str, float, None]], None, None]]:
@@ -816,7 +816,7 @@ class SQLiteModel(AbstractModel):
 
         Args:
             fields (Optional[List[str]]): Specific fields to retrieve. Defaults to all fields.
-            where_clause (Optional[str]): Optional SQL WHERE clause to filter results. Defaults to None.
+            conditions (Optional[str]): Optional SQL WHERE clause to filter results. Defaults to None.
             values (Optional[List[Any]]): Parameters to substitute into the SQL query, preventing SQL injection. Defaults to None.
             as_dict (bool): If True, yield rows as dictionaries. Defaults to False.
             handle_m2m (bool): Whether to retrieve many-to-many related data as well. Defaults to False.
@@ -840,7 +840,7 @@ class SQLiteModel(AbstractModel):
         query, values = SQLQueryBuilder.build_query(
             model=self._table_name,
             fields=fields,
-            conditions=where_clause,
+            conditions=conditions,
             relationships=relationships,
             order_by=order_by,
             values=values

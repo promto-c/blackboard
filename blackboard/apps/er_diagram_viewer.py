@@ -152,9 +152,9 @@ class ERDiagramView(QtWidgets.QGraphicsView):
 
     def __init__(self, schema: dict, foreign_keys: list, parent=None):
         super().__init__(parent)
-        self.scene = QtWidgets.QGraphicsScene()
-        self.setScene(self.scene)
-        self.scene.setBackgroundBrush(QtGui.QBrush(BACKGROUND_COLOR))  # Dark background
+        scene = QtWidgets.QGraphicsScene()
+        self.setScene(scene)
+        scene.setBackgroundBrush(QtGui.QBrush(BACKGROUND_COLOR))  # Dark background
         self.table_items = {}
         self.draw_schema(schema)
         self.draw_relationships(foreign_keys)
@@ -176,7 +176,7 @@ class ERDiagramView(QtWidgets.QGraphicsView):
 
         for table_name, columns in schema.items():
             table_item = TableItem(table_name, columns, (x, y))
-            self.scene.addItem(table_item)
+            self.scene().addItem(table_item)
             self.table_items[table_name] = table_item
 
             y += table_item.boundingRect().height() + MARGIN
@@ -211,7 +211,10 @@ class ERDiagramView(QtWidgets.QGraphicsView):
 
             # Add the connection item with hover effects
             connection_item = ConnectionItem(path, from_table, to_table, from_column, to_column)
-            self.scene.addItem(connection_item)
+            # Move an item to the back
+            connection_item.setZValue(-1000)
+
+            self.scene().addItem(connection_item)
 
             # Associate connection with both tables
             from_item.add_connection(connection_item)

@@ -152,7 +152,7 @@ class AbstractModel(ABC):
         pass
 
     @abstractmethod
-    def query(self, fields: Optional[List[str]] = None, where_clause: Optional[str] = None, parameters: Optional[List] = None,
+    def query(self, fields: Optional[List[str]] = None, conditions: Optional[str] = None, values: Optional[List] = None,
               as_dict: bool = False, handle_m2m: bool = False,
               ) -> Union[Generator[Tuple, None, None], Generator[Dict[str, Any], None, None]]:
         """Perform a query on the table."""

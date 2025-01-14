@@ -1138,8 +1138,8 @@ class DatabaseViewWidget(DataViewWidget):
         # Execute the query
         results = self._current_model.query(
             fields=all_fields,
-            where_clause=where_clause,
-            parameters=parameters,
+            conditions=where_clause,
+            values=parameters,
             as_dict=True,
             handle_m2m=True
         )
