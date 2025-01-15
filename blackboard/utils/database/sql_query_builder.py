@@ -121,14 +121,14 @@ class SQLQueryBuilder:
             prune_leaves (int): Number of levels to prune from the end of each hierarchy. Default is 0.
 
         Returns:
-            list of str: Unique propagated hierarchy references.
+            List[str]: Unique propagated hierarchy references (sorted lexicographically).
 
         Examples:
             >>> SQLQueryBuilder.propagate_hierarchies([
-            ...     "shot.sequence.project.name", 
-            ...     "shot.name", 
-            ...     "name", 
-            ...     "status", 
+            ...     "shot.sequence.project.name",
+            ...     "shot.name",
+            ...     "name",
+            ...     "status",
             ...     "user.name"
             ... ], prune_leaves=1)
             ['shot', 'shot.sequence', 'shot.sequence.project', 'user']
@@ -151,55 +151,67 @@ class SQLQueryBuilder:
             >>> SQLQueryBuilder.propagate_hierarchies(["root.branch.leaf"], prune_leaves=3)
             []
         """
-        prefixes = set()
+        unique_hierarchies = set()
 
         for field in fields:
-            parts = field.split(separator)
-            for i in range(len(parts) - prune_leaves):
-                prefix = separator.join(parts[:i+1])
-                prefixes.add(prefix)
-        return sorted(prefixes)
+            tokens = field.split(separator)
+
+            # Generate all prefix levels
+            for i in range(len(tokens) - prune_leaves):
+                prefix = separator.join(tokens[:i+1])
+                unique_hierarchies.add(prefix)
+
+        # Return a lexicographically sorted list
+        return sorted(unique_hierarchies)
 
     @staticmethod
-    def build_select_clause(fields: Union[List[str], Dict[str, str]] = None):
+    def build_select_clause(fields: Union[List[Union[str, Dict[str, str]]], Dict[str, str]] = None) -> str:
         """Build the SELECT part of the query.
 
         Arguments:
-            fields (Union[List[str], Dict[str, str]]): 
-                List of field strings or a dictionary mapping field names to alias names.
-            
+            fields: A list containing field names as strings or dictionaries mapping a field to an alias,
+                or a dictionary mapping multiple fields to aliases.
+
         Returns:
             str: The SELECT clause in SQL format.
 
-        Example:
+        Examples:
             >>> SQLQueryBuilder.build_select_clause(["shot.sequence.project.name", "shot.name", "name", "status"])
             "SELECT\\n\\t'shot.sequence.project'.name AS 'shot.sequence.project.name',\\n\\t'shot'.name AS 'shot.name',\\n\\t_.name AS 'name',\\n\\t_.status AS 'status'"
 
             >>> SQLQueryBuilder.build_select_clause({"shot.sequence.project.name": "project_name", "shot.name": "shot_name"})
             "SELECT\\n\\t'shot.sequence.project'.name AS 'project_name',\\n\\t'shot'.name AS 'shot_name'"
+
+            >>> SQLQueryBuilder.build_select_clause(["shot.sequence.project.name", {"shot.name": "my_shot_name"}, "status"])
+            "SELECT\\n\\t'shot.sequence.project'.name AS 'shot.sequence.project.name',\\n\\t'shot'.name AS 'my_shot_name',\\n\\t_.status AS 'status'"
         """
         # Convert input into a list of tuples: [(field, alias)]
         if not fields:
-            return 'SELECT *'
-        elif isinstance(fields, str):
-            return f"SELECT\n\t{fields}"
-        elif isinstance(fields, list):
-            # If it's a list, assume no alias is provided
-            fields = [(field, field) for field in fields]
+            return "SELECT *"
         elif isinstance(fields, dict):
-            # If it's a dictionary, map the field to its alias
-            fields = [(field, outer_alias) for field, outer_alias in fields.items()]
+            # Convert each dictionary item into tuples of (field, alias)
+            fields = [(field, alias) for field, alias in fields.items()]
+        elif isinstance(fields, Iterable) and not isinstance(fields, str):
+            expanded_fields = []
+            for f in fields:
+                if isinstance(f, str):
+                    expanded_fields.append((f, f))
+                elif isinstance(f, dict):
+                    for field, alias in f.items():
+                        expanded_fields.append((field, alias))
+                else:
+                    raise TypeError("Unsupported field type in fields list.")
+            fields = expanded_fields
+        else:
+            # Treat any other string input as a direct SELECT clause
+            return f"SELECT\n\t{fields}"
 
         # Handle both list of tuples (field, alias)
         select_parts = [
-            f"{SQLQueryBuilder._build_inner_alias(field)} AS '{outer_alias}'" 
-            for field, outer_alias in fields
+            f"{SQLQueryBuilder._build_inner_alias(field)} AS '{alias}'"
+            for field, alias in fields
         ]
-
-        select_parts_str = ',\n\t'.join(select_parts)
-        select_clause = f'SELECT\n\t{select_parts_str}'
-
-        return select_clause
+        return "SELECT\n\t" + ",\n\t".join(select_parts)
 
     @staticmethod
     def build_from_clause(current_model: str) -> str:
@@ -218,11 +230,19 @@ class SQLQueryBuilder:
         return f"FROM\n\t'{current_model}' AS _"
 
     @staticmethod
-    def build_join_clause(fields: List[str], current_model: str, relationships: Dict[str, str]) -> str:
+    def build_join_clause(fields: List[str],
+                          current_model: str,
+                          relationships: Dict[str, str],
+                          separator: str = '.') -> str:
         """Build the JOIN part of the query.
 
-        Arguments:
-            relationships (Dict[str, str]): A dictionary of relationships between tables.
+        Args:
+            fields (List[str]): A list of hierarchical field strings, 
+                e.g. ["shot.sequence.project.name", "shot.name", "status"].
+            current_model (str): The base table/model for the current query, e.g. "Tasks".
+            relationships (Dict[str, str]): A dictionary of relationships between tables,
+                e.g. {"Tasks.shot": "Shots.id", "Shots.sequence": "Sequences.id"}.
+            separator (str): Separator used for hierarchy splitting. Default is '.'.
 
         Returns:
             str: The JOIN clause in SQL format.
@@ -232,39 +252,63 @@ class SQLQueryBuilder:
             ...     fields=["shot.sequence.project.name", "shot.name", "name", "status"],
             ...     current_model="Tasks",
             ...     relationships={
-            ...         "Tasks.shot": "Shots.id", 
+            ...         "Tasks.shot": "Shots.id",
             ...         "Shots.sequence": "Sequences.id",
             ...         "Sequences.project": "Projects.id",
             ...     }
             ... )
-            "LEFT JOIN\\n\\tShots AS 'shot' ON _.shot = 'shot'.id\\nLEFT JOIN\\n\\tSequences AS 'shot.sequence' ON 'shot'.sequence = 'shot.sequence'.id\\nLEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 'shot.sequence.project'.id"
+            "LEFT JOIN\\n\\tShots AS 'shot' ON _.shot = 'shot'.id\\nLEFT JOIN\\n\\tSequences AS 'shot.sequence' \
+ON 'shot'.sequence = 'shot.sequence'.id\\nLEFT JOIN\\n\\tProjects AS 'shot.sequence.project' \
+ON 'shot.sequence'.project = 'shot.sequence.project'.id"
         """
-        relation_chains = SQLQueryBuilder.propagate_hierarchies(fields, prune_leaves=1)
+        # 1) Gather all chain prefixes that need to be joined up to (but not including) the final leaf
+        #    For example, "shot.sequence" is taken from "shot.sequence.project.name"
+        #    We apply prune_leaves=1 so "project.name" => "project" is recognized, but not "name" alone.
+        relation_chains = SQLQueryBuilder.propagate_hierarchies(fields, separator=separator, prune_leaves=1)
         if not relation_chains:
             return ''
 
+        # Maps a chain prefix (e.g. "shot" or "shot.sequence") to the table name (e.g. "Shots", "Sequences")
+        relation_chain_to_table: Dict[str, str] = {}
+
+        # 2) Build the JOIN statements for each relation_chain
         join_clauses = []
-        relation_chain_to_model = {}
-
-        for relation_chain in relation_chains:
-            if '.' not in relation_chain:
-                reference_model = current_model
-                reference_field = relation_chain
+        for chain in relation_chains:
+            # If there's no separator in this chain (single token), then it's directly from the base model.
+            if separator not in chain:
+                left_table = current_model
+                left_column = chain
             else:
-                reference_chain, reference_field = SQLQueryBuilder._parse_relationship(relation_chain)
-                reference_model = relation_chain_to_model[reference_chain]
+                # For something like "shot.sequence", parse the parent prefix (e.g. "shot") and the last token ("sequence")
+                parent_chain, left_column = SQLQueryBuilder._parse_relationship(chain, separator=separator)
+                # The left_table is determined by whatever we assigned "parent_chain" to be
+                left_table = relation_chain_to_table[parent_chain]
 
-            reference_model_field = f'{reference_model}.{reference_field}'
-            related_model_field = relationships[reference_model_field]
-            related_model, related_field = SQLQueryBuilder._parse_relationship(related_model_field)
+            # `left_table_field` is something like "Tasks.shot" or "Shots.sequence"
+            left_table_field = f'{left_table}.{left_column}'
 
-            relation_chain_to_model[relation_chain] = related_model
+            # `relationships` dict should map that to e.g. "Shots.id" => right_table_field
+            # which we then parse into e.g. right_table="Shots", right_column="id"
+            right_table_field = relationships[left_table_field]
+            right_table, right_column = SQLQueryBuilder._parse_relationship(right_table_field, separator=separator)
 
-            related_model_alias = f"'{relation_chain}'"
-            reference_field_alias = SQLQueryBuilder._build_inner_alias(relation_chain)
-            join_clause = f"LEFT JOIN\n\t{related_model} AS {related_model_alias} ON {reference_field_alias} = {related_model_alias}.{related_field}"
+            # Store the discovered right_table in relation_chain_to_table, so future children
+            # of this chain know which table they come from.
+            relation_chain_to_table[chain] = right_table
+
+            # Build the LEFT JOIN snippet
+            right_table_alias = f"'{chain}'"
+            # On the left side, we might need to reference the base model or a previous alias
+            left_column_alias = SQLQueryBuilder._build_inner_alias(chain)
+
+            # "LEFT JOIN Shots AS 'shot' ON _.shot = 'shot'.id"
+            join_clause = (
+                f"LEFT JOIN\n\t{right_table} AS {right_table_alias} "
+                f"ON {left_column_alias} = {right_table_alias}.{right_column}"
+            )
             join_clauses.append(join_clause)
 
+        # 3) Return them as a single multi-line string
         return '\n'.join(join_clauses)
 
     @staticmethod
@@ -437,10 +481,10 @@ class SQLQueryBuilder:
                 yield next(iter(condition_dict.items()))
 
     @staticmethod
-    def _parse_relationship(relationship: str):
+    def _parse_relationship(relationship: str, separator: str = '.'):
         """Parse a simplified relationship string into components.
         """
-        return relationship.rsplit('.', 1)
+        return relationship.rsplit(separator, 1)
 
     @staticmethod
     def _join_where_clauses(where_clauses: List[str], group_operator: Union[GroupOperator, str]) -> str:
@@ -452,12 +496,14 @@ class SQLQueryBuilder:
         return f" {group_operator_str} ".join(where_clauses)
 
     @staticmethod
-    def _build_inner_alias(field: str) -> str:
-        if '.' in field:
-            relation_chain, relation_field = field.rsplit('.', 1)
+    def _build_inner_alias(field: str, base_alias: str = '_', separator: str = '.') -> str:
+        if separator in field:
+            # e.g. "shot.sequence" => "'shot'.sequence"
+            relation_chain, relation_field = SQLQueryBuilder._parse_relationship(field, separator=separator)
             inner_alias = f"'{relation_chain}'.{relation_field}"
         else:
-            inner_alias = f'_.{field}'
+            # e.g. "shot" => '_.shot'
+            inner_alias = f'{base_alias}.{field}'
 
         return inner_alias
 

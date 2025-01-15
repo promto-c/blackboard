@@ -1,3 +1,5 @@
+from typing import Dict
+
 from PyQt5 import QtWidgets, QtGui, QtCore
 import sqlite3
 
@@ -18,7 +20,7 @@ COLUMN_WIDTH = 240
 def get_db_schema(db_path: str) -> tuple[dict, list]:
     """Fetch schema information and foreign keys from the SQLite database."""
     schema = {}
-    foreign_keys = []
+    relationships = {}
 
     # Open database in read-only mode
     conn = sqlite3.connect(f"file:///{db_path}?mode=ro", uri=True)
@@ -37,9 +39,11 @@ def get_db_schema(db_path: str) -> tuple[dict, list]:
             cursor.execute(f"PRAGMA foreign_key_list({table_name});")
             fks = cursor.fetchall()
             for fk in fks:
-                foreign_keys.append((table_name, fk[3], fk[2], fk[4]))  # (from_table, from_column, to_table, to_column)
+                from_table, from_column, to_table, to_column = table_name, fk[3], fk[2], fk[4]
+                relationships[f'{from_table}.{from_column}'] = f'{to_table}.{to_column}'
+    
+    return schema, relationships
 
-    return schema, foreign_keys
 
 class TableItem(QtWidgets.QGraphicsRectItem):
     """Custom QGraphicsRectItem to represent a database table."""
@@ -69,7 +73,7 @@ class TableItem(QtWidgets.QGraphicsRectItem):
             column_text.setPos(5, HEADER_HEIGHT + i * ROW_HEIGHT)
             self.columns.append(column_text)
 
-        # List to store connections associated with this table
+        # Store connections associated with this table
         self.connections = []
 
     def add_connection(self, connection_item):
@@ -90,7 +94,7 @@ class TableItem(QtWidgets.QGraphicsRectItem):
     def hoverEnterEvent(self, event):
         """Change appearance on hover and highlight connections."""
         self.setPen(QtGui.QPen(QtGui.QColor(255, 255, 0), 2))  # Yellow border on hover
-        self.setBrush(QtGui.QBrush(HIGHLIGHT_COLOR))  # Lighter fill on hover
+        self.setBrush(QtGui.QBrush(HIGHLIGHT_COLOR))           # Lighter fill on hover
 
         # Highlight associated connections
         for connection in self.connections:
@@ -150,15 +154,28 @@ class ConnectionItem(QtWidgets.QGraphicsPathItem):
 class ERDiagramView(QtWidgets.QGraphicsView):
     """Custom QGraphicsView to display the ER diagram."""
 
-    def __init__(self, schema: dict, foreign_keys: list, parent=None):
+    # Initialization and Setup
+    # ------------------------
+    def __init__(self, schema: dict, relationships: list, parent=None):
         super().__init__(parent)
-        scene = QtWidgets.QGraphicsScene()
-        self.setScene(scene)
-        scene.setBackgroundBrush(QtGui.QBrush(BACKGROUND_COLOR))  # Dark background
-        self.table_items = {}
-        self.draw_schema(schema)
-        self.draw_relationships(foreign_keys)
 
+        # Store the arguments
+        self.schema = schema
+        self.relationships = relationships
+
+        # Initialize setup
+        self.__init_attributes()
+        self.__init_ui()
+
+    def __init_attributes(self):
+        """Initialize the attributes.
+        """
+        self.table_items: Dict[str, TableItem] = {}
+        self.last_drag_pos = None
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
         # Enable zooming and panning
         self.setRenderHint(QtGui.QPainter.Antialiasing, True)
 
@@ -166,9 +183,14 @@ class ERDiagramView(QtWidgets.QGraphicsView):
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
 
-        # Store the initial point for panning
-        self.last_drag_pos = None
+        scene = QtWidgets.QGraphicsScene(self, backgroundBrush=QtGui.QBrush(BACKGROUND_COLOR))
+        self.setScene(scene)
 
+        self.draw_schema(self.schema)
+        self.draw_relationships(self.relationships)
+
+    # Public Methods
+    # --------------
     def draw_schema(self, schema: dict):
         """Draw tables and their columns on the scene."""
         x, y = 0, 0
@@ -186,37 +208,52 @@ class ERDiagramView(QtWidgets.QGraphicsView):
                 y = 0
                 x += COLUMN_WIDTH + MARGIN
 
-    def draw_relationships(self, foreign_keys: list):
-        """Draw lines representing foreign key relationships between tables."""
-        for from_table, from_column, to_table, to_column in foreign_keys:
+    def draw_relationships(self, relationships: Dict[str, str]):
+        """Draw lines representing foreign key relationships between tables.
+        """
+        for from_chain, to_chain in relationships.items():
+            from_table, from_column = from_chain.rsplit('.', 1)
+            to_table, to_column = to_chain.rsplit('.', 1)
+
             from_item = self.table_items[from_table]
             to_item = self.table_items[to_table]
 
-            # Determine positions
+            # Positions of table centers
             from_pos = from_item.sceneBoundingRect().center()
             to_pos = to_item.sceneBoundingRect().center()
 
-            # Logic for determining connection sides
-            start_pos, end_pos = self.determine_connection_sides(from_item, to_item, from_pos, to_pos, from_column, to_column)
+            # Determine explicit edge positions
+            start_pos, end_pos = self.determine_connection_sides(
+                from_item, to_item, from_pos, to_pos, from_column, to_column
+            )
 
-            # Calculate the midpoint for cleaner paths
-            horizontal_midpoint = (start_pos.x() + end_pos.x()) / 2
-
-            # Create a path starting with horizontal movement
+            # Create the painter path
             path = QtGui.QPainterPath()
             path.moveTo(start_pos)
-            path.lineTo(horizontal_midpoint, start_pos.y())  # Horizontal line
-            path.lineTo(horizontal_midpoint, end_pos.y())    # Vertical line
-            path.lineTo(end_pos)                             # Final horizontal line
+
+            # Check if they're approximately in the same column
+            same_column_threshold = 10  # adjust as needed
+            if abs(from_pos.x() - to_pos.x()) < same_column_threshold:
+                # Route around the right side of the tables
+                # This ensures the line is always visible and not behind the table
+                route_x = max(from_item.sceneBoundingRect().right(),
+                            to_item.sceneBoundingRect().right()) + 50
+                path.lineTo(route_x, start_pos.y())  # Move horizontally to the right
+                path.lineTo(route_x, end_pos.y())    # Move vertically to target’s height
+                path.lineTo(end_pos)                 # Move horizontally to the target
+            else:
+                # Default midpoint-based path
+                horizontal_midpoint = (start_pos.x() + end_pos.x()) / 2
+                path.lineTo(horizontal_midpoint, start_pos.y())
+                path.lineTo(horizontal_midpoint, end_pos.y())
+                path.lineTo(end_pos)
 
             # Add the connection item with hover effects
             connection_item = ConnectionItem(path, from_table, to_table, from_column, to_column)
-            # Move an item to the back
-            connection_item.setZValue(-1000)
-
+            connection_item.setZValue(-1000)  # Place behind table items
             self.scene().addItem(connection_item)
 
-            # Associate connection with both tables
+            # Associate connection with both tables for hover highlighting
             from_item.add_connection(connection_item)
             to_item.add_connection(connection_item)
 
@@ -236,13 +273,17 @@ class ERDiagramView(QtWidgets.QGraphicsView):
             end_pos = to_item.get_column_edge_position(to_column, 'right')
         return start_pos, end_pos
 
+    # Overridden Methods
+    # ------------------
     def wheelEvent(self, event):
-        """Zoom in or out with mouse wheel."""
+        """Zoom in or out with mouse wheel.
+        """
         factor = 1.15 if event.angleDelta().y() > 0 else 0.85
         self.scale(factor, factor)
 
     def mousePressEvent(self, event):
-        """Start panning with the middle mouse button."""
+        """Start panning with middle mouse button.
+        """
         if event.button() == QtCore.Qt.MiddleButton:
             self.setCursor(QtCore.Qt.ClosedHandCursor)
             self.last_drag_pos = event.pos()
@@ -271,17 +312,17 @@ class ERDiagramView(QtWidgets.QGraphicsView):
         else:
             super().mouseReleaseEvent(event)
 
+
 class MainWindow(QtWidgets.QWidget):
     """Main application window for displaying the ER diagram."""
 
     def __init__(self, db_path: str):
-        super().__init__()
-        self.setWindowTitle("ER Diagram Viewer")
+        super().__init__(windowTitle="ER Diagram Viewer")
         self.setGeometry(100, 100, 1200, 800)
 
-        schema, foreign_keys = get_db_schema(db_path)
+        schema, relationships = get_db_schema(db_path)
 
-        self.layout = QtWidgets.QVBoxLayout()
+        layout = QtWidgets.QVBoxLayout(self)
 
         # Search bar
         search_layout = QtWidgets.QHBoxLayout()
@@ -289,19 +330,22 @@ class MainWindow(QtWidgets.QWidget):
         self.search_bar.setPlaceholderText("Search tables...")
         self.search_bar.textChanged.connect(self.search_tables)
         search_layout.addWidget(self.search_bar)
-        self.layout.addLayout(search_layout)
+        layout.addLayout(search_layout)
 
         # Diagram view
-        self.diagram_view = ERDiagramView(schema, foreign_keys)
-        self.layout.addWidget(self.diagram_view)
-
-        self.setLayout(self.layout)
+        self.diagram_view = ERDiagramView(schema, relationships)
+        layout.addWidget(self.diagram_view)
 
     def search_tables(self):
-        """Filter tables based on search input."""
+        """Adjust opacity of tables based on search input.
+        """
         search_text = self.search_bar.text().lower()
         for table_name, table_item in self.diagram_view.table_items.items():
-            table_item.setVisible(search_text in table_name.lower())
+            if search_text in table_name.lower():
+                table_item.setOpacity(1.0)  # Full opacity for matching tables
+            else:
+                table_item.setOpacity(0.3)  # Lower opacity for non-matching tables
+
 
 def main():
     import sys
