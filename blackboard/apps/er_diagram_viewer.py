@@ -1,4 +1,5 @@
-from typing import Dict
+from typing import Dict, Tuple, List
+from enum import Enum
 
 from PyQt5 import QtWidgets, QtGui, QtCore
 import sqlite3
@@ -6,6 +7,7 @@ import sqlite3
 # Constants for colors, sizes, etc.
 BACKGROUND_COLOR = QtGui.QColor(30, 30, 30)
 TABLE_COLOR = QtGui.QColor(40, 40, 40)
+TABLE_BORDER_COLOR = QtGui.QColor(200, 200, 200)
 HIGHLIGHT_COLOR = QtGui.QColor(60, 60, 60)
 LINE_COLOR = QtGui.QColor(0, 128, 255)
 HIGHLIGHT_LINE_COLOR = QtGui.QColor(255, 165, 0)
@@ -17,8 +19,9 @@ HEADER_HEIGHT = 30
 MARGIN = 80
 COLUMN_WIDTH = 240
 
-def get_db_schema(db_path: str) -> tuple[dict, list]:
-    """Fetch schema information and foreign keys from the SQLite database."""
+def get_db_schema(db_path: str) -> Tuple[Dict[str, Tuple], Dict[str, str]]:
+    """Fetch schema information and foreign keys from the SQLite database.
+    """
     schema = {}
     relationships = {}
 
@@ -45,10 +48,25 @@ def get_db_schema(db_path: str) -> tuple[dict, list]:
     return schema, relationships
 
 
+# TODO: Design more appropriate colors
+class ConnectionDirection(Enum):
+    FROM = ("From", QtGui.QColor(255, 165, 0))  # Blue for outgoing
+    TO = ("To", QtGui.QColor(255, 69, 0))     # Green for incoming
+    SELF = ("Self", QtGui.QColor(0, 255, 128)) # Orange for self-relation
+
+    def __init__(self, label: str, color: QtGui.QColor):
+        self.label = label
+        self.color = color
+
+    @property
+    def get_color(self):
+        return self.color
+
+
 class TableItem(QtWidgets.QGraphicsRectItem):
     """Custom QGraphicsRectItem to represent a database table."""
 
-    def __init__(self, table_name: str, columns: list, position: tuple, theme: str = 'dark'):
+    def __init__(self, table_name: str, columns: list, position: tuple):
         super().__init__(0, 0, TABLE_WIDTH, HEADER_HEIGHT + len(columns) * ROW_HEIGHT)
         self.setPos(*position)
 
@@ -56,7 +74,7 @@ class TableItem(QtWidgets.QGraphicsRectItem):
         self.setAcceptHoverEvents(True)
 
         # Set pen and brush for dark theme
-        self.setPen(QtGui.QPen(QtGui.QColor(200, 200, 200)))  # Light gray border
+        self.setPen(QtGui.QPen(TABLE_BORDER_COLOR))  # Light gray border
         self.setBrush(QtGui.QBrush(TABLE_COLOR))
 
         # Table header
@@ -66,7 +84,7 @@ class TableItem(QtWidgets.QGraphicsRectItem):
         self.header.setPos(5, 5)
 
         # Add column names
-        self.columns = []
+        self.columns: List[QtWidgets.QGraphicsTextItem] = []
         for i, column in enumerate(columns):
             column_text = QtWidgets.QGraphicsTextItem(f"{'* ' if column[5] else ''}{column[1]} ({column[2]})", self)
             column_text.setDefaultTextColor(QtGui.QColor(180, 180, 180))  # Light gray text
@@ -74,7 +92,7 @@ class TableItem(QtWidgets.QGraphicsRectItem):
             self.columns.append(column_text)
 
         # Store connections associated with this table
-        self.connections = []
+        self.connections: Tuple[ConnectionItem, ConnectionDirection] = []
 
     def add_connection(self, connection_item):
         """Add a connection item associated with this table."""
@@ -97,21 +115,23 @@ class TableItem(QtWidgets.QGraphicsRectItem):
         self.setBrush(QtGui.QBrush(HIGHLIGHT_COLOR))           # Lighter fill on hover
 
         # Highlight associated connections
-        for connection in self.connections:
-            connection.highlight(True)
+        for connection_item, direction in self.connections:
+            connection_item.highlight(True, direction)
 
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
-        """Revert appearance on hover leave and reset connection highlights."""
-        self.setPen(QtGui.QPen(QtGui.QColor(200, 200, 200)))  # Revert to light gray border
-        self.setBrush(QtGui.QBrush(TABLE_COLOR))  # Revert to dark gray fill
+        """Revert appearance on hover leave and reset connection highlights.
+        """
+        self.setPen(QtGui.QPen(TABLE_BORDER_COLOR))
+        self.setBrush(QtGui.QBrush(TABLE_COLOR))
 
         # Reset associated connections
-        for connection in self.connections:
-            connection.highlight(False)
+        for connection_item, _ in self.connections:
+            connection_item.highlight(False)
 
         super().hoverLeaveEvent(event)
+
 
 class ConnectionItem(QtWidgets.QGraphicsPathItem):
     """Custom QGraphicsPathItem to represent a connection between tables."""
@@ -122,9 +142,8 @@ class ConnectionItem(QtWidgets.QGraphicsPathItem):
         # Enable hover events
         self.setAcceptHoverEvents(True)
 
-        # Set pen for dark theme
+        # Set default and highlight pens
         self.default_pen = QtGui.QPen(LINE_COLOR, 2)  # Light blue line
-        self.highlight_pen = QtGui.QPen(HIGHLIGHT_LINE_COLOR, 3)  # Orange line for highlight
 
         self.setPen(self.default_pen)
 
@@ -139,7 +158,7 @@ class ConnectionItem(QtWidgets.QGraphicsPathItem):
 
     def hoverEnterEvent(self, event):
         """Change line appearance on hover."""
-        self.setPen(QtGui.QPen(QtGui.QColor(255, 0, 0), 3, QtCore.Qt.DashLine))  # Red dashed line on hover
+        self.setPen(QtGui.QPen(HIGHLIGHT_LINE_COLOR, 3))  # Red dashed line on hover
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
@@ -147,16 +166,20 @@ class ConnectionItem(QtWidgets.QGraphicsPathItem):
         self.setPen(self.default_pen)  # Revert to default line
         super().hoverLeaveEvent(event)
 
-    def highlight(self, should_highlight: bool):
+    def highlight(self, should_highlight: bool, direction: 'ConnectionDirection' = None):
         """Highlight or unhighlight the line."""
-        self.setPen(self.highlight_pen if should_highlight else self.default_pen)
+        if should_highlight:
+            self.setPen(QtGui.QPen(direction.color, 3))
+        else:
+            self.setPen(self.default_pen)
+
 
 class ERDiagramView(QtWidgets.QGraphicsView):
     """Custom QGraphicsView to display the ER diagram."""
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, schema: dict, relationships: list, parent=None):
+    def __init__(self, schema: Dict[str, Tuple], relationships: Dict[str, str], parent=None):
         super().__init__(parent)
 
         # Store the arguments
@@ -177,11 +200,11 @@ class ERDiagramView(QtWidgets.QGraphicsView):
         """Initialize the UI of the widget.
         """
         # Enable zooming and panning
-        self.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        self.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
 
         # Hide scrollbars
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         scene = QtWidgets.QGraphicsScene(self, backgroundBrush=QtGui.QBrush(BACKGROUND_COLOR))
         self.setScene(scene)
@@ -254,8 +277,12 @@ class ERDiagramView(QtWidgets.QGraphicsView):
             self.scene().addItem(connection_item)
 
             # Associate connection with both tables for hover highlighting
-            from_item.add_connection(connection_item)
-            to_item.add_connection(connection_item)
+            if from_item == to_item:
+                from_item.add_connection((connection_item, ConnectionDirection.SELF))  # Mark as 'from'
+                to_item.add_connection((connection_item, ConnectionDirection.SELF))   # Mark as 'to'
+            else:
+                from_item.add_connection((connection_item, ConnectionDirection.FROM))  # Mark as 'from'
+                to_item.add_connection((connection_item, ConnectionDirection.TO))   # Mark as 'to'
 
     def determine_connection_sides(self, from_item, to_item, from_pos, to_pos, from_column, to_column):
         """Determine which sides of the tables to connect based on their positions."""
@@ -278,7 +305,13 @@ class ERDiagramView(QtWidgets.QGraphicsView):
     def wheelEvent(self, event):
         """Zoom in or out with mouse wheel.
         """
+        # Tell the view to treat the mouse cursor as the zoom anchor.
+        self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+
+        # Determine zoom factor.
         factor = 1.15 if event.angleDelta().y() > 0 else 0.85
+        
+        # Perform the scale around the cursor.
         self.scale(factor, factor)
 
     def mousePressEvent(self, event):

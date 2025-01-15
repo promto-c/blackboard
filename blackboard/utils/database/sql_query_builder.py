@@ -151,6 +151,20 @@ class SQLQueryBuilder:
             >>> SQLQueryBuilder.propagate_hierarchies(["root.branch.leaf"], prune_leaves=3)
             []
         """
+        # Preprocess fields to flatten into a list of strings
+        expanded_fields = []
+        for field in fields:
+            if isinstance(field, str):
+                # If the field is a string, add it directly
+                expanded_fields.append(field)
+            elif isinstance(field, dict):
+                # If the field is a dictionarie, extract keys and add them
+                expanded_fields.extend(field.keys())
+            else:
+                # Skip invalid field types
+                continue
+        fields = expanded_fields
+
         unique_hierarchies = set()
 
         for field in fields:
