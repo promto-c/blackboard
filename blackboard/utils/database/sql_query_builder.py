@@ -439,16 +439,16 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id"
         """Build the ORDER BY clause of the query.
         
         >>> SQLQueryBuilder.build_order_by_clause({
-        ...     "createdAt": SortOrder.DESC,
+        ...     "shot.name": SortOrder.DESC,
         ...     "name": SortOrder.ASC
         ... })
-        'ORDER BY\\n\\tcreatedAt DESC, name ASC'
+        "ORDER BY\\n\\t'shot'.name DESC, _.name ASC"
         
         >>> SQLQueryBuilder.build_order_by_clause({
-        ...     "createdAt": "desc",
+        ...     "shot.name": "desc",
         ...     "name": "asc"
         ... })
-        'ORDER BY\\n\\tcreatedAt DESC, name ASC'
+        "ORDER BY\\n\\t'shot'.name DESC, _.name ASC"
         """
         if not order_by:
             return ""
@@ -458,7 +458,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id"
 
         # Ensure that the input for order_by values are `SortOrder` or strings
         order_by_clause = ", ".join(
-            [f"{field} {str(direction).upper()}" for field, direction in order_by.items()]
+            [f"{SQLQueryBuilder._build_inner_alias(field)} {str(direction).upper()}" for field, direction in order_by.items()]
         )
 
         return f"ORDER BY\n\t{order_by_clause}"
@@ -554,9 +554,52 @@ if __name__ == "__main__":
         "Shots.sequence": "Sequences.id",
         "Sequences.project": "Projects.id",
         "Tasks.assigned_to": "Users.id",
-        "Tasks.parent_task": "Tasks.id"
+        "Tasks.parent_task": "Tasks.id",
+        # TODO: Update to support reference fields for one-to-many relationships
+        "Tassk.child_tasks": {"Tasks.id": "Tasks.parent_task"}
     }
 
-    quary_clause, values = SQLQueryBuilder.build_query(model=current_model, fields=fields, conditions=conditions, relationships=relationships, limit=5)
+    order_by = {
+        "shot.name": "desc",
+        "name": "asc"
+    }
+
+    quary_clause, values = SQLQueryBuilder.build_query(
+        model=current_model,
+        fields=fields,
+        conditions=conditions,
+        relationships=relationships,
+        order_by=order_by,
+        limit=5
+    )
     print(quary_clause)
     print(values)
+    # NOTE: Example outputs
+    # SELECT
+    #         'shot.sequence.project'.name AS 'shot.sequence.project.name',
+    #         'shot'.name AS 'shot.name',
+    #         _.name AS 'name',
+    #         _.status AS 'status',
+    #         'parent_task'.name AS 'parent_task.name',
+    #         _.start_date AS 'start_date',
+    #         _.due_date AS 'due_date',
+    #         'assigned_to'.email AS 'assigned_to.email'
+    # FROM
+    #         'Tasks' AS _
+    # LEFT JOIN
+    #         Users AS 'assigned_to' ON _.assigned_to = 'assigned_to'.id
+    # LEFT JOIN
+    #         Tasks AS 'parent_task' ON _.parent_task = 'parent_task'.id
+    # LEFT JOIN
+    #         Shots AS 'shot' ON _.shot = 'shot'.id
+    # LEFT JOIN
+    #         Sequences AS 'shot.sequence' ON 'shot'.sequence = 'shot.sequence'.id
+    # LEFT JOIN
+    #         Projects AS 'shot.sequence.project' ON 'shot.sequence'.project = 'shot.sequence.project'.id
+    # WHERE
+    #         ('shot.sequence.project'.name LIKE '%' || ? || '%' OR 'shot'.status = ? OR 'assigned_to'.role = ?)
+    # ORDER BY
+    #         'shot'.name DESC, _.name ASC
+    # LIMIT
+    #         5
+    # ['Forest', 'Completed', 'Artist']
