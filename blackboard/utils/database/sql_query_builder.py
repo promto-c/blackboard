@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Tuple, Optional, Union, Generator, Iterable
+from typing import Dict, Any, List, Tuple, Optional, Union, Generator, Iterable, Set
 from enum import Enum
 
 
@@ -179,7 +179,7 @@ class SQLQueryBuilder:
         return sorted(unique_hierarchies)
 
     @staticmethod
-    def build_select_clause(fields: Union[List[Union[str, Dict[str, str]]], Dict[str, str]] = None) -> str:
+    def build_select_clause(fields: Union[List[Union[str, Dict[str, str]]], Dict[str, str]] = None, relationships = None, base_model = None) -> str:
         """Build the SELECT part of the query.
 
         Arguments:
@@ -199,6 +199,26 @@ class SQLQueryBuilder:
             >>> SQLQueryBuilder.build_select_clause(["shot.sequence.project.name", {"shot.name": "my_shot_name"}, "status"])
             "SELECT\\n\\t'shot.sequence.project'.name AS 'shot.sequence.project.name',\\n\\t'shot'.name AS 'my_shot_name',\\n\\t_.status AS 'status'"
         """
+        # NOTE: Handle indirect relational fields, such as one-to-many relationships.
+        grouped_field_aliases = set()
+
+        def _is_one_to_many_field(field):
+            if '.' not in field:
+                return False
+            parent_field, _ = SQLQueryBuilder._parse_relationship(field)
+            relation_chain = f'{base_model}.{parent_field}'
+            if relation_chain not in relationships:
+                return False
+            return relationships[relation_chain] in relationships
+
+        def _build(field, alias):
+            field_inner_alias = SQLQueryBuilder._build_inner_alias(field)
+            if _is_one_to_many_field(field):
+                field_inner_alias = f"JSON_GROUP_ARRAY({field_inner_alias})"
+                grouped_field_aliases.add(alias)
+
+            return f"{field_inner_alias} AS '{alias}'"
+
         # Convert input into a list of tuples: [(field, alias)]
         if not fields:
             return "SELECT *"
@@ -222,10 +242,11 @@ class SQLQueryBuilder:
 
         # Handle both list of tuples (field, alias)
         select_parts = [
-            f"{SQLQueryBuilder._build_inner_alias(field)} AS '{alias}'"
+            _build(field, alias)
             for field, alias in fields
         ]
-        return "SELECT\n\t" + ",\n\t".join(select_parts)
+        # NOTE: Handle indirect relational fields, such as one-to-many relationships.
+        return "SELECT\n\t" + ",\n\t".join(select_parts), grouped_field_aliases
 
     @staticmethod
     def build_from_clause(current_model: str) -> str:
@@ -263,17 +284,19 @@ class SQLQueryBuilder:
 
         Example:
             >>> SQLQueryBuilder.build_join_clause(
-            ...     fields=["shot.sequence.project.name", "shot.name", "name", "status"],
+            ...     fields=["shot.sequence.project.name", "shot.name", "name", "status", "assets.name"],
             ...     current_model="Tasks",
             ...     relationships={
             ...         "Tasks.shot": "Shots.id",
             ...         "Shots.sequence": "Sequences.id",
             ...         "Sequences.project": "Projects.id",
+            ...         "Tasks.assets": "Assets.task",
+            ...         "Assets.task": "Tasks.id",
             ...     }
             ... )
             "LEFT JOIN\\n\\tShots AS 'shot' ON _.shot = 'shot'.id\\nLEFT JOIN\\n\\tSequences AS 'shot.sequence' \
 ON 'shot'.sequence = 'shot.sequence'.id\\nLEFT JOIN\\n\\tProjects AS 'shot.sequence.project' \
-ON 'shot.sequence'.project = 'shot.sequence.project'.id"
+ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets AS 'assets' ON _.id = 'assets'.task"
         """
         # 1) Gather all chain prefixes that need to be joined up to (but not including) the final leaf
         #    For example, "shot.sequence" is taken from "shot.sequence.project.name"
@@ -284,6 +307,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id"
 
         # Maps a chain prefix (e.g. "shot" or "shot.sequence") to the table name (e.g. "Shots", "Sequences")
         relation_chain_to_table: Dict[str, str] = {}
+        group_by_fields: Set[str] = set()
 
         # 2) Build the JOIN statements for each relation_chain
         join_clauses = []
@@ -306,29 +330,44 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id"
             right_table_field = relationships[left_table_field]
             right_table, right_column = SQLQueryBuilder._parse_relationship(right_table_field, separator=separator)
 
+            # On the left side, we might need to reference the base model or a previous alias
+            right_table_alias = f"'{chain}'"
+            right_column_alias = f'{right_table_alias}.{right_column}'
+
+            # Build the LEFT JOIN snippet
+            if right_table_field in relationships:
+                # NOTE: Handle indirect relational fields, such as one-to-many relationships.
+                a, _ = SQLQueryBuilder._parse_relationship(SQLQueryBuilder._build_inner_alias(chain), separator=separator)
+                _, b = SQLQueryBuilder._parse_relationship(relationships[right_table_field], separator=separator)
+                left_column_alias = f'{a}.{b}'
+                group_by_fields.add(left_column_alias)
+            else:
+                left_column_alias = SQLQueryBuilder._build_inner_alias(chain)
+
             # Store the discovered right_table in relation_chain_to_table, so future children
             # of this chain know which table they come from.
             relation_chain_to_table[chain] = right_table
 
-            # Build the LEFT JOIN snippet
-            right_table_alias = f"'{chain}'"
-            # On the left side, we might need to reference the base model or a previous alias
-            left_column_alias = SQLQueryBuilder._build_inner_alias(chain)
-
             # "LEFT JOIN Shots AS 'shot' ON _.shot = 'shot'.id"
             join_clause = (
                 f"LEFT JOIN\n\t{right_table} AS {right_table_alias} "
-                f"ON {left_column_alias} = {right_table_alias}.{right_column}"
+                f"ON {left_column_alias} = {right_column_alias}"
             )
             join_clauses.append(join_clause)
 
+        if group_by_fields:
+            group_by_fields_str = ', '.join(group_by_fields)
+            group_by_clause = f'GROUP BY\n\t{group_by_fields_str}'
+        else:
+            group_by_clause = None
+
         # 3) Return them as a single multi-line string
-        return '\n'.join(join_clauses)
+        return '\n'.join(join_clauses), group_by_clause
 
     @staticmethod
     def build_where_clause(conditions: Optional[Dict[Union[GroupOperator, str], Any]], 
                            group_operator: Union[GroupOperator, str] = GroupOperator.AND,
-                           build_where_root: bool = True) -> Tuple[str, List[Any]]:
+                           build_where_root: bool = True) -> Tuple[str, Set[str], List[Any]]:
         """Build the WHERE clause of the query.
 
         Examples:
@@ -390,14 +429,16 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id"
 
         where_clauses = []
         values = []
+        fields = set()
 
         for key, value in SQLQueryBuilder._extract_key_value_pairs(conditions):
             # Handle key as `GroupOperator`
             if isinstance(key, GroupOperator) or GroupOperator.is_valid(key):
-                sub_where_clause, sub_values = SQLQueryBuilder.build_where_clause(
+                sub_where_clause, sub_fields, sub_values = SQLQueryBuilder.build_where_clause(
                     value, group_operator=key, build_where_root=False
                 )
                 where_clauses.append(f"({sub_where_clause})")
+                fields.update(sub_fields)
                 values.extend(sub_values)
                 continue
 
@@ -419,6 +460,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id"
             else:
                 sql_operator = operator.sql_operator
 
+            fields.add(key)
             where_clause = f"{SQLQueryBuilder._build_inner_alias(key)} {sql_operator}"
             where_clauses.append(where_clause)
 
@@ -432,7 +474,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id"
         if build_where_root:
             where_clauses_str = f'WHERE\n\t{where_clauses_str}'
 
-        return where_clauses_str, values
+        return where_clauses_str, fields, values
 
     @staticmethod
     def build_order_by_clause(order_by: Optional[Dict[str, SortOrder]]) -> str:
@@ -465,13 +507,30 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id"
 
     @staticmethod
     def build_query(model: str, fields = None, conditions = None, relationships = None, order_by: Optional[Dict[str, SortOrder]] = None, limit: int = None, values = None):
+        
+        # Fill relationships
+        if relationships:
+            relationships = {
+                f'{model}.{key}' if '.' not in key else key: value
+                for key, value in relationships.items()
+            }
+
+        # NOTE: Handle indirect relational fields, such as one-to-many relationships.
+        select_clause, grouped_field_aliases = SQLQueryBuilder.build_select_clause(fields, relationships, base_model=model)
+
         query_clauses = [
-            SQLQueryBuilder.build_select_clause(fields),
+            select_clause,
             SQLQueryBuilder.build_from_clause(model),
         ]
 
-        join_clause = SQLQueryBuilder.build_join_clause(fields, model, relationships)
-        where_clause, extracted_values = SQLQueryBuilder.build_where_clause(conditions)
+        where_clause, where_fields, extracted_values = SQLQueryBuilder.build_where_clause(conditions)
+        if where_fields:
+            if fields:
+                fields = list(where_fields) + list(fields)
+            else:
+                fields = list(where_fields)
+        join_clause, group_by_clause = SQLQueryBuilder.build_join_clause(fields, model, relationships)
+        
         values = values or extracted_values
         order_by_clause = SQLQueryBuilder.build_order_by_clause(order_by)
 
@@ -479,12 +538,15 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id"
             query_clauses.append(join_clause)
         if where_clause:
             query_clauses.append(where_clause)
+        if group_by_clause:
+            query_clauses.append(group_by_clause)
         if order_by_clause:
             query_clauses.append(order_by_clause)
         if limit:
             query_clauses.append(f'LIMIT\n\t{limit}')
 
-        return '\n'.join(query_clauses), values
+        # NOTE: Handle indirect relational fields, such as one-to-many relationships.
+        return '\n'.join(query_clauses), values, grouped_field_aliases
 
     @staticmethod
     def _extract_key_value_pairs(conditions: Union[Dict[str, Any], List[Dict[str, Any]]]) -> Generator[Tuple[str, Any], None, None]:
@@ -538,7 +600,9 @@ if __name__ == "__main__":
         "parent_task.name",
         "start_date",
         "due_date",
-        "assigned_to.email"
+        "assigned_to.email",
+        "assets.name",      # Indirect relational field
+        "child_tasks.name", # Indirect relational field
     ]
 
     conditions = {
@@ -556,7 +620,9 @@ if __name__ == "__main__":
         "Tasks.assigned_to": "Users.id",
         "Tasks.parent_task": "Tasks.id",
         # TODO: Update to support reference fields for one-to-many relationships
-        "Tassk.child_tasks": {"Tasks.id": "Tasks.parent_task"}
+        "Tasks.child_tasks": "Tasks.parent_task",   # Indirect relational field
+        "Tasks.assets": "Assets.task",  # Indirect relational field
+        "Assets.task": "Tasks.id",
     }
 
     order_by = {
@@ -564,7 +630,7 @@ if __name__ == "__main__":
         "name": "asc"
     }
 
-    quary_clause, values = SQLQueryBuilder.build_query(
+    quary_clause, values, grouped_field_aliases = SQLQueryBuilder.build_query(
         model=current_model,
         fields=fields,
         conditions=conditions,
@@ -583,7 +649,8 @@ if __name__ == "__main__":
     #         'parent_task'.name AS 'parent_task.name',
     #         _.start_date AS 'start_date',
     #         _.due_date AS 'due_date',
-    #         'assigned_to'.email AS 'assigned_to.email'
+    #         'assigned_to'.email AS 'assigned_to.email',
+    #         JSON_GROUP_ARRAY('assets'.name) AS 'assets.name'
     # FROM
     #         'Tasks' AS _
     # LEFT JOIN
@@ -596,6 +663,8 @@ if __name__ == "__main__":
     #         Sequences AS 'shot.sequence' ON 'shot'.sequence = 'shot.sequence'.id
     # LEFT JOIN
     #         Projects AS 'shot.sequence.project' ON 'shot.sequence'.project = 'shot.sequence.project'.id
+    # LEFT JOIN
+    #         Assets AS 'assets' ON _.id = 'assets'.task GROUP BY _.id
     # WHERE
     #         ('shot.sequence.project'.name LIKE '%' || ? || '%' OR 'shot'.status = ? OR 'assigned_to'.role = ?)
     # ORDER BY
