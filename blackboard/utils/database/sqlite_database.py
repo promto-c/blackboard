@@ -832,12 +832,15 @@ class SQLiteModel(AbstractModel):
             sqlite3.Error: If there is an error executing the SQL command.
         """
         fields = fields or self.field_names
-        relationships = relationships or self.get_relationships()
+        if relationships:
+            relationships = self.get_relationships() | relationships
+        else:
+            relationships = self.get_relationships()
 
         many_to_many_field_names = self.get_many_to_many_field_names() if handle_m2m else []
         fields = [field for field in fields if field not in many_to_many_field_names]
 
-        query, values = SQLQueryBuilder.build_query(
+        query, values, grouped_field_aliases = SQLQueryBuilder.build_query(
             model=self._table_name,
             fields=fields,
             conditions=conditions,
@@ -875,6 +878,9 @@ class SQLiteModel(AbstractModel):
 
         finally:
             cursor.close()
+
+    def query_one(self, fields=None, conditions=None, relationships=None, values=None, order_by=None, as_dict=True):
+        return next(self.query(fields=fields, conditions=conditions, relationships=relationships, values=values, order_by=order_by, as_dict=as_dict), None)
 
     def add_field(self, field_name: str, field_definition: str, foreign_key: Optional[str] = None, enum_values: Optional[List[str]] = None, enum_table_name: Optional[str] = None):
         """Add a new field to an existing table, optionally with a foreign key or enum constraint.
@@ -1282,3 +1288,43 @@ class SQLiteModel(AbstractModel):
             'PRIMARY KEY': '(table_name, field_name)'
         }
         self._database.create_table('_meta_display_field', fields)
+
+
+class Entity:
+
+    def __init__(self, database: SQLiteDatabase, table_name: str, entity_id: Any):
+        self._database = database
+        self._table_name = table_name
+        self._id = entity_id
+
+        self._model = self._database.get_model(self._table_name)
+        self._cursor = self._database.cursor
+    
+    @property
+    def database(self):
+        return self._database
+    
+    @property
+    def model(self):
+        return self._model
+    
+    @property
+    def table_name(self):
+        return self._table_name
+    
+    @property
+    def id(self):
+        return self._id
+    
+    def get_field_names(self) -> List[str]:
+        return self._model.get_field_names()
+    
+    def get(self, fields: List[str] | str = None, as_dict: bool = True):
+        return self._model.query_one(
+            fields=fields,
+            conditions={'rowids': self._id},
+            as_dict=as_dict
+        )
+    
+    def __getitem__(self, fields):
+        return self.get(fields, as_dict=False)

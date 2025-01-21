@@ -303,7 +303,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         #    We apply prune_leaves=1 so "project.name" => "project" is recognized, but not "name" alone.
         relation_chains = SQLQueryBuilder.propagate_hierarchies(fields, separator=separator, prune_leaves=1)
         if not relation_chains:
-            return ''
+            return '', ''
 
         # Maps a chain prefix (e.g. "shot" or "shot.sequence") to the table name (e.g. "Shots", "Sequences")
         relation_chain_to_table: Dict[str, str] = {}
@@ -421,15 +421,15 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             ... })
             ('WHERE\\n\\t(_.age < ? OR (_.status = ? AND _.id >= ?))', [18, 'inactive', 100])
         """
-        if isinstance(conditions, str):
-            return f'WHERE\n\t{conditions}', []
-
-        if not conditions:
-            return "", []
-
         where_clauses = []
         values = []
         fields = set()
+
+        if isinstance(conditions, str):
+            return f'WHERE\n\t{conditions}', fields, values
+
+        if not conditions:
+            return "", fields, values
 
         for key, value in SQLQueryBuilder._extract_key_value_pairs(conditions):
             # Handle key as `GroupOperator`
