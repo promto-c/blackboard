@@ -425,11 +425,11 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         values = []
         fields = set()
 
+        if not conditions:
+            return None, None, None
+
         if isinstance(conditions, str):
             return f'WHERE\n\t{conditions}', fields, values
-
-        if not conditions:
-            return "", fields, values
 
         for key, value in SQLQueryBuilder._extract_key_value_pairs(conditions):
             # Handle key as `GroupOperator`

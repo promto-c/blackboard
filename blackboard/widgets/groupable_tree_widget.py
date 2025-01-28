@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Union, Tuple, Optional, Generator, Iterable
 # ------------------------
 import uuid
 from numbers import Number
-from itertools import islice
 from collections import defaultdict
 from functools import partial
 
@@ -440,6 +439,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     about_to_show_header_menu = QtCore.Signal(int)
     fetch_complete = QtCore.Signal()
     reload_requested = QtCore.Signal()
+    field_changed = QtCore.Signal()
 
     # Initialization and Setup
     # ------------------------
@@ -1267,6 +1267,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # Set the number of columns and the column labels
         self.setColumnCount(len(self.fields))
         super().setHeaderLabels(self.fields)
+        self.field_changed.emit()
 
     def hideColumn(self, column: Union[int, str]):
         """Hide the specified column.

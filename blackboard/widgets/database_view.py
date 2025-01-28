@@ -752,13 +752,14 @@ class DatabaseViewWidget(DataViewWidget):
         """Initialize the attributes.
         """
         self._current_table = ''
-        self._column_to_relation_chain_dict: Dict[str, str] = {}
 
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
         self.add_relation_column_menu = self.tree_widget.header_menu.addMenu('Add Relation Column')
         self.add_functional_column_action = self.tree_widget.header_menu.addAction('Add Functional Column')
+
+        self.add_filter_menu = QtWidgets.QMenu(self)
 
         self.add_record_button = QtWidgets.QPushButton(TablerQIcon.file_plus, 'Add Record')
         self.delete_record_button = QtWidgets.QPushButton(TablerQIcon.file_minus, 'Delete Record')
@@ -770,14 +771,21 @@ class DatabaseViewWidget(DataViewWidget):
         """Initialize signal-slot connections.
         """
         # Connect signals to slots
-        self.add_filter_button.clicked.connect(self.show_column_selection_menu)
+        self.add_filter_button.clicked.connect(self.show_add_filter_menu)
         self.tree_widget.about_to_show_header_menu.connect(self.handle_header_context_menu)
         self.add_record_button.clicked.connect(self.show_add_record_dialog)
         self.delete_record_button.clicked.connect(self.delete_record)
         self.tree_widget.itemDoubleClicked.connect(self.edit_record)
 
+        self.tree_widget.field_changed.connect(self.update_add_filter_menu)
+
         # NOTE: WIP
         self.add_functional_column_action.triggered.connect(self.open_functional_column_dialog)
+
+    def show_add_filter_menu(self):
+        """Show the add filter menu.
+        """
+        self.add_filter_menu.exec_(QtGui.QCursor.pos())
 
     def handle_header_context_menu(self, column_index: int):
         """Handle the header context menu signal.
@@ -969,16 +977,14 @@ class DatabaseViewWidget(DataViewWidget):
             self._current_model.delete_record(pk_values)
             self.load_table_data()
 
-    def show_column_selection_menu(self):
+    def update_add_filter_menu(self):
         """Show a context menu with available columns for creating filters.
         """
-        menu = QtWidgets.QMenu(self)
+        self.add_filter_menu.clear()
 
-        for column in self.tree_widget.fields:
-            action = menu.addAction(column)
-            action.triggered.connect(partial(self.create_filter_widget, column))
-
-        menu.exec_(QtGui.QCursor.pos())
+        for field in self.tree_widget.fields:
+            action = self.add_filter_menu.addAction(field)
+            action.triggered.connect(partial(self.create_filter_widget, field))
 
     def create_filter_widget(self, column_name: str):
         """Create a filter widget based on the selected column and its data type.
@@ -1079,6 +1085,7 @@ class DatabaseViewWidget(DataViewWidget):
         for data_dict in data_dicts:
             self.tree_widget.update_item(data_dict)
 
+    # TODO: Reimplement to query using conditions dict instead of 'where clause'
     def activate_filter(self):
         """Apply the active filters to the database query and update the tree widget.
         """
@@ -1092,22 +1099,6 @@ class DatabaseViewWidget(DataViewWidget):
         # Iterate over all active filter widgets
         for filter_widget in self.filter_bar_widget.get_active_filters():
             column_name = filter_widget.filter_name
-
-            # TODO: Handle on relation column
-            #       WIP
-            relation_chain = self._column_to_relation_chain_dict.get(column_name)
-            if relation_chain:
-                print(relation_chain)
-                local_table, *relation_fields = relation_chain.split('.')
-
-                local_model = self.db_manager.get_model(local_table)
-
-                for field in relation_fields:
-                    fk = local_model.get_foreign_key(field)
-
-                print(local_table)
-                print(relation_fields)
-            # ---
 
             # Get field information for the column
             field_info = self._current_model.get_field(column_name)

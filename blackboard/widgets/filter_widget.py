@@ -419,6 +419,7 @@ class FilterSelectionBar(QtWidgets.QToolBar):
 # TODO: Add support to set column name mapping to filter widget
 class FilterBarWidget(QtWidgets.QWidget):
 
+    filter_changed = QtCore.Signal()
     filter_widget_removed = QtCore.Signal(str)
 
     def __init__(self, parent: QtWidgets.QWidget = None):
@@ -480,6 +481,7 @@ class FilterBarWidget(QtWidgets.QWidget):
         """
         self.filter_area_layout.addWidget(filter_widget.button)
         self._filter_widgets.append(filter_widget)
+        filter_widget.activated.connect(self.filter_changed.emit)
         filter_widget.removed.connect(self.remove_filter_widget)
 
     def remove_filter_widget(self, filter_widget: 'FilterWidget' = None):
