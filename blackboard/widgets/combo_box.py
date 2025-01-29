@@ -33,7 +33,7 @@ class StaticLineEdit(QtWidgets.QLineEdit):
     def mousePressEvent(self, event: QtGui.QMouseEvent):
         """Handle mouse press event to show the combo box popup.
         """
-        if event.button() == QtCore.Qt.LeftButton:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self._combo_box.showPopup()
         else:
             super().mousePressEvent(event)
@@ -81,14 +81,13 @@ class PopupComboBox(QtWidgets.QComboBox):
             self.popup_widget, headerHidden=True, indentation=12
         )
         self.proxy_model = QtCore.QSortFilterProxyModel(
-            self, filterCaseSensitivity=QtCore.Qt.CaseInsensitive,
+            self, filterCaseSensitivity=QtCore.Qt.CaseSensitivity.CaseInsensitive,
             recursiveFilteringEnabled=True, filterKeyColumn=0
         )
-        self.proxy_model.sort(0, QtCore.Qt.AscendingOrder)
+        self.proxy_model.sort(0, QtCore.Qt.SortOrder.AscendingOrder)
         self.flat_proxy_model = FlatProxyModel(parent=self)
-        self.flat_proxy_model.sort(0, QtCore.Qt.AscendingOrder)
+        self.flat_proxy_model.sort(0, QtCore.Qt.SortOrder.AscendingOrder)
         self.tree_view.setModel(self.proxy_model)
-        self.tree_view.expandAll()
 
         self.delegate = HighlightTextDelegate(self.tree_view)
         self.tree_view.setItemDelegate(self.delegate)
@@ -150,13 +149,12 @@ class PopupComboBox(QtWidgets.QComboBox):
 
         self.tree_view.setCurrentIndex(next_index)
 
-    def apply_selection(self, index=None):
+    def apply_selection(self, index: QtCore.QModelIndex = None):
         """Set the combo box's current item based on the selection.
         """
         # Set the combo box current item and hide the popup
         index = index or self.tree_view.currentIndex()
         text = self.proxy_model.data(index)
-        self.addItem(text)
         self.setCurrentText(text)
         self.hidePopup()
 
@@ -172,7 +170,7 @@ class PopupComboBox(QtWidgets.QComboBox):
         """
         for row in range(model.rowCount(parent)):
             index = model.index(row, 0, parent)
-            if model.data(index, QtCore.Qt.DisplayRole) == text:
+            if model.data(index, QtCore.Qt.ItemDataRole.DisplayRole) == text:
                 return index
             if model.hasChildren(index):
                 found_index = self.find_matching_index(model, text, index)
@@ -249,7 +247,7 @@ class PopupComboBox(QtWidgets.QComboBox):
         matching_index = self.find_matching_index(self.proxy_model, current_text)
         if matching_index.isValid():
             self.tree_view.setCurrentIndex(matching_index)
-            self.tree_view.scrollTo(matching_index, QtWidgets.QAbstractItemView.PositionAtTop)
+            self.tree_view.scrollTo(matching_index, QtWidgets.QAbstractItemView.ScrollHint.PositionAtTop)
         else:
             self.tree_view.clearSelection()
 

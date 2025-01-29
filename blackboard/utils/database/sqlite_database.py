@@ -21,14 +21,17 @@ class SQLiteDatabase(AbstractDatabase):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, db_name: str):
+    def __init__(self, db_name: str, read_only: bool = False):
         """Initialize the AbstractDatabase with a database name.
 
         Args:
             db_name (str): The name of the database file or connection string.
         """
         self._db_name = db_name
-        self._connection = sqlite3.connect(self._db_name, check_same_thread=False)
+        if read_only:
+            self._connection = sqlite3.connect(f'file:///{self._db_name}?mode=ro' ,uri=True, check_same_thread=False)
+        else:
+            self._connection = sqlite3.connect(self._db_name, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._cursor = self._connection.cursor()
 
