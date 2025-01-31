@@ -548,7 +548,7 @@ class MoreOptionsButton(QtWidgets.QToolButton):
 
 class FilterButton(QtWidgets.QPushButton):
 
-    MINIMUM_WIDTH, MINIMUM_HEIGHT  = 42, 24
+    MINIMUM_WIDTH, MINIMUM_HEIGHT = 42, 24
 
     def __init__(self, filter_widget: QtWidgets.QWidget = None, parent = None):
         super().__init__(

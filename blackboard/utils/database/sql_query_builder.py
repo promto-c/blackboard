@@ -80,20 +80,16 @@ class FilterOperation(Enum):
 
 # Enum for logical operators (AND, OR) used for grouping
 class GroupOperator(Enum):
-    AND = ("and", "AND")
-    OR = ("or", "OR")
-
-    def __init__(self, display_name: str, sql_operator: str):
-        self._display_name = display_name
-        self._sql_operator = sql_operator
+    AND = "and"
+    OR = "or"
 
     @property
     def display_name(self) -> str:
-        return self._display_name
+        return self.value
 
     @property
     def sql_operator(self) -> str:
-        return self._sql_operator
+        return self.name
 
     @classmethod
     def is_valid(cls, key: str) -> bool:
@@ -104,7 +100,7 @@ class GroupOperator(Enum):
             return False
 
     def __str__(self):
-        return self._display_name
+        return self.value
 
 
 class SQLQueryBuilder:

@@ -30,26 +30,29 @@ from blackboard.widgets.momentum_scroll_widget import MomentumScrollArea
 
 # Class Definitions
 # -----------------
-class ColumnType(Enum):
-    """Enum representing user-friendly column types and their associated filter widgets."""
-    TEXT = ('Text', widgets.TextFilterWidget)
-    INT = ('Whole Number', widgets.NumericFilterWidget)
-    FLOAT = ('Decimal Number', widgets.NumericFilterWidget)
-    DATE = ('Date', widgets.DateRangeFilterWidget)
-    DATETIME = ('Date & Time', widgets.DateTimeRangeFilterWidget)
-    BOOLEAN = ('True/False', widgets.BooleanFilterWidget)
-    ENUM = ('Single Select', widgets.MultiSelectFilterWidget)
-    LIST = ('Multiple Select', widgets.MultiSelectFilterWidget)
+class FieldType(Enum):
+    """Enum representing user-friendly column types and their associated filter widgets.
+    """
+    TEXT = 'Text'
+    INT = 'Whole Number'
+    FLOAT = 'Decimal Number'
+    DATE = 'Date'
+    DATETIME = 'Date & Time'
+    BOOLEAN = 'True/False'
+    ENUM = 'Single Select'
+    LIST = 'Multiple Select'
+    UUID = 'UUID'
 
-    def __init__(self, display_type: str, filter_widget_cls: Type[widgets.FilterWidget]):
-        """Initialize the ColumnType enum with a user-friendly display type and filter widget class."""
+    def __init__(self, display_type: str):
+        """Initialize the FieldType enum with a user-friendly display type and filter widget class.
+        """
         self.display_type = display_type
-        self.filter_widget_cls = filter_widget_cls
 
     @property
     def filter_widget(self) -> Type[widgets.FilterWidget]:
-        """Return the filter widget class associated with the column type."""
-        return self.filter_widget_cls
+        """Return the filter widget class associated with the column type.
+        """
+        return FieldTypeMapping.TO_FILTER_WIDGETS.get(self, widgets.TextFilterWidget)
 
     @property
     def type_name(self) -> str:
@@ -57,59 +60,75 @@ class ColumnType(Enum):
         return self.display_type
 
     def __str__(self):
-        """Return a string representation of the ColumnType enum."""
-        return f"ColumnType({self.display_type}, Filter Widget: {self.filter_widget_cls.__name__})"
+        """Return a string representation of the FieldType enum."""
+        return f"FieldType({self.display_type}, Filter Widget: {self.filter_widget_cls.__name__})"
 
     @staticmethod
-    def from_sql(sql_type: str) -> 'ColumnType':
-        """Map SQL column type to the corresponding ColumnType enum.
+    def from_sql(sql_type: str) -> 'FieldType':
+        """Map SQL column type to the corresponding FieldType enum.
 
         Args:
             sql_type (str): The SQL type of the column.
 
         Returns:
-            ColumnType: The corresponding ColumnType enum instance.
+            FieldType: The corresponding FieldType enum instance.
         """
         sql_type = sql_type.upper()
 
-        # Map common SQL types to ColumnType enum
+        # Map common SQL types to FieldType enum
         if any(keyword in sql_type for keyword in ['CHAR', 'VARCHAR', 'TEXT', 'CLOB']):
-            return ColumnType.TEXT
+            return FieldType.TEXT
         elif any(keyword in sql_type for keyword in ['INT', 'INTEGER', 'TINYINT', 'SMALLINT', 'BIGINT', 'SERIAL']):
-            return ColumnType.INT
+            return FieldType.INT
         elif any(keyword in sql_type for keyword in ['REAL', 'DOUBLE', 'FLOAT', 'DECIMAL', 'NUMERIC', 'MONEY']):
-            return ColumnType.FLOAT
+            return FieldType.FLOAT
         elif 'DATETIME' in sql_type or 'TIMESTAMP' in sql_type:
-            return ColumnType.DATETIME  # Support DATETIME types
+            return FieldType.DATETIME  # Support DATETIME types
         elif 'DATE' in sql_type:
-            return ColumnType.DATE
+            return FieldType.DATE
         elif any(keyword in sql_type for keyword in ['BOOLEAN', 'BOOL']):
-            return ColumnType.BOOLEAN
+            return FieldType.BOOLEAN
         elif 'ENUM' in sql_type:  # Assumption: Custom enum or select types include 'ENUM' keyword
-            return ColumnType.ENUM
+            return FieldType.ENUM
         elif 'LIST' in sql_type or 'ARRAY' in sql_type:  # Use 'LIST' for PostgreSQL array types
-            return ColumnType.LIST
+            return FieldType.LIST
 
         # PostgreSQL-Specific Types
         elif 'UUID' in sql_type:
-            return ColumnType.TEXT
+            return FieldType.TEXT
         elif 'JSON' in sql_type or 'JSONB' in sql_type:
-            return ColumnType.TEXT
+            return FieldType.TEXT
         elif 'TSVECTOR' in sql_type or 'TSQUERY' in sql_type:
-            return ColumnType.TEXT
+            return FieldType.TEXT
         elif 'HSTORE' in sql_type:
-            return ColumnType.TEXT
+            return FieldType.TEXT
         elif 'CIDR' in sql_type or 'INET' in sql_type or 'MACADDR' in sql_type:
-            return ColumnType.TEXT
+            return FieldType.TEXT
         elif 'BIT' in sql_type:
-            return ColumnType.INT
+            return FieldType.INT
         elif 'INTERVAL' in sql_type:
-            return ColumnType.TEXT
+            return FieldType.TEXT
         elif 'BYTEA' in sql_type:
-            return ColumnType.TEXT
+            return FieldType.TEXT
 
         else:
             raise ValueError(f"Unsupported SQL type: {sql_type}")
+
+
+class FieldTypeMapping:
+
+    TO_FILTER_WIDGETS = {
+        FieldType.TEXT: widgets.TextFilterWidget,
+        FieldType.INT: widgets.NumericFilterWidget,
+        FieldType.FLOAT: widgets.NumericFilterWidget,
+        FieldType.DATE: widgets.DateRangeFilterWidget,
+        FieldType.DATETIME: widgets.DateTimeRangeFilterWidget,
+        FieldType.BOOLEAN: widgets.BooleanFilterWidget,
+        FieldType.ENUM: widgets.MultiSelectFilterWidget,
+        FieldType.LIST: widgets.MultiSelectFilterWidget,
+        FieldType.UUID: widgets.TextFilterWidget,
+    }
+
 
 class DataViewWidget(QtWidgets.QWidget):
     """A widget for displaying and interacting with a data view.
@@ -1023,8 +1042,8 @@ class DatabaseViewWidget(DataViewWidget):
             filter_widget.add_items(possible_values)
 
         else:
-            # Use ColumnType enum to map SQL type to appropriate filter widget
-            column_type = ColumnType.from_sql(field_info.type)
+            # Use FieldType enum to map SQL type to appropriate filter widget
+            column_type = FieldType.from_sql(field_info.type)
 
             # Get the filter widget class associated with the column type
             filter_widget_cls = column_type.filter_widget
