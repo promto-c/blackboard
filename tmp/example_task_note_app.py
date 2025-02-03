@@ -828,10 +828,11 @@ class FlexPlainTextEdit(QtWidgets.QPlainTextEdit):
     STYLE_SHEET = '''
         QPlainTextEdit {
             background-color: #222;
-            border: 1px solid gray;
             padding: 5px;
         }
     '''
+
+    activated = QtCore.Signal()
 
     def __init__(self, parent=None, max_height: int = 300, tab_size: int = 4):
         """Initialize the flexible plain text edit.
@@ -882,11 +883,14 @@ class FlexPlainTextEdit(QtWidgets.QPlainTextEdit):
         return QtCore.QSize(self.viewport().width(), document_height)
 
     def keyPressEvent(self, event):
-        """Override keyPressEvent to insert spaces instead of a tab and align to a grid."""
-        if event.key() == QtCore.Qt.Key_Tab:
+        """Override keyPressEvent to handle tab key and Ctrl+Enter/Return."""
+        if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter) and event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier:
+            self.activated.emit()
+            event.accept()
+        elif event.key() == QtCore.Qt.Key.Key_Tab:
             cursor = self.textCursor()
             # Get the text from the start of the line to the current cursor position
-            cursor.select(QtGui.QTextCursor.LineUnderCursor)
+            cursor.select(QtGui.QTextCursor.SelectionType.LineUnderCursor)
             line_text = cursor.selectedText()
 
             # Count leading spaces in the current line

@@ -13,21 +13,24 @@ class SortOrder(Enum):
 
 class FilterOperation(Enum):
     # Display name, SQL operator, number of values
-    GTE = ("gte", ">= ?", 1)      
-    LTE = ("lte", "<= ?", 1)
-    GT = ("gt", "> ?", 1)
-    LT = ("lt", "< ?", 1)
-    EQ = ("eq", "= ?", 1)
-    NEQ = ("neq", "!= ?", 1)
-    CONTAINS = ("contains", "LIKE '%' || ? || '%'", 1)   # Special LIKE operator for string matching
-    STARTS_WITH = ("starts_with", "LIKE ? || '%'", 1)  # Start with pattern matching
-    ENDS_WITH = ("ends_with", "LIKE '%' || ?", 1)      # End with pattern matching
-    IS_NULL = ("is_null", "IS NULL", 0)  # Checks for NULL values
-    IS_NOT_NULL = ("is_not_null", "IS NOT NULL", 0)  # Checks for NOT NULL values
-    IN = ("in", "IN", -1)  # Special case for IN query, variable number of arguments
-    NOT_IN = ("not_in", "NOT IN", -1)  # Special case for NOT IN query, variable number of arguments
-    BETWEEN = ("between", "BETWEEN ? AND ?", 2)  # Special case for BETWEEN operator, requires two values
-    NOT_BETWEEN = ("not_between", "NOT BETWEEN ? AND ?", 2)  # Special case for NOT BETWEEN operator, requires two values
+    GTE = ("Greater Than or Equal", ">= ?", 1)      
+    LTE = ("Less Than or Equal", "<= ?", 1)
+    GT = ("Greater Than", "> ?", 1)
+    LT = ("Less Than", "< ?", 1)
+    BEFORE = ("Before", "> ?", 1)
+    AFTER = ("After", "< ?", 1)
+    EQ = ("Equals", "= ?", 1)
+    NEQ = ("Not Equals", "!= ?", 1)
+    CONTAINS = ("Contains", "LIKE '%' || ? || '%'", 1)   # Special LIKE operator for string matching
+    NOT_CONTAINS = ("Does Not Contain", "NOT LIKE '%' || ? || '%'", 1)
+    STARTS_WITH = ("Starts With", "LIKE ? || '%'", 1)  # Start with pattern matching
+    ENDS_WITH = ("Ends With", "LIKE '%' || ?", 1)      # End with pattern matching
+    IS_NULL = ("Is Null", "IS NULL", 0)  # Checks for NULL values
+    IS_NOT_NULL = ("Is Not Null", "IS NOT NULL", 0)  # Checks for NOT NULL values
+    IN = ("In", "IN", -1)  # Special case for IN query, variable number of arguments
+    NOT_IN = ("Not In", "NOT IN", -1)  # Special case for NOT IN query, variable number of arguments
+    BETWEEN = ("Between", "BETWEEN ? AND ?", 2)  # Special case for BETWEEN operator, requires two values
+    NOT_BETWEEN = ("Not Between", "NOT BETWEEN ? AND ?", 2)  # Special case for NOT BETWEEN operator, requires two values
 
     # Initialization and Setup
     # ------------------------
@@ -62,7 +65,7 @@ class FilterOperation(Enum):
         Returns:
             bool: True if values are required, False otherwise.
         """
-        return self._num_values > 0
+        return self._num_values != 0
 
     def is_multi_value(self) -> bool:
         """Return True if the operation supports multiple values."""
@@ -76,6 +79,170 @@ class FilterOperation(Enum):
         """Return the string representation of the filter operation.
         """
         return self._display_name
+
+
+class FieldType(Enum):
+    """Enum representing user-friendly column types and their associated filter widgets.
+    """
+    TEXT = 'Text'
+    NUMERIC = 'Numeric'
+    DATE = 'Date'
+    DATETIME = 'Date & Time'
+    BOOLEAN = 'True/False'
+    ENUM = 'Single Select'
+    LIST = 'Multiple Select'
+    UUID = 'UUID'
+    NULL = 'Null'
+
+    @property
+    def display_name(self):
+        """Return the user-friendly display type of the column.
+        """
+        return self.value
+
+    @property
+    def supported_operations(self) -> List[FilterOperation]:
+        return FieldTypeMapping.TO_SUPPORTED_OPERATORS.get(self, [])
+
+    def __str__(self):
+        """Return a string representation of the FieldType enum.
+        """
+        return self.name
+
+    @staticmethod
+    def from_sql(sql_type: str) -> 'FieldType':
+        """Map SQL column type to the corresponding FieldType enum.
+
+        Args:
+            sql_type (str): The SQL type of the column.
+
+        Returns:
+            FieldType: The corresponding FieldType enum instance.
+        """
+        sql_type = sql_type.upper()
+
+        # Map common SQL types to FieldType enum
+        if any(keyword in sql_type for keyword in ['CHAR', 'VARCHAR', 'TEXT', 'CLOB']):
+            return FieldType.TEXT
+        # Combine integer and floating point SQL types into NUMERIC.
+        elif any(keyword in sql_type for keyword in [
+            'INT', 'INTEGER', 'TINYINT', 'SMALLINT', 'BIGINT', 'SERIAL',
+            'REAL', 'DOUBLE', 'FLOAT', 'DECIMAL', 'NUMERIC', 'MONEY'
+        ]):
+            return FieldType.NUMERIC
+        elif 'DATETIME' in sql_type or 'TIMESTAMP' in sql_type:
+            return FieldType.DATETIME  # Support DATETIME types
+        elif 'DATE' in sql_type:
+            return FieldType.DATE
+        elif any(keyword in sql_type for keyword in ['BOOLEAN', 'BOOL']):
+            return FieldType.BOOLEAN
+        elif 'ENUM' in sql_type:  # Assumption: custom enum or select types include 'ENUM' keyword
+            return FieldType.ENUM
+        elif 'LIST' in sql_type or 'ARRAY' in sql_type:  # Use 'LIST' for PostgreSQL array types
+            return FieldType.LIST
+
+        # PostgreSQL-Specific Types and others
+        elif 'UUID' in sql_type:
+            return FieldType.UUID
+        elif 'JSON' in sql_type or 'JSONB' in sql_type:
+            return FieldType.TEXT
+        elif 'TSVECTOR' in sql_type or 'TSQUERY' in sql_type:
+            return FieldType.TEXT
+        elif 'HSTORE' in sql_type:
+            return FieldType.TEXT
+        elif any(keyword in sql_type for keyword in ['CIDR', 'INET', 'MACADDR']):
+            return FieldType.TEXT
+        elif 'BIT' in sql_type:
+            return FieldType.NUMERIC
+        elif 'INTERVAL' in sql_type:
+            return FieldType.TEXT
+        elif 'BYTEA' in sql_type:
+            return FieldType.TEXT
+
+        else:
+            raise ValueError(f"Unsupported SQL type: {sql_type}")
+
+
+class FieldTypeMapping:
+
+    TO_SUPPORTED_OPERATORS = {
+        FieldType.TEXT: [
+            FilterOperation.CONTAINS,
+            FilterOperation.NOT_CONTAINS,
+            FilterOperation.STARTS_WITH,
+            FilterOperation.ENDS_WITH,
+            FilterOperation.EQ,
+            FilterOperation.NEQ,
+            FilterOperation.IS_NULL,
+            FilterOperation.IS_NOT_NULL,
+        ],
+        FieldType.NUMERIC: [
+            FilterOperation.EQ,
+            FilterOperation.NEQ,
+            FilterOperation.GT,
+            FilterOperation.LT,
+            FilterOperation.GTE,
+            FilterOperation.LTE,
+            FilterOperation.BETWEEN,
+            FilterOperation.NOT_BETWEEN,
+            FilterOperation.IS_NULL,
+            FilterOperation.IS_NOT_NULL,
+        ],
+        FieldType.DATE: [
+            FilterOperation.EQ,
+            FilterOperation.NEQ,
+            FilterOperation.BEFORE,
+            FilterOperation.AFTER,
+            FilterOperation.BETWEEN,
+            FilterOperation.NOT_BETWEEN,
+            FilterOperation.IS_NULL,
+            FilterOperation.IS_NOT_NULL,
+        ],
+        FieldType.DATETIME: [
+            FilterOperation.EQ,
+            FilterOperation.NEQ,
+            FilterOperation.BEFORE,
+            FilterOperation.AFTER,
+            FilterOperation.BETWEEN,
+            FilterOperation.NOT_BETWEEN,
+            FilterOperation.IS_NULL,
+            FilterOperation.IS_NOT_NULL,
+        ],
+        FieldType.BOOLEAN: [
+            FilterOperation.EQ,
+            FilterOperation.NEQ,
+            FilterOperation.IS_NULL,
+            FilterOperation.IS_NOT_NULL,
+        ],
+        FieldType.ENUM: [
+            FilterOperation.EQ,
+            FilterOperation.NEQ,
+            FilterOperation.IN,
+            FilterOperation.NOT_IN,
+            FilterOperation.CONTAINS,
+            FilterOperation.NOT_CONTAINS,
+            FilterOperation.IS_NULL,
+            FilterOperation.IS_NOT_NULL,
+        ],
+        FieldType.LIST: [
+            FilterOperation.EQ,              # Exact list equality
+            FilterOperation.NEQ,             # Exact list inequality
+            # FilterOperation.CONTAINS_ANY,    # The list contains at least one element of a provided set
+            # FilterOperation.NOT_CONTAINS_ANY,
+            # FilterOperation.CONTAINS_ALL,    # The list contains all elements of a provided set
+            # FilterOperation.NOT_CONTAINS_ALL,
+            FilterOperation.IN,              # At least one element in the list is in a given set
+            FilterOperation.NOT_IN,          # None of the elements in the list are in a given set
+            FilterOperation.IS_NULL,         # The list is null
+            FilterOperation.IS_NOT_NULL,     # The list is not null
+        ],
+        FieldType.UUID: [
+            FilterOperation.EQ,
+            FilterOperation.NEQ,
+            FilterOperation.IS_NULL,
+            FilterOperation.IS_NOT_NULL,
+        ]
+    }
 
 
 # Enum for logical operators (AND, OR) used for grouping
@@ -440,7 +607,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
 
             # Handle 
             if not isinstance(value, dict):
-                operator = FilterOperation.EQ
+                operator = FilterOperation.EQUALS
             else:
                 # Extract the operator and value
                 operator, value = next(iter(value.items()))

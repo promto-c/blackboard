@@ -1,10 +1,9 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, List, Type, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Union
 if TYPE_CHECKING:
     from blackboard.utils.database import AbstractModel, DatabaseManager, ManyToManyField, FieldInfo
     from blackboard.widgets.groupable_tree_widget import TreeWidgetItem
-    from blackboard.widgets.filter_widget import FilterCondition, FilterWidget
 
 # Standard Library Imports
 # ------------------------
@@ -24,112 +23,13 @@ from tablerqicon import TablerQIcon
 # -------------
 import blackboard as bb
 from blackboard import widgets
-from blackboard.widgets.filter_widget import FilterCondition
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollArea
+from blackboard.widgets.filter_widget import FilterWidget, MultiSelectFilterWidget
+from blackboard.utils.database.sql_query_builder import FieldType
 
 
 # Class Definitions
 # -----------------
-class FieldType(Enum):
-    """Enum representing user-friendly column types and their associated filter widgets.
-    """
-    TEXT = 'Text'
-    INT = 'Whole Number'
-    FLOAT = 'Decimal Number'
-    DATE = 'Date'
-    DATETIME = 'Date & Time'
-    BOOLEAN = 'True/False'
-    ENUM = 'Single Select'
-    LIST = 'Multiple Select'
-    UUID = 'UUID'
-
-    def __init__(self, display_type: str):
-        """Initialize the FieldType enum with a user-friendly display type and filter widget class.
-        """
-        self.display_type = display_type
-
-    @property
-    def filter_widget(self) -> Type[widgets.FilterWidget]:
-        """Return the filter widget class associated with the column type.
-        """
-        return FieldTypeMapping.TO_FILTER_WIDGETS.get(self, widgets.TextFilterWidget)
-
-    @property
-    def type_name(self) -> str:
-        """Return the user-friendly display type of the column."""
-        return self.display_type
-
-    def __str__(self):
-        """Return a string representation of the FieldType enum."""
-        return f"FieldType({self.display_type}, Filter Widget: {self.filter_widget_cls.__name__})"
-
-    @staticmethod
-    def from_sql(sql_type: str) -> 'FieldType':
-        """Map SQL column type to the corresponding FieldType enum.
-
-        Args:
-            sql_type (str): The SQL type of the column.
-
-        Returns:
-            FieldType: The corresponding FieldType enum instance.
-        """
-        sql_type = sql_type.upper()
-
-        # Map common SQL types to FieldType enum
-        if any(keyword in sql_type for keyword in ['CHAR', 'VARCHAR', 'TEXT', 'CLOB']):
-            return FieldType.TEXT
-        elif any(keyword in sql_type for keyword in ['INT', 'INTEGER', 'TINYINT', 'SMALLINT', 'BIGINT', 'SERIAL']):
-            return FieldType.INT
-        elif any(keyword in sql_type for keyword in ['REAL', 'DOUBLE', 'FLOAT', 'DECIMAL', 'NUMERIC', 'MONEY']):
-            return FieldType.FLOAT
-        elif 'DATETIME' in sql_type or 'TIMESTAMP' in sql_type:
-            return FieldType.DATETIME  # Support DATETIME types
-        elif 'DATE' in sql_type:
-            return FieldType.DATE
-        elif any(keyword in sql_type for keyword in ['BOOLEAN', 'BOOL']):
-            return FieldType.BOOLEAN
-        elif 'ENUM' in sql_type:  # Assumption: Custom enum or select types include 'ENUM' keyword
-            return FieldType.ENUM
-        elif 'LIST' in sql_type or 'ARRAY' in sql_type:  # Use 'LIST' for PostgreSQL array types
-            return FieldType.LIST
-
-        # PostgreSQL-Specific Types
-        elif 'UUID' in sql_type:
-            return FieldType.TEXT
-        elif 'JSON' in sql_type or 'JSONB' in sql_type:
-            return FieldType.TEXT
-        elif 'TSVECTOR' in sql_type or 'TSQUERY' in sql_type:
-            return FieldType.TEXT
-        elif 'HSTORE' in sql_type:
-            return FieldType.TEXT
-        elif 'CIDR' in sql_type or 'INET' in sql_type or 'MACADDR' in sql_type:
-            return FieldType.TEXT
-        elif 'BIT' in sql_type:
-            return FieldType.INT
-        elif 'INTERVAL' in sql_type:
-            return FieldType.TEXT
-        elif 'BYTEA' in sql_type:
-            return FieldType.TEXT
-
-        else:
-            raise ValueError(f"Unsupported SQL type: {sql_type}")
-
-
-class FieldTypeMapping:
-
-    TO_FILTER_WIDGETS = {
-        FieldType.TEXT: widgets.TextFilterWidget,
-        FieldType.INT: widgets.NumericFilterWidget,
-        FieldType.FLOAT: widgets.NumericFilterWidget,
-        FieldType.DATE: widgets.DateRangeFilterWidget,
-        FieldType.DATETIME: widgets.DateTimeRangeFilterWidget,
-        FieldType.BOOLEAN: widgets.BooleanFilterWidget,
-        FieldType.ENUM: widgets.MultiSelectFilterWidget,
-        FieldType.LIST: widgets.MultiSelectFilterWidget,
-        FieldType.UUID: widgets.TextFilterWidget,
-    }
-
-
 class DataViewWidget(QtWidgets.QWidget):
     """A widget for displaying and interacting with a data view.
     """
@@ -880,25 +780,6 @@ class DatabaseViewWidget(DataViewWidget):
 
         self.add_relation_column_menu.setEnabled(True)
 
-    @staticmethod
-    def generate_sql_query(column_name: str, filter_condition: 'FilterCondition', values: Tuple) -> str:
-        """Generate an SQL condition string for a given column and filter condition.
-
-        Args:
-            column_name (str): The name of the column to filter.
-            filter_condition (FilterCondition): The filter condition to apply.
-            values (Tuple): The values to use in the filter.
-
-        Returns:
-            str: An SQL condition string.
-        """
-        if filter_condition in (FilterCondition.IN, FilterCondition.NOT_IN):
-            placeholders = ', '.join('?' for _ in values)
-            sql_condition = filter_condition.query_format.format(column=column_name, placeholders=placeholders)
-        else:
-            sql_condition = filter_condition.query_format.format(column=column_name)
-        return sql_condition
-
     # NOTE: WIP
     def open_functional_column_dialog(self):
         """Open the Functional Column Dialog to create a new column.
@@ -1038,18 +919,18 @@ class DatabaseViewWidget(DataViewWidget):
             possible_values = related_model.get_possible_values(display_field)
 
             # Create a MultiSelectFilterWidget with the possible values
-            filter_widget = widgets.MultiSelectFilterWidget(filter_name=column_name)
+            filter_widget = MultiSelectFilterWidget(filter_name=column_name)
             filter_widget.add_items(possible_values)
 
         else:
             # Use FieldType enum to map SQL type to appropriate filter widget
-            column_type = FieldType.from_sql(field_info.type)
-
-            # Get the filter widget class associated with the column type
-            filter_widget_cls = column_type.filter_widget
+            field_type = FieldType.from_sql(field_info.type)
 
             # Instantiate the filter widget
-            filter_widget = filter_widget_cls(filter_name=column_name)
+            filter_widget = FilterWidget.create_for_field(
+                field_name=column_name,
+                field_type=field_type
+            )
 
         if filter_widget:
             self.add_filter_widget(filter_widget)
@@ -1111,9 +992,7 @@ class DatabaseViewWidget(DataViewWidget):
         if not self._current_table or not self.db_manager:
             return
 
-        # Start building the WHERE clause
-        where_clauses = []
-        parameters = []
+        conditions = []
 
         # Iterate over all active filter widgets
         for filter_widget in self.filter_bar_widget.get_active_filters():
@@ -1125,20 +1004,7 @@ class DatabaseViewWidget(DataViewWidget):
                 continue  # Skip if field info is not available
 
             # Get the filter condition and values from the filter widget
-            filter_condition = filter_widget.get_filter_condition()
-            values = filter_widget.get_filter_values()
-
-            # Generate the SQL condition for this filter
-            sql_condition = self.generate_sql_query(column_name, filter_condition, values)
-
-            # Add to the WHERE clauses
-            where_clauses.append(sql_condition)
-
-            # Add the values to the parameters list
-            parameters.extend(values)
-
-        # Build the final WHERE clause
-        where_clause = " AND ".join(where_clauses) if where_clauses else ""
+            conditions.append(filter_widget.get_query_conditions())
 
         # Get the fields to select
         fields = self._current_model.get_field_names()
@@ -1148,8 +1014,7 @@ class DatabaseViewWidget(DataViewWidget):
         # Execute the query
         results = self._current_model.query(
             fields=all_fields,
-            conditions=where_clause,
-            values=parameters,
+            conditions=conditions,
             as_dict=True,
             handle_m2m=True
         )

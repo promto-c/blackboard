@@ -245,13 +245,13 @@ class SQLiteDatabase(AbstractDatabase):
         if not table_name.isidentifier() or not field_name.isidentifier():
             raise ValueError("Invalid table name or field name")
 
-        self._cursor.execute(f"PRAGMA table_info({table_name})")
-        fields = self._cursor.fetchall()
-        for field in fields:
-            if field[1] == field_name:
-                return field[2]  # Return the data type
+        self._cursor.execute(
+            f"SELECT type FROM pragma_table_info(?) WHERE name = ?",
+            (table_name, field_name)
+        )
 
-        raise ValueError(f"Field '{field_name}' not found in table '{table_name}'")
+        row = self._cursor.fetchone()
+        return row[0]
 
     def get_model(self, table_name: str):
         return SQLiteModel(self, table_name)
