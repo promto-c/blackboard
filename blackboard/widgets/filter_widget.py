@@ -1,4 +1,3 @@
-
 # Type Checking Imports
 # ---------------------
 from typing import TYPE_CHECKING, Any, Optional, List, Union, Dict, Tuple, Type
@@ -1132,7 +1131,7 @@ class TextFilterWidget(FilterWidget):
     def discard_change(self):
         """Revert the widget to its previously saved state.
         """
-        saved_condition = self.load_state('condition', 'Contains')
+        saved_condition = self.load_state('condition', FilterOperation.CONTAINS.display_name)
         self.condition_combo_box.setCurrentText(saved_condition)
 
         self.text_edit.setText(self.load_state('text', ""))
@@ -1538,7 +1537,7 @@ class MultiSelectFilterWidget(FilterWidget):
     def discard_change(self):
         """Discard changes and revert to the saved state.
         """
-        checked_state_dict = self.load_state('checked_state', dict())
+        checked_state_dict = self.load_state('checked_state', {})
         self.restore_checked_state(checked_state_dict)
 
     def save_change(self):
@@ -1671,8 +1670,8 @@ class FileTypeFilterWidget(FilterWidget):
     def discard_change(self):
         """Revert any changes made.
         """
-        custom_input = self.load_state('custom_input', list())
-        checked_state_dict = self.load_state('checked_state', dict())
+        custom_input = self.load_state('custom_input', [])
+        checked_state_dict = self.load_state('checked_state', {})
 
         if not checked_state_dict:
             self.uncheck_all()
@@ -1758,7 +1757,7 @@ class NumericFilterWidget(FilterWidget):
     def discard_change(self):
         """Revert the widget to its previously saved state.
         """
-        saved_condition = self.load_state('condition', 'Equal')
+        saved_condition = self.load_state('condition', FilterOperation.EQ.display_name)
         self.condition_combo_box.setCurrentText(saved_condition)
 
         self.lower_value_edit.setText(self.load_state('lower_value', ""))
@@ -1859,7 +1858,9 @@ class BooleanFilterWidget(FilterWidget):
 
     UI Wireframe:
         +----------------------------------+
-        | Condition: [ Is True   v]        |
+        | Condition: [ Equals    v]        |
+        |                                  |
+        |     [ False ]   [ True ]         | <-- only visible when condition is Equals/Not Equals
         |                                  |
         | [ Clear ]             [ Apply ]  |
         +----------------------------------+
@@ -1870,33 +1871,89 @@ class BooleanFilterWidget(FilterWidget):
     def __init__(self, filter_name: str = "Boolean Filter", display_name: str = None, parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
 
-        # Initialize setup specific to BooleanFilterWidget
+        # Initialize setup
         self.__init_ui()
 
     def __init_ui(self):
         """Initialize the UI elements specific to the BooleanFilterWidget."""
         self.setIcon(TablerQIcon.checkbox)
 
-        # Set the initial focus widget to the condition combo box
-        self.set_initial_focus_widget(self.condition_combo_box)
+        # Create a widget for the boolean value selection.
+        self.value_widget = QtWidgets.QWidget()
+        value_layout = QtWidgets.QHBoxLayout(self.value_widget)
+        # Instead of radio buttons, use checkable push buttons.
+        self.btn_false = QtWidgets.QPushButton("False", checkable=True)
+        self.btn_true = QtWidgets.QPushButton("True", checkable=True)
 
-    # Slot Implementations
-    # --------------------
+        value_layout.addWidget(self.btn_false)
+        value_layout.addWidget(self.btn_true)
+
+        # Group the buttons so that only one is checked at a time.
+        self.boolean_group = QtWidgets.QButtonGroup(self)
+        self.boolean_group.setExclusive(True)
+        self.boolean_group.addButton(self.btn_false, id=0)
+        self.boolean_group.addButton(self.btn_true, id=1)
+    
+        # Set default selection.
+        self.btn_true.setChecked(True)
+    
+        self.widget_layout.addWidget(self.value_widget)
+    
+        # Set initial focus.
+        self.set_initial_focus_widget(self.condition_combo_box)
+    
+        # Initialize the value field visibility based on the default condition.
+        self.condition_combo_box.currentIndexChanged.connect(self.on_condition_changed)
+        # self.on_condition_changed()
+    
+    def on_condition_changed(self):
+        # When condition is EQ or NEQ, show the boolean value widget; otherwise, hide it.
+        if self.condition_combo_box.currentData() in (FilterOperation.EQ, FilterOperation.NEQ):
+            self.value_widget.show()
+        else:
+            self.value_widget.hide()
+    
+    # Slot implementations.
     def discard_change(self):
-        """Revert the widget to its previously saved state."""
-        saved_condition = self.load_state('condition', FilterOperation.IS_TRUE.display_name)
+        """Revert the widget to its previously saved state.
+        """
+        saved_condition = self.load_state('condition', FilterOperation.EQ.display_name)
         self.condition_combo_box.setCurrentText(saved_condition)
 
+        # Load the saved boolean value.
+        saved_bool = self.load_state('value', True)
+        if saved_bool:
+            self.btn_true.setChecked(True)
+        else:
+            self.btn_false.setChecked(True)
+    
     def save_change(self):
         """Save the current state of the filter settings."""
-        self.save_state('condition', self.selected_condition.display_name)
+        current_op = self.condition_combo_box.currentData()
+        self.save_state('condition', current_op.display_name)
+        # Save the boolean value only if the condition requires it.
+        if current_op in (FilterOperation.EQ, FilterOperation.NEQ):
+            # The button group's checked id: 1 for True, 0 for False.
+            selected_bool = bool(self.boolean_group.checkedId())
+            self.save_state('value', selected_bool)
 
-    def format_label(self, _values):
-        return super().format_label(self.selected_condition.display_name)
-
+    def format_label(self, _values=None):
+        # Format a label based on the condition and (if applicable) the boolean value.
+        current_op = self.condition_combo_box.currentData()
+        if current_op in (FilterOperation.EQ, FilterOperation.NEQ):
+            selected_bool = "True" if self.boolean_group.checkedId() == 1 else "False"
+            label_text = f"{self.display_name}: {current_op.display_name} {selected_bool}"
+        else:
+            label_text = f"{self.display_name}: {current_op.display_name}"
+        return label_text
+    
     def clear_filter(self):
         """Clear the filter settings and reset to the default state."""
+        # Reset condition to "Equals" (default) and select True.
         self.condition_combo_box.setCurrentIndex(0)
+        self.btn_true.setChecked(True)
+        self.save_state('condition', FilterOperation.EQ.display_name)
+        self.save_state('value', True)
 
 
 if __name__ == '__main__':
