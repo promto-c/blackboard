@@ -1,7 +1,9 @@
 
 # Type Checking Imports
 # ---------------------
-from typing import Generator, List, Tuple, Union, Optional, Dict, Any
+from typing import TYPE_CHECKING, Generator, List, Tuple, Union, Optional, Dict, Any
+if TYPE_CHECKING:
+    from blackboard.enums.view_enum import SortOrder
 
 # Standard Library Imports
 # ------------------------
@@ -12,7 +14,7 @@ import sqlite3
 # -------------
 from .abstract_database import AbstractDatabase, AbstractModel
 from .schema import FieldInfo, ManyToManyField, ForeignKey
-from .sql_query_builder import SQLQueryBuilder, SortOrder
+from .sql_query_builder import SQLQueryBuilder
 
 
 # Class Definitions
@@ -813,7 +815,7 @@ class SQLiteModel(AbstractModel):
 
     def query(self, fields: Optional[List[str]] = None, conditions: Optional[str] = None,
               values: Optional[List[Any]] = None, as_dict: bool = False, handle_m2m: bool = False,
-              order_by: Optional[Dict[str, SortOrder]] = None, relationships=None
+              order_by: Optional[Dict[str, 'SortOrder']] = None, relationships=None
               ) -> Union[Generator[Tuple, None, None], Generator[Dict[str, Union[int, str, float, None]], None, None]]:
         """Retrieve data from a specified table as a generator.
 

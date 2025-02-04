@@ -1,13 +1,14 @@
 
 # Type Checking Imports
 # ---------------------
-from typing import Any, Optional, List, Union, Dict, Tuple, Type
+from typing import TYPE_CHECKING, Any, Optional, List, Union, Dict, Tuple, Type
+if TYPE_CHECKING:
+    import datetime
 
 # Standard Library Imports
 # ------------------------
 import fnmatch
 from functools import partial
-from enum import Enum, auto
 
 # Third Party Imports
 # -------------------
@@ -20,20 +21,13 @@ import blackboard as bb
 from blackboard import widgets
 from blackboard.widgets.menu import ContextMenu, ResizableMenu
 from blackboard.widgets.line_edit import LineEdit
-from blackboard.utils.database.sql_query_builder import FilterOperation, FieldType
+from blackboard.widgets.calendar_widget import CalendarSelectionMode, RangeCalendarWidget
+from blackboard.enums.view_enum import FilterOperation, FieldType, FilterMode, DateRange
+
 
 # Class Definitions
 # -----------------
 # TODO: Implement filter widget to support switch mode
-class FilterMode(Enum):
-    STANDARD = auto()
-    TOGGLE = auto()
-    ADVANCED = auto()
-
-    def __str__(self):
-        return self.name.capitalize()
-
-
 class FilterSelectionBar(QtWidgets.QToolBar):
     """A toolbar widget that manages filter actions.
 
@@ -272,6 +266,8 @@ class FilterBarWidget(QtWidgets.QWidget):
     filter_changed = QtCore.Signal()
     filter_widget_removed = QtCore.Signal(str)
 
+    # Initialization and Setup
+    # ------------------------
     def __init__(self, parent: QtWidgets.QWidget = None):
         super().__init__(parent)
 
@@ -308,9 +304,9 @@ class FilterBarWidget(QtWidgets.QWidget):
         # Create Widgets
         # --------------
         # Add filter button
-        self.add_filter_button = QtWidgets.QToolButton(self)
-        self.add_filter_button.setIcon(self.tabler_icon.plus)
-        self.add_filter_button.setToolTip("Add Filter from Column")
+        self.add_filter_button = QtWidgets.QToolButton(
+            self, icon=self.tabler_icon.plus, toolTip="Add Filter"
+        )
         self.add_filter_button.setProperty('widget-style', 'round')
         self.add_filter_button.setFixedSize(24, 24)
         self.add_filter_button.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
@@ -320,6 +316,8 @@ class FilterBarWidget(QtWidgets.QWidget):
 
         self.update_style()
 
+    # Public Methods
+    # --------------
     def update_style(self):
         """Update the button's style based on its state.
         """
@@ -338,11 +336,13 @@ class FilterBarWidget(QtWidgets.QWidget):
         """Remove a filter widget from the filter area layout.
         """
         filter_widget = filter_widget or self.sender()
-        if filter_widget in self._filter_widgets:
-            self.filter_area_layout.removeWidget(filter_widget.button)
-            filter_widget.button.deleteLater()  # Remove the button associated with the filter
-            self._filter_widgets.remove(filter_widget)
-            self.filter_widget_removed.emit(filter_widget.filter_name)
+        if filter_widget not in self._filter_widgets:
+            return
+
+        self.filter_area_layout.removeWidget(filter_widget.button)
+        filter_widget.button.deleteLater()
+        self._filter_widgets.remove(filter_widget)
+        self.filter_widget_removed.emit(filter_widget.filter_name)
 
     def clear(self):
         """Clear all filter widgets from the filter bar.
@@ -356,16 +356,13 @@ class FilterBarWidget(QtWidgets.QWidget):
         """
         return [filter_widget for filter_widget in self._filter_widgets if filter_widget.is_active]
 
-    def filter_exists(self, filter_name: str) -> bool:
-        """Check if a filter already exists by its name.
-        """
-        return any(filter_widget.filter_name == filter_name for filter_widget in self._filter_widgets)
-
     def count_filters(self) -> int:
         """Return the number of active filters.
         """
         return len(self._filter_widgets)
 
+    # Class Properties
+    # ----------------
     @property
     def filter_widgets(self) -> List['FilterWidget']:
         return self._filter_widgets
@@ -407,6 +404,7 @@ class FilterButton(QtWidgets.QPushButton):
             minimumSize=QtCore.QSize(self.MINIMUM_WIDTH, self.MINIMUM_HEIGHT),
         )
 
+        # Store the arguments
         self._filter_widget = filter_widget
 
         # Initialize setup
@@ -478,12 +476,12 @@ class FilterWidget(QtWidgets.QWidget):
             FilterWidget.registry[cls.SUPPORTED_TYPE] = cls
             cls.CONDITIONS = cls.SUPPORTED_TYPE.supported_operations
 
-    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
+    def __init__(self, filter_name: str = '', display_name: str = None, parent: QtWidgets.QWidget = None):
         super().__init__(parent, QtCore.Qt.WindowType.Popup)
 
         # Store the filter name
         self.filter_name = filter_name
-        self._is_filter_applied = False
+        self.display_name = display_name or filter_name
 
         # Initialize setup
         self.__init_attributes()
@@ -499,6 +497,7 @@ class FilterWidget(QtWidgets.QWidget):
 
         # Private Attributes
         # ------------------
+        self._is_filter_applied = False
         self._initial_focus_widget: QtWidgets.QWidget = None
         self._saved_state = dict()
         self._filter_mode: 'FilterMode' = FilterMode.STANDARD
@@ -529,7 +528,7 @@ class FilterWidget(QtWidgets.QWidget):
 
         """
         # Set window title
-        self.setWindowTitle(self.filter_name)
+        self.setWindowTitle(self.display_name)
 
         # Create Layouts
         # --------------
@@ -648,21 +647,10 @@ class FilterWidget(QtWidgets.QWidget):
     def _format_text(self, text: str) -> str:
         """Format the text to be displayed on the button.
         """
-        return f"{self.filter_name} • {text}"
+        return f"{self.display_name} • {text}"
 
     # Public Methods
     # --------------
-    @classmethod
-    def create_for_field(cls, field_type: FieldType = FieldType.NULL, field_name: str = None, display_name: str = None, parent = None):
-        """Create an instance of the appropriate filter widget based on the given FieldType.
-
-        If no widget is registered for the field type, raises a ValueError.
-        """
-        widget_cls = cls.registry.get(field_type)
-        if widget_cls is None:
-            raise ValueError(f"No registered widget for field type: {field_type}")
-        return widget_cls(filter_name=field_name, parent=parent)
-
     def update_style(self, widget: Optional[QtWidgets.QWidget] = None):
         """Update the style of the specified widget or self.
         """
@@ -735,7 +723,7 @@ class FilterWidget(QtWidgets.QWidget):
         self.removed.emit()
         self.hide_popup()
 
-    def set_active(self, state):
+    def set_active(self, state: bool = True):
         """Set the active state of the filter.
         """
         if self._filter_mode == FilterMode.TOGGLE:
@@ -777,6 +765,24 @@ class FilterWidget(QtWidgets.QWidget):
     @property
     def selected_condition(self) -> 'FilterOperation':
         return self.get_filter_condition()
+
+    # Utility Methods
+    # ---------------
+    @classmethod
+    def create_for_field(cls, field_type: FieldType | str = FieldType.NULL, filter_name: str = None, display_name: str = None, parent = None):
+        """Create an instance of the appropriate filter widget based on the given FieldType.
+
+        If no widget is registered for the field type, raises a ValueError.
+        """
+        if not isinstance(field_type, FieldType):
+            field_type = FieldType.from_sql(field_type)
+
+        widget_cls = cls.registry.get(field_type, cls)
+        return widget_cls(
+            filter_name=filter_name,
+            display_name=display_name,
+            parent=parent
+        )
 
     # Slot Implementations
     # --------------------
@@ -858,49 +864,13 @@ class FilterWidget(QtWidgets.QWidget):
         self.setWindowIcon(icon)
 
 
-class DateRange(Enum):
-    """Enum representing various date ranges.
-    """
-
-    SELECTED_DATE_RANGE = "Selected Date Range"
-    TODAY = "Today"
-    YESTERDAY = "Yesterday"
-    PAST_7_DAYS = "Past 7 Days"
-    PAST_15_DAYS = "Past 15 Days"
-    PAST_MONTH = "Past Month"
-    PAST_2_MONTHS = "Past 2 Months"
-    PAST_YEAR = "Past Year"
-
-    def get_date_range(self):
-        today = QtCore.QDate.currentDate()
-
-        match self:
-            case DateRange.TODAY:
-                return today, today
-            case DateRange.YESTERDAY:
-                return today.addDays(-1), today.addDays(-1)
-            case DateRange.PAST_7_DAYS:
-                return today.addDays(-7), today
-            case DateRange.PAST_15_DAYS:
-                return today.addDays(-15), today
-            case DateRange.PAST_MONTH:
-                return today.addMonths(-1), today
-            case DateRange.PAST_2_MONTHS:
-                return today.addMonths(-2), today
-            case DateRange.PAST_YEAR:
-                return today.addYears(-1), today
-            case _:
-                return None, None
-
-    def __str__(self):
-        return self.value
-
+# TODO: Set selection appropriate as selected conditions
 class DateRangeFilterWidget(FilterWidget):
 
     SUPPORTED_TYPE = FieldType.DATE
 
     # Define a mapping from FilterOperation to label formats
-    FORMATTER_MAPPING: Dict[FilterOperation, str] = {
+    FORMATTER_MAPPING: Dict['FilterOperation', str] = {
         FilterOperation.BEFORE: "Before {0}",
         FilterOperation.AFTER: "After {0}",
         FilterOperation.BETWEEN: "{0} ↔ {1}",
@@ -909,8 +879,8 @@ class DateRangeFilterWidget(FilterWidget):
         FilterOperation.NEQ: "Does Not Equal {0}",
     }
 
-    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
-        super().__init__(filter_name=filter_name, parent=parent)
+    def __init__(self, filter_name: str = '', display_name: str = None, parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
 
         # Initialize setup
         self.__init_attributes()
@@ -928,10 +898,12 @@ class DateRangeFilterWidget(FilterWidget):
         self.setIcon(TablerQIcon.calendar)
 
         # Create widgets and layouts here
-        self.calendar = widgets.RangeCalendarWidget(self)
+        self.calendar = RangeCalendarWidget(self)
         self.relative_date_combo_box = QtWidgets.QComboBox(self)
         for date_range in DateRange:
             self.relative_date_combo_box.addItem(str(date_range), date_range)
+
+        self.condition_combo_box.setCurrentText(str(FilterOperation.BETWEEN))
 
         # Set the layout for the widget
         self.widget_layout.addWidget(self.relative_date_combo_box)
@@ -945,6 +917,17 @@ class DateRangeFilterWidget(FilterWidget):
         # Connect signals to slots
         self.relative_date_combo_box.currentIndexChanged.connect(self.select_relative_date_range)
         self.calendar.range_selected.connect(self.select_absolute_date_range)
+        self.condition_combo_box.currentIndexChanged.connect(self._update_selection_mode)
+
+    def _update_selection_mode(self, index):
+        """Update the selection mode based on the selected condition.
+        """
+        filter_operation = self.condition_combo_box.currentData()
+
+        if filter_operation.num_values == 1:
+            self.calendar.set_selection_mode(CalendarSelectionMode.SINGLE)
+        else:
+            self.calendar.set_selection_mode(CalendarSelectionMode.RANGE)
 
     # Slot Implementations
     # --------------------
@@ -953,7 +936,7 @@ class DateRangeFilterWidget(FilterWidget):
         """
         current_index = self.load_state('current_index', 0)
         self.start_date, self.end_date = self.load_state('date_range', (None, None))
-        filter_label = self.load_state('filter_label', str())
+        filter_label = self.load_state('filter_label', '')
 
         self.relative_date_combo_box.setCurrentIndex(current_index)
 
@@ -974,7 +957,7 @@ class DateRangeFilterWidget(FilterWidget):
         self.save_state('date_range', date_range)
         self.save_state('filter_label', filter_label)
 
-    def get_value(self) -> List[QtCore.QDate]:
+    def get_value(self) -> List['datetime.date']:
         """Retrieve the current date values based on the selected condition.
 
         Returns:
@@ -983,23 +966,24 @@ class DateRangeFilterWidget(FilterWidget):
                 - For range conditions (BETWEEN, NOT_BETWEEN): [start_date, end_date]
                 - For no-date conditions (IS_NULL, IS_NOT_NULL): []
         """
-        start_date_str = self.start_date.toString(QtCore.Qt.DateFormat.ISODate) if self.start_date else str()
-        end_date_str = self.end_date.toString(QtCore.Qt.DateFormat.ISODate) if self.end_date else str()
+        py_start_date = self.start_date.toPyDate() if self.start_date else ''
+        py_end_date = self.end_date.toPyDate() if self.end_date else ''
 
         if self.selected_condition.num_values == 2:
-            return [start_date_str, end_date_str]
+            return [py_start_date, py_end_date]
         elif self.selected_condition.num_values == 1:
-            return start_date_str or end_date_str
+            return py_start_date or py_end_date
         else:
             return
 
     def format_label(self, values):
         # Retrieve the format string based on the selected condition
         format_str = self.FORMATTER_MAPPING.get(self.selected_condition, self.selected_condition.display_name)
-        if self.selected_condition.is_multi_value():
+        if self.selected_condition.num_values > 1:
+            values = [value.isoformat() for value in values]
             text = format_str.format(*values)
         else:
-            text = format_str.format(values)
+            text = format_str.format(values.isoformat())
 
         # Update the label using the superclass method
         return super().format_label(text)
@@ -1028,7 +1012,7 @@ class DateRangeFilterWidget(FilterWidget):
         if index > 0:
             self.relative_date_combo_box.setItemText(0, str(DateRange.SELECTED_DATE_RANGE))
 
-        date_range = self.relative_date_combo_box.currentData()
+        date_range: DateRange = self.relative_date_combo_box.currentData()
         start_date, end_date = date_range.get_date_range()
         self.calendar.select_date_range(start_date, end_date)
 
@@ -1053,8 +1037,8 @@ class DateTimeRangeFilterWidget(DateRangeFilterWidget):
 
     SUPPORTED_TYPE = FieldType.DATETIME
 
-    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
-        super().__init__(filter_name=filter_name, parent=parent)
+    def __init__(self, filter_name: str = '', display_name: str = None, parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
 
         # Additional setup for time range filtering
         self.__init_ui()
@@ -1117,8 +1101,8 @@ class TextFilterWidget(FilterWidget):
 
     SUPPORTED_TYPE = FieldType.TEXT
 
-    def __init__(self, filter_name: str = "Text Filter", parent: QtWidgets.QWidget = None):
-        super().__init__(filter_name=filter_name, parent=parent)
+    def __init__(self, filter_name: str = "Text Filter", display_name: str = None, parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
 
         # Initialize setup specific to TextFilterWidget
         self.__init_ui()
@@ -1258,8 +1242,8 @@ class MultiSelectFilterWidget(FilterWidget):
 
     SUPPORTED_TYPE = FieldType.ENUM
 
-    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
-        super().__init__(filter_name=filter_name, parent=parent)
+    def __init__(self, filter_name: str = '', display_name: str = None, parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
 
         # Initialize setup
         self.__init_attributes()
@@ -1334,7 +1318,7 @@ class MultiSelectFilterWidget(FilterWidget):
         tag_count = self.tag_list_view.get_tags_count()
         self.copy_button.setEnabled(bool(tag_count))
 
-        num_item_str = str(tag_count) if tag_count else str()
+        num_item_str = str(tag_count) if tag_count else ''
         self.copy_button.setText(num_item_str)
 
     def copy_data_to_clipboard(self):
@@ -1549,6 +1533,8 @@ class MultiSelectFilterWidget(FilterWidget):
         self.set_check_items(filters)
         self.apply_filter()
 
+        self.tree_view.expandAll()
+
     def discard_change(self):
         """Discard changes and revert to the saved state.
         """
@@ -1569,8 +1555,8 @@ class FileTypeFilterWidget(FilterWidget):
 
     SUPPORTED_TYPE = FieldType.ENUM
 
-    def __init__(self, filter_name: str = str(), parent: QtWidgets.QWidget = None):
-        super().__init__(filter_name=filter_name, parent=parent)
+    def __init__(self, filter_name: str = '', display_name: str = None, parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
 
         self.__init_ui()
         self.__init_signal_connections()
@@ -1725,8 +1711,8 @@ class NumericFilterWidget(FilterWidget):
         FilterOperation.NEQ: "≠ {0}",
     }
 
-    def __init__(self, filter_name: str = "Numeric Filter", parent: QtWidgets.QWidget = None):
-        super().__init__(filter_name=filter_name, parent=parent)
+    def __init__(self, filter_name: str = "Numeric Filter", display_name: str = None, parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
 
         # Initialize setup specific to NumericFilterWidget
         self.__init_ui()
@@ -1881,8 +1867,8 @@ class BooleanFilterWidget(FilterWidget):
 
     SUPPORTED_TYPE = FieldType.BOOLEAN
 
-    def __init__(self, filter_name: str = "Boolean Filter", parent: QtWidgets.QWidget = None):
-        super().__init__(filter_name=filter_name, parent=parent)
+    def __init__(self, filter_name: str = "Boolean Filter", display_name: str = None, parent: QtWidgets.QWidget = None):
+        super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
 
         # Initialize setup specific to BooleanFilterWidget
         self.__init_ui()

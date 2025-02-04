@@ -25,7 +25,6 @@ import blackboard as bb
 from blackboard import widgets
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollArea
 from blackboard.widgets.filter_widget import FilterWidget, MultiSelectFilterWidget
-from blackboard.utils.database.sql_query_builder import FieldType
 
 
 # Class Definitions
@@ -923,13 +922,10 @@ class DatabaseViewWidget(DataViewWidget):
             filter_widget.add_items(possible_values)
 
         else:
-            # Use FieldType enum to map SQL type to appropriate filter widget
-            field_type = FieldType.from_sql(field_info.type)
-
             # Instantiate the filter widget
             filter_widget = FilterWidget.create_for_field(
-                field_name=column_name,
-                field_type=field_type
+                filter_name=column_name,
+                field_type=field_info.type,
             )
 
         if filter_widget:

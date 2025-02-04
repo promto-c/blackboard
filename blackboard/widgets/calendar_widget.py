@@ -1,6 +1,7 @@
 # Type Checking Imports
 # ---------------------
 from typing import Tuple
+from enum import Enum, auto
 
 # Third Party Imports
 # -------------------
@@ -10,6 +11,13 @@ from tablerqicon import TablerQIcon
 
 # Class Definitions
 # -----------------
+class CalendarSelectionMode(Enum):
+    """Enumeration of supported selection modes.
+    """
+    SINGLE = auto()
+    RANGE = auto()
+
+
 class RangeCalendarWidget(QtWidgets.QCalendarWidget):
     """Custom qtpy Calendar Widget for selecting a range of dates.
     
@@ -41,6 +49,7 @@ class RangeCalendarWidget(QtWidgets.QCalendarWidget):
         """
         # Attributes
         # ----------
+        self.selection_mode = CalendarSelectionMode.RANGE
         self.start_date, self.end_date = None, None
 
         # Private Attributes
@@ -70,8 +79,17 @@ class RangeCalendarWidget(QtWidgets.QCalendarWidget):
         self.clicked.connect(self.handle_date_clicked)
         self.range_selected.connect(self.select_date_range)
 
-    # Extended Methods
-    # ----------------
+    # Public Methods
+    # --------------
+    def set_selection_mode(self, mode: CalendarSelectionMode):
+        """Change the selection mode for the calendar and clear existing selections.
+        
+        Args:
+            mode (CalendarSelectionMode): The new selection mode to set.
+        """
+        self.selection_mode = mode
+        self.clear()
+
     def handle_date_clicked(self, date: QtCore.QDate):
         """Handles the logic when a date is clicked on the calendar.
 
@@ -82,7 +100,7 @@ class RangeCalendarWidget(QtWidgets.QCalendarWidget):
             date (QtCore.QDate): The date that was clicked.
         """
         # Check if the shift key is pressed and a start date has already been selected, the clicked date becomes the end date
-        if self._is_shift_pressed and self.start_date:
+        if self.selection_mode == CalendarSelectionMode.RANGE and self._is_shift_pressed and self.start_date:
             self.end_date = date
 
             # Swap dates if start date is greater than end date
@@ -191,6 +209,7 @@ class RangeCalendarWidget(QtWidgets.QCalendarWidget):
 
         # Updates the shift key state when a key is pressed.
         self._update_shift_state(event)
+
 
 if __name__ == "__main__":
     import sys

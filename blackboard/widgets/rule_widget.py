@@ -1,10 +1,11 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, List, Optional, Dict
+from typing import TYPE_CHECKING, List
+if TYPE_CHECKING:
+    from blackboard.widgets.base_rule_widget import BaseRuleListWidget
 
 # Standard Library Imports
 # ------------------------
-from enum import Enum
 from dataclasses import dataclass
 
 # Third-Party Imports
@@ -14,23 +15,16 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-if TYPE_CHECKING:
-    from blackboard.widgets.base_rule_widget import BaseRuleListWidget
+
 from blackboard.widgets.base_rule_widget import BaseRule, BaseRuleWidgetItem, BaseRuleWidget
+from blackboard.enums.view_enum import SortOrder
 
 
 # Class Definitions
 # -----------------
-class SortOrder(Enum):
-    """Enumeration for sort order.
-    """
-    ASCENDING = 'ASC'
-    DESCENDING = 'DESC'
-
-
 @dataclass
 class SortRule(BaseRule):
-    order: SortOrder = SortOrder.ASCENDING
+    order: SortOrder = SortOrder.ASC
 
 
 class SortRuleWidgetItem(BaseRuleWidgetItem):
@@ -69,11 +63,11 @@ class SortRuleWidgetItem(BaseRuleWidgetItem):
         # Ascending/Descending toggle buttons
         self.asc_button = QtWidgets.QToolButton(
             self.widget, icon=TablerQIcon.sort_ascending_letters, toolTip="Sort in ascending order",
-            cursor=QtCore.Qt.CursorShape.PointingHandCursor, checkable=True, checked=self._rule.order == SortOrder.ASCENDING,
+            cursor=QtCore.Qt.CursorShape.PointingHandCursor, checkable=True, checked=self._rule.order == SortOrder.ASC,
         )
         self.desc_button = QtWidgets.QToolButton(
             self.widget, icon=TablerQIcon.sort_descending_letters, toolTip="Sort in descending order",
-            cursor=QtCore.Qt.CursorShape.PointingHandCursor, checkable=True, checked=self._rule.order == SortOrder.DESCENDING,
+            cursor=QtCore.Qt.CursorShape.PointingHandCursor, checkable=True, checked=self._rule.order == SortOrder.DESC,
         )
 
         # Toggle group behavior
@@ -94,7 +88,7 @@ class SortRuleWidgetItem(BaseRuleWidgetItem):
         Returns:
             SortRule: An instance containing the field and sort order.
         """
-        self._rule.order = self.asc_button.isChecked() and SortOrder.ASCENDING or SortOrder.DESCENDING
+        self._rule.order = self.asc_button.isChecked() and SortOrder.ASC or SortOrder.DESC
         return super().get_rule()
 
 class SortRuleWidget(BaseRuleWidget):
