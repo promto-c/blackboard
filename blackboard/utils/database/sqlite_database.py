@@ -165,10 +165,7 @@ class SQLiteDatabase(AbstractDatabase):
             WHERE type='table' AND name=?
         ''', (table_name,))
 
-        exists = cursor.fetchone() is not None
-        cursor.close()
-        
-        return exists
+        return cursor.fetchone() is not None
 
     def create_table(self, table_name: str, fields: Dict[str, str]) -> 'AbstractModel':
         """Create a new table in the database with specified fields.
@@ -393,8 +390,8 @@ class SQLiteModel(AbstractModel):
 
         # Try to retrieve field information for the specific field from the table's columns
         cursor.execute(
-            f"SELECT * FROM pragma_table_info('{self._table_name}') WHERE name = ?",
-            (field_name,)
+            f"SELECT * FROM pragma_table_info(?) WHERE name = ?",
+            (self._table_name, field_name)
         )
         row = cursor.fetchone()
 
@@ -802,16 +799,6 @@ class SQLiteModel(AbstractModel):
             }
             for row in results
         ]
-
-    def get_table_from_chain(self, relation_chain: str, sep: str = '.') -> str:
-        if sep not in relation_chain:
-            return
-        relationships = self.get_relationships()
-        chains = relation_chain.split(sep)
-        current_table = self._table_name
-        for field in chains[:-1]:
-            current_table = relationships[f'{current_table}.{field}'].split(sep)[0]
-        return current_table
 
     def query(self, fields: Optional[List[str]] = None, conditions: Optional[str] = None,
               values: Optional[List[Any]] = None, as_dict: bool = False, handle_m2m: bool = False,

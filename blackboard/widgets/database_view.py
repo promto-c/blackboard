@@ -718,17 +718,17 @@ class DatabaseViewWidget(DataViewWidget):
             return
 
         # Determine the current table based on the selected column's header
-        tree_column_name = self.tree_widget.fields[column_index]
+        field_chain = self.tree_widget.fields[column_index]
 
         # TODO: Store relation path in header item to be extract from item directly
         # Check if the column header includes a related table
-        if '.' in tree_column_name:
-            local_table = self._current_model.get_table_from_chain(tree_column_name)
-            local_field = tree_column_name.rsplit('.', 1)[-1]
+        if '.' in field_chain:
+            parent_chain, local_field = field_chain.rsplit('.', 1)
+            local_table = self._current_model.resolve_model_chain(parent_chain)
         else:
             # Use the original current table
             local_table = self._current_table
-            local_field = tree_column_name
+            local_field = field_chain
 
         local_model = self.db_manager.get_model(local_table)
 
@@ -769,7 +769,7 @@ class DatabaseViewWidget(DataViewWidget):
 
         # Create a menu action for each foreign key relation
         for display_field in related_field_names[1:]:
-            relation_chain = f"{tree_column_name}.{display_field}"
+            relation_chain = f"{field_chain}.{display_field}"
             action = QtWidgets.QAction(relation_chain, self)
             action.triggered.connect(
                 partial(self.add_relation_column, relation_chain)

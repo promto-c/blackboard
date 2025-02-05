@@ -346,7 +346,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
 
             # Handle 
             if not isinstance(value, dict):
-                operator = FilterOperation.EQUALS
+                operator = FilterOperation.EQ
             else:
                 # Extract the operator and value
                 operator, value = next(iter(value.items()))

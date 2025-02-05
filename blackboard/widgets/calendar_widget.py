@@ -50,7 +50,7 @@ class RangeCalendarWidget(QtWidgets.QCalendarWidget):
         # Attributes
         # ----------
         self.selection_mode = CalendarSelectionMode.RANGE
-        self.start_date, self.end_date = None, None
+        self.start_date = self.end_date = self.selectedDate()
 
         # Private Attributes
         # ------------------
@@ -121,7 +121,7 @@ class RangeCalendarWidget(QtWidgets.QCalendarWidget):
         """Clears any date selections and resets the calendar to the current date, and updates the calendar display to reflect these changes.
         """
         # Clear any selections made in the calendar
-        self.start_date, self.end_date = None, None
+        self.start_date = self.end_date = self.selectedDate()
 
         # Set the calendar's selected date to today
         today = QtCore.QDate.currentDate()

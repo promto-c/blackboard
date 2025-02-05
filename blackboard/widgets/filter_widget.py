@@ -965,8 +965,8 @@ class DateRangeFilterWidget(FilterWidget):
                 - For range conditions (BETWEEN, NOT_BETWEEN): [start_date, end_date]
                 - For no-date conditions (IS_NULL, IS_NOT_NULL): []
         """
-        py_start_date = self.start_date.toPyDate() if self.start_date else ''
-        py_end_date = self.end_date.toPyDate() if self.end_date else ''
+        py_start_date = self.start_date.toPyDate() if self.start_date else None
+        py_end_date = self.end_date.toPyDate() if self.end_date else py_start_date
 
         if self.selected_condition.num_values == 2:
             return [py_start_date, py_end_date]

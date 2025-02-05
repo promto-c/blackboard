@@ -13,6 +13,8 @@ from abc import ABC, abstractmethod
 # -----------------
 class AbstractDatabase(ABC):
 
+    CHAIN_SEPARATOR = '.'
+
     @abstractmethod
     def create_table(self, table_name: str, fields: Dict[str, str]) -> 'AbstractModel':
         """Create a table in the database."""
@@ -75,27 +77,67 @@ class AbstractDatabase(ABC):
         """Close the database connection."""
         pass
 
+    @staticmethod
+    def resolve_model_chain(base_model: str, relation_chain: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
+        """Resolve a chain of relationships to determine the final model.
+
+        Starting from a base model, this method iteratively follows the relationship chain defined by
+        the `relation_chain` string. At each step, it uses the `relationships` dictionary to map the current
+        model and field (formatted as "Model{sep}field") to a new model. If the chain is invalid or incomplete,
+        the function returns None.
+
+        Args:
+            base_model (str): The initial model from which to start the resolution.
+            relation_chain (str): A separator-delimited string representing the chain of relationships (e.g., "name.account").
+            relationships (Dict[str, str]): A dictionary mapping "Model{sep}field" to "RelatedModel{sep}related_field".
+            sep (str, optional): The separator used in both the relationship chain and the dictionary keys.
+                 Defaults to CHAIN_SEPARATOR.
+
+        Returns:
+            str: The final model reached after resolving the relationship chain. Returns None if the chain cannot be fully resolved.
+
+        Examples:
+            >>> relationships = {
+            ...     'User.name': 'Profile.id',
+            ...     'Profile.account': 'Account.id'
+            ... }
+            >>> AbstractDatabase.resolve_model_chain('User', 'name.account', relationships, sep='.')
+            'Account'
+            >>> AbstractDatabase.resolve_model_chain('User', 'name', relationships, sep='.')
+            'Profile'
+        """
+        for field in relation_chain.split(sep):
+            if (left_model_field := f'{base_model}{sep}{field}') not in relationships:
+                return
+            base_model, _right_field = relationships[left_model_field].split(sep)
+
+        return base_model
+
+
 class AbstractModel(ABC):
     """Abstract base class for all models that interact with a database.
     Defines the core methods that any concrete model should implement.
     """
 
-    def __init__(self, db_manager: 'AbstractDatabase', table_name: str):
+    def __init__(self, database: 'AbstractDatabase', table_name: str):
         """Initialize the model with a reference to the database manager and table name.
 
         Args:
-            db_manager (AbstractDatabaseManager): The database manager instance.
+            database (AbstractDatabaseManager): The database manager instance.
             table_name (str): The name of the table associated with the model.
         """
-        self._db_manager = db_manager
-        self._table_name = table_name
+        self._database = database
+        self._name = table_name
 
-    def get_field_type(self, field_name: str):
-        return self._db_manager.get_field_type(self._table_name, field_name)
+    def get_field_type(self, field_chain: str):
+        return self._database.get_field_type(self._name, field_chain)
+
+    def resolve_model_chain(self, relation_chain: str) -> str:
+        return self._database.resolve_model_chain(self._name, relation_chain, self.get_relationships())
 
     @property
     def name(self) -> str:
-        return self._table_name
+        return self._name
 
     @property
     def field_names(self) -> List[str]:
@@ -157,3 +199,13 @@ class AbstractModel(ABC):
               ) -> Union[Generator[Tuple, None, None], Generator[Dict[str, Any], None, None]]:
         """Perform a query on the table."""
         pass
+
+    @abstractmethod
+    def get_relationships(self) -> Dict[str, str]:
+        """Get a dictionary of relationships"""
+        pass
+
+
+if __name__ == '__main__':
+    import doctest
+    doctest.testmod()
