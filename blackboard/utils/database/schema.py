@@ -40,10 +40,10 @@ class ManyToManyField:
     """
     track_field_name: str                   # The field name used for display purposes
     local_table: str                        # The originating table name
-    remote_table: str                       # The related table name
+    related_table: str                      # The related table name
     junction_table: str                     # The name of the junction table
     local_fk: ForeignKey                    # ForeignKeyInfo for the local table
-    remote_fk: ForeignKey                   # ForeignKeyInfo for the remote table
+    related_fk: ForeignKey                  # ForeignKeyInfo for the remote table
 
 @dataclass
 class FieldInfo:

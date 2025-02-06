@@ -119,21 +119,22 @@ class AbstractModel(ABC):
     Defines the core methods that any concrete model should implement.
     """
 
-    def __init__(self, database: 'AbstractDatabase', table_name: str):
+    def __init__(self, database: 'AbstractDatabase', model_name: str):
         """Initialize the model with a reference to the database manager and table name.
 
         Args:
             database (AbstractDatabaseManager): The database manager instance.
-            table_name (str): The name of the table associated with the model.
+            model_name (str): The name of the table associated with the model.
         """
         self._database = database
-        self._name = table_name
+        self._name = model_name
 
     def get_field_type(self, field_chain: str):
         return self._database.get_field_type(self._name, field_chain)
 
-    def resolve_model_chain(self, relation_chain: str) -> str:
-        return self._database.resolve_model_chain(self._name, relation_chain, self.get_relationships())
+    def resolve_model_chain(self, relation_chain: str, relationships: Dict[str, str] = None) -> str:
+        relationships = relationships or {}
+        return self._database.resolve_model_chain(self._name, relation_chain, self.get_relationships() | relationships)
 
     @property
     def name(self) -> str:

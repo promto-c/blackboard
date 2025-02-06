@@ -3,18 +3,19 @@
 # ---------------------
 from typing import TYPE_CHECKING, Generator, List, Tuple, Union, Optional, Dict, Any
 if TYPE_CHECKING:
-    from blackboard.enums.view_enum import SortOrder
+    from blackboard.enums.view_enum import SortOrder, GroupOperator
 
 # Standard Library Imports
 # ------------------------
 import logging
 import sqlite3
+import json
 
 # Local Imports
 # -------------
-from .abstract_database import AbstractDatabase, AbstractModel
-from .schema import FieldInfo, ManyToManyField, ForeignKey
-from .sql_query_builder import SQLQueryBuilder
+from blackboard.utils.database.abstract_database import AbstractDatabase, AbstractModel
+from blackboard.utils.database.schema import FieldInfo, ManyToManyField, ForeignKey
+from blackboard.utils.database.sql_query_builder import SQLQueryBuilder
 
 
 # Class Definitions
@@ -23,19 +24,37 @@ class SQLiteDatabase(AbstractDatabase):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, db_name: str, read_only: bool = False):
+    def __init__(self, database: str, read_only: bool = False, check_same_thread: bool = False):
         """Initialize the AbstractDatabase with a database name.
 
         Args:
             db_name (str): The name of the database file or connection string.
         """
-        self._db_name = db_name
+        self._database = database
         if read_only:
-            self._connection = sqlite3.connect(f'file:///{self._db_name}?mode=ro' ,uri=True, check_same_thread=False)
+            self._connection = sqlite3.connect(f'file:///{self._database}?mode=ro' ,uri=True, check_same_thread=check_same_thread)
         else:
-            self._connection = sqlite3.connect(self._db_name, check_same_thread=False)
+            self._connection = sqlite3.connect(self._database, check_same_thread=check_same_thread)
         self._connection.row_factory = sqlite3.Row
         self._cursor = self._connection.cursor()
+
+    # Class Properties
+    # ----------------
+    @property
+    def database(self) -> str:
+        """Get the current database.
+        """
+        return self._database
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        """Get the current database connection.
+        """
+        return self._connection
+
+    @property
+    def cursor(self) -> sqlite3.Cursor:
+        return self._cursor
 
     # Public Methods
     # --------------
@@ -132,20 +151,190 @@ class SQLiteDatabase(AbstractDatabase):
         }
         self.create_table('_meta_many_to_many', fields)
 
-    # Class Properties
-    # ----------------
-    @property
-    def connection(self):
-        """Get the current database connection.
-        """
-        return self._connection
-
-    @property
-    def cursor(self):
-        return self._cursor
-
     # Overridden Methods
     # ------------------
+    def get_relationships(self) -> Dict[str, str]:
+        ...
+
+        return {}
+
+    def query_raw(self, query: str, parameters: Optional[List[Any]] = None, as_dict: bool = True):
+        """Execute a raw SQL query and yield results as dictionaries or tuples.
+
+        Args:
+            query (str): The SQL query to execute.
+            parameters (Optional[List[Any]]): A list of parameters to bind to the query.
+                If None, the query is executed without parameters.
+            as_dict (bool): If True, each row is returned as a dictionary mapping column names
+                to values. If False, each row is returned as a tuple.
+
+        Yields:
+            Union[Dict[str, Any], Tuple[Any, ...]]: Each row from the query result.
+        """
+        cursor = self._connection.cursor()
+        cursor.execute(query, parameters)
+
+        try:
+            if as_dict:
+                yield from map(dict, cursor)
+            else:
+                yield from map(tuple, cursor)
+        finally:
+            cursor.close()
+
+    def query(self, model_name: str, fields: Optional[List[str]] = None, 
+              conditions: Optional[Dict[Union['GroupOperator', str], Any]] = None,
+              relationships: Dict[str, str] = None, order_by: Optional[Dict[str, 'SortOrder']] = None, 
+              limit: Optional[int] = None, as_dict: bool = True,
+              ) -> Generator[Tuple[Any, ...] | Dict[str, Any], None, None]:
+        """Retrieve data from a specified table as a generator.
+
+        Args:
+            fields (Optional[List[str]]): Specific fields to retrieve. Defaults to all fields.
+            conditions (Optional[Dict[Union[GroupOperator, str], Any]]): SQL WHERE clause conditions.
+            relationships (Optional[Dict[str, str]]): Relationship mappings.
+            order_by (Optional[Dict[str, SortOrder]]): Fields and sort order.
+            limit (Optional[int]): Maximum number of rows to retrieve.
+            as_dict (bool): If True, yield rows as dictionaries; if False, as tuples.
+
+        Yields:
+            Tuple[Any, ...] | Dict[str, Any]: Each row from the query result.
+        """
+        # Merge provided relationships with default relationships.
+        if relationships:
+            relationships = self.get_relationships() | relationships
+        else:
+            relationships = self.get_relationships()
+
+        query, parameters, grouped_field_aliases = SQLQueryBuilder.build_query(
+            model=model_name,
+            fields=fields,
+            conditions=conditions,
+            relationships=relationships,
+            order_by=order_by,
+            limit=limit,
+        )
+
+        # No grouped (JSON) fields present: yield raw results.
+        if not grouped_field_aliases:
+            yield from self.query_raw(query, parameters, as_dict)
+        # Grouped fields are present.
+        elif as_dict:
+            yield from (
+                {
+                    field: json.loads(value) if field in grouped_field_aliases else value
+                    for field, value in row.items()
+                }
+                for row in self.query_raw(query, parameters, as_dict=True)
+            )
+        else:
+            yield from (
+                tuple(
+                    json.loads(value) if field in grouped_field_aliases else value
+                    for field, value in row.items()
+                )
+                for row in self.query_raw(query, parameters, as_dict=True)
+            )
+
+    def get_foreign_keys(self, table_name: str = None) -> List['ForeignKey']:
+        """Retrieve foreign key constraints for the specified table.
+
+        Args:
+            table_name (str): The name of the table to retrieve foreign keys from.
+
+        Returns:
+            List[ForeignKey]: A list of `ForeignKey` instances representing the foreign keys.
+
+        Raises:
+            ValueError: If the table name is not a valid Python identifier.
+            sqlite3.Error: If there is an error executing the SQL command.
+        """
+        if not table_name.isidentifier():
+            raise ValueError("Invalid table name")
+
+        cursor = self._connection.cursor()
+        cursor.execute(f"PRAGMA foreign_key_list('{table_name}')")
+        foreign_keys = []
+        for row in cursor.fetchall():
+            constraint_id, sequence, referenced_table, local_field, referenced_field, on_update, on_delete, match = row
+            fk_info = ForeignKey(
+                constraint_id=constraint_id,
+                sequence=sequence,
+                local_table=table_name,
+                local_field=local_field,
+                referenced_table=referenced_table,
+                referenced_field=referenced_field,
+                on_update=on_update,
+                on_delete=on_delete,
+                match=match,
+            )
+            foreign_keys.append(fk_info)
+        cursor.close()
+
+        return foreign_keys
+
+    def get_relationships(self, table_name: str = None) -> Dict[str, str]:
+        related_tables = set()
+        relationships = {}
+
+        def construct_relationships(table_name: str):
+            if table_name in related_tables:
+                return
+            related_tables.add(table_name)
+            foreign_keys = self.get_foreign_keys(table_name)
+
+            for foreign_key in foreign_keys:
+                relationships[f'{foreign_key.local_table}.{foreign_key.local_field}'] = f'{foreign_key.referenced_table}.{foreign_key.referenced_field}'
+                if foreign_key.referenced_table in related_tables:
+                    continue
+                construct_relationships(foreign_key.referenced_table)
+
+        if table_name:
+            construct_relationships(table_name)
+        else:
+            for table_name in self.get_table_names():
+                construct_relationships(table_name)
+
+        return relationships
+
+    def query_one(
+        self,
+        model_name: str,
+        fields: Optional[List[str]] = None,
+        conditions: Optional[Dict[Union['GroupOperator', str], Any]] = None,
+        relationships: Optional[Dict[str, str]] = None,
+        order_by: Optional[Dict[str, 'SortOrder']] = None,
+        as_dict: bool = True,
+    ) -> Optional[Union[Dict[str, Any], Tuple[Any, ...]]]:
+        """Retrieve a single row from a specified table.
+
+        This method internally calls `query` with a limit of 1 and returns the first
+        row from the result generator. If no rows are found, it returns None.
+
+        Args:
+            model_name (str): Name of the model/table to query.
+            fields (Optional[List[str]]): Specific fields to retrieve. Defaults to all fields.
+            conditions (Optional[Dict[Union[GroupOperator, str], Any]]): SQL WHERE clause conditions.
+            relationships (Optional[Dict[str, str]]): Relationship mappings.
+            order_by (Optional[Dict[str, 'SortOrder']]): Fields and sort order.
+            as_dict (bool): If True, the row is returned as a dictionary; if False, as a tuple.
+
+        Returns:
+            Optional[Union[Dict[str, Any], Tuple[Any, ...]]]: The first row from the query result
+                or None if no row is found.
+        """
+        # Force limit to 1 when retrieving a single row.
+        result_generator = self.query(
+            model_name=model_name,
+            fields=fields,
+            conditions=conditions,
+            relationships=relationships,
+            order_by=order_by,
+            limit=1,
+            as_dict=as_dict,
+        )
+        return next(result_generator, None)
+
     def is_table_exists(self, table_name: str) -> bool:
         """Check if a table exists in the current database.
 
@@ -284,9 +473,8 @@ class SQLiteDatabase(AbstractDatabase):
             raise
 
 class SQLiteModel(AbstractModel):
-    def __init__(self, database: SQLiteDatabase, table_name: str):
-        self._database = database
-        self._table_name = table_name
+    def __init__(self, database: SQLiteDatabase, model_name: str):
+        super().__init__(database=database, model_name=model_name)
 
         self._connection = self._database.connection
         self._cursor = self._connection.cursor()
@@ -301,12 +489,12 @@ class SQLiteModel(AbstractModel):
             ValueError: If the table name is not a valid Python identifier.
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        if not self._table_name.isidentifier():
+        if not self.name.isidentifier():
             raise ValueError("Invalid table name")
 
         # Retrieve the list of indexes for the table
         cursor = self._connection.cursor()
-        cursor.execute(f"PRAGMA index_list({self._table_name})")
+        cursor.execute(f"PRAGMA index_list({self.name})")
         indexes = cursor.fetchall()
 
         unique_fields = []
@@ -337,12 +525,12 @@ class SQLiteModel(AbstractModel):
             ValueError: If the table name is not a valid Python identifier.
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        if not self._table_name.isidentifier():
+        if not self.name.isidentifier():
             raise ValueError("Invalid table name")
 
         # Retrieve field information
         cursor = self._connection.cursor()
-        cursor.execute(f"PRAGMA table_info({self._table_name})")
+        cursor.execute(f"PRAGMA table_info({self.name})")
         fields = cursor.fetchall()
         cursor.close()
 
@@ -391,7 +579,7 @@ class SQLiteModel(AbstractModel):
         # Try to retrieve field information for the specific field from the table's columns
         cursor.execute(
             f"SELECT * FROM pragma_table_info(?) WHERE name = ?",
-            (self._table_name, field_name)
+            (self.name, field_name)
         )
         row = cursor.fetchone()
 
@@ -430,7 +618,7 @@ class SQLiteModel(AbstractModel):
             except ValueError:
                 # Field is neither a column nor a many-to-many relationship
                 cursor.close()
-                raise ValueError(f"Field '{field_name}' does not exist in table '{self._table_name}'")
+                raise ValueError(f"Field '{field_name}' does not exist in table '{self.name}'")
 
         cursor.close()
         return field_info
@@ -451,7 +639,7 @@ class SQLiteModel(AbstractModel):
             ValueError: If the table name is not a valid Python identifier.
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        if not self._table_name.isidentifier():
+        if not self.name.isidentifier():
             raise ValueError("Invalid table name")
 
         # Retrieve all fields
@@ -488,45 +676,15 @@ class SQLiteModel(AbstractModel):
         Returns:
             str: The data type of the field.
         """
-        return self._database.get_field_type(self._table_name, field_name)
+        return self._database.get_field_type(self.name, field_name)
 
-    def get_foreign_keys(self, table_name: str = None) -> List['ForeignKey']:
+    def get_foreign_keys(self) -> List['ForeignKey']:
         """Retrieve foreign key constraints for the specified table.
-
-        Args:
-            table_name (str): The name of the table to retrieve foreign keys from.
 
         Returns:
             List[ForeignKey]: A list of `ForeignKey` instances representing the foreign keys.
-
-        Raises:
-            ValueError: If the table name is not a valid Python identifier.
-            sqlite3.Error: If there is an error executing the SQL command.
         """
-        table_name = table_name or self._table_name
-        if not table_name.isidentifier():
-            raise ValueError("Invalid table name")
-
-        cursor = self._connection.cursor()
-        cursor.execute(f"PRAGMA foreign_key_list('{table_name}')")
-        foreign_keys = []
-        for row in cursor.fetchall():
-            constraint_id, sequence, referenced_table, local_field, referenced_field, on_update, on_delete, match = row
-            fk_info = ForeignKey(
-                constraint_id=constraint_id,
-                sequence=sequence,
-                local_table=table_name,
-                local_field=local_field,
-                referenced_table=referenced_table,
-                referenced_field=referenced_field,
-                on_update=on_update,
-                on_delete=on_delete,
-                match=match,
-            )
-            foreign_keys.append(fk_info)
-        cursor.close()
-
-        return foreign_keys
+        return self._database.get_foreign_keys(self.name)
 
     def get_foreign_key(self, field_name: str) -> Optional['ForeignKey']:
         """Retrieve the foreign key constraint for a specific field in the specified table.
@@ -542,11 +700,11 @@ class SQLiteModel(AbstractModel):
             ValueError: If the table name or field name is not a valid Python identifier.
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        if not self._table_name.isidentifier() or not field_name.isidentifier():
+        if not self.name.isidentifier() or not field_name.isidentifier():
             raise ValueError("Invalid table name or field name")
 
         cursor = self._connection.cursor()
-        cursor.execute(f"PRAGMA foreign_key_list('{self._table_name}')")
+        cursor.execute(f"PRAGMA foreign_key_list('{self.name}')")
         foreign_key = None
         for row in cursor.fetchall():
             constraint_id, sequence, referenced_table, local_field, referenced_field, on_update, on_delete, match = row
@@ -554,7 +712,7 @@ class SQLiteModel(AbstractModel):
                 foreign_key = ForeignKey(
                     constraint_id=constraint_id,
                     sequence=sequence,
-                    local_table=self._table_name,
+                    local_table=self.name,
                     local_field=local_field,
                     referenced_table=referenced_table,
                     referenced_field=referenced_field,
@@ -568,21 +726,7 @@ class SQLiteModel(AbstractModel):
         return foreign_key
 
     def get_relationships(self) -> Dict[str, str]:
-        related_table = set()
-        relationships = {}
-
-        def construct_relationships(table_name: str):
-            related_table.add(table_name)
-            foreign_keys = self.get_foreign_keys(table_name)
-
-            for foreign_key in foreign_keys:
-                relationships[f'{foreign_key.local_table}.{foreign_key.local_field}'] = f'{foreign_key.referenced_table}.{foreign_key.referenced_field}'
-                if foreign_key.referenced_table in related_table:
-                    continue
-                construct_relationships(foreign_key.referenced_table)
-
-        construct_relationships(self._table_name)
-        return relationships
+        return self._database.get_relationships(self.name)
 
     def get_many_to_many_fields(self) -> Dict[str, 'ManyToManyField']:
         """Retrieve all many-to-many relationships for a specified table.
@@ -591,7 +735,7 @@ class SQLiteModel(AbstractModel):
             Dict[str, ManyToManyField]: A dictionary where keys are `track_field_name` and values are ManyToManyField 
                 instances representing the relationships.
         """
-        if not self._table_name.isidentifier():
+        if not self.name.isidentifier():
             raise ValueError("Invalid table name")
 
         # Return an empty dictionary if the _meta_many_to_many table does not exist
@@ -604,7 +748,7 @@ class SQLiteModel(AbstractModel):
             SELECT track_field_name, junction_table
             FROM _meta_many_to_many
             WHERE from_table = ?
-        ''', (self._table_name,))
+        ''', (self.name,))
         
         records = cursor.fetchall()
         cursor.close()
@@ -617,25 +761,25 @@ class SQLiteModel(AbstractModel):
             # Retrieve foreign keys from the junction table
             foreign_keys = self.get_foreign_keys(junction_table)
             local_fk = None
-            remote_fk = None
+            related_fk = None
 
             for fk in foreign_keys:
-                if fk.referenced_table == self._table_name:
+                if fk.referenced_table == self.name:
                     local_fk = fk
                 else:
-                    remote_fk = fk
+                    related_fk = fk
 
-            if not local_fk or not remote_fk:
-                raise ValueError(f"Foreign keys referencing '{self._table_name}' and '{remote_fk.referenced_table}' not found in '{junction_table}'.")
+            if not local_fk or not related_fk:
+                raise ValueError(f"Foreign keys referencing '{self.name}' and '{related_fk.referenced_table}' not found in '{junction_table}'.")
 
             # Create the ManyToManyField instance
             many_to_many_field = ManyToManyField(
                 track_field_name=track_field_name,
-                local_table=self._table_name,
-                remote_table=remote_fk.referenced_table,
+                local_table=self.name,
+                related_tables=related_fk.referenced_table,
                 junction_table=junction_table,
                 local_fk=local_fk,
-                remote_fk=remote_fk
+                related_fk=related_fk
             )
 
             # Use track_field_name as the key in the dictionary
@@ -656,7 +800,7 @@ class SQLiteModel(AbstractModel):
         Raises:
             ValueError: If the field does not represent a many-to-many relationship.
         """
-        if not self._table_name.isidentifier() or not field_name.isidentifier():
+        if not self.name.isidentifier() or not field_name.isidentifier():
             raise ValueError("Invalid field name")
 
         # Check if the _meta_many_to_many table exists
@@ -669,39 +813,39 @@ class SQLiteModel(AbstractModel):
             SELECT track_field_name, junction_table
             FROM _meta_many_to_many
             WHERE from_table = ? AND track_field_name = ?
-        ''', (self._table_name, field_name))
+        ''', (self.name, field_name))
 
         record = cursor.fetchone()
         cursor.close()
 
         if not record:
-            raise ValueError(f"No many-to-many relationship found for field '{field_name}' in table '{self._table_name}'.")
+            raise ValueError(f"No many-to-many relationship found for field '{field_name}' in table '{self.name}'.")
 
         track_field_name, junction_table = record
 
         # Retrieve foreign keys from the junction table
-        foreign_keys = self.get_foreign_keys(junction_table)
+        foreign_keys = self._database.get_foreign_keys(junction_table)
         local_fk = None
-        remote_fk = None
+        related_fk = None
 
         for fk in foreign_keys:
-            if fk.referenced_table == self._table_name:
+            if fk.referenced_table == self.name:
                 local_fk = fk  # Foreign key referencing the local table
             else:
-                remote_fk = fk  # Foreign key referencing the remote table
-                remote_table = remote_fk.referenced_table
+                related_fk = fk  # Foreign key referencing the remote table
+                related_tables = related_fk.referenced_table
 
-        if not local_fk or not remote_fk:
-            raise ValueError(f"Foreign keys referencing '{self._table_name}' and '{remote_table}' not found in '{junction_table}'.")
+        if not local_fk or not related_fk:
+            raise ValueError(f"Foreign keys referencing '{self.name}' and '{related_tables}' not found in '{junction_table}'.")
 
         # Create the ManyToManyField instance
         many_to_many_field = ManyToManyField(
             track_field_name=track_field_name,
-            local_table=self._table_name,
-            remote_table=remote_table,
+            local_table=self.name,
+            related_tables=related_tables,
             junction_table=junction_table,
             local_fk=local_fk,
-            remote_fk=remote_fk
+            related_fk=related_fk
         )
 
         return many_to_many_field
@@ -723,11 +867,11 @@ class SQLiteModel(AbstractModel):
         Returns:
             List[str]: A list of primary key field names. If it's a composite key, multiple fields are returned.
         """
-        if not self._table_name.isidentifier():
+        if not self.name.isidentifier():
             raise ValueError("Invalid table name")
 
         cursor = self._connection.cursor()
-        cursor.execute(f"PRAGMA table_info({self._table_name})")
+        cursor.execute(f"PRAGMA table_info({self.name})")
         fields = cursor.fetchall()
         cursor.close()
 
@@ -753,8 +897,8 @@ class SQLiteModel(AbstractModel):
         m2m = self.get_many_to_many_field(track_field_name)
 
         # Determine the display field and its type
-        display_field = display_field or m2m.remote_fk.referenced_field
-        display_field_type = self._database.get_field_type(m2m.remote_table, display_field)
+        display_field = display_field or m2m.related_fk.referenced_field
+        display_field_type = self._database.get_field_type(m2m.related_tables, display_field)
 
         # Retrieve all values if not specified
         if from_values is None:
@@ -770,9 +914,9 @@ class SQLiteModel(AbstractModel):
         placeholders = ', '.join('?' for _ in from_values)
         query = f'''
             SELECT CAST({m2m.junction_table}.{m2m.local_fk.local_field} AS {key_type}) AS {m2m.local_fk.referenced_field},
-                GROUP_CONCAT({m2m.remote_table}.{display_field}) AS {track_field_name}
+                GROUP_CONCAT({m2m.related_tables}.{display_field}) AS {track_field_name}
             FROM {m2m.junction_table}
-            JOIN {m2m.remote_table} ON {m2m.junction_table}.{m2m.remote_fk.local_field} = {m2m.remote_table}.{m2m.remote_fk.referenced_field}
+            JOIN {m2m.related_tables} ON {m2m.junction_table}.{m2m.related_fk.local_field} = {m2m.related_tables}.{m2m.related_fk.referenced_field}
             WHERE {m2m.junction_table}.{m2m.local_fk.local_field} IN ({placeholders})
             GROUP BY {m2m.junction_table}.{m2m.local_fk.local_field}
         '''
@@ -833,7 +977,7 @@ class SQLiteModel(AbstractModel):
         fields = [field for field in fields if field not in many_to_many_field_names]
 
         query, values, grouped_field_aliases = SQLQueryBuilder.build_query(
-            model=self._table_name,
+            model=self.name,
             fields=fields,
             conditions=conditions,
             relationships=relationships,
@@ -921,16 +1065,16 @@ class SQLiteModel(AbstractModel):
 
         new_fields_str = ', '.join(new_fields)
 
-        temp_table_name = f"{self._table_name}_temp"
+        temp_table_name = f"{self.name}_temp"
         self._cursor.execute(f"CREATE TABLE {temp_table_name} ({new_fields_str})")
 
         # Copy data from the old table to the new table
         old_fields_str = ', '.join(fields.keys())
-        self._cursor.execute(f"INSERT INTO {temp_table_name} ({old_fields_str}) SELECT {old_fields_str} FROM {self._table_name}")
+        self._cursor.execute(f"INSERT INTO {temp_table_name} ({old_fields_str}) SELECT {old_fields_str} FROM {self.name}")
 
         # Drop the old table and rename the new table
-        self._cursor.execute(f"DROP TABLE {self._table_name}")
-        self._cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {self._table_name}")
+        self._cursor.execute(f"DROP TABLE {self.name}")
+        self._cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {self.name}")
 
         self._connection.commit()
 
@@ -949,7 +1093,7 @@ class SQLiteModel(AbstractModel):
             raise ValueError("Invalid table name or field name")
 
         # Retrieve the table information
-        fields = self.get_fields(self._table_name)
+        fields = self.get_fields(self.name)
 
         # Disable foreign key constraints temporarily
         self._cursor.execute("PRAGMA foreign_keys=off;")
@@ -965,12 +1109,12 @@ class SQLiteModel(AbstractModel):
             field_definitions_str = ', '.join(field_definitions)
 
             # Create a temporary table with the new schema
-            temp_table_name = f"{self._table_name}_temp"
+            temp_table_name = f"{self.name}_temp"
             self._cursor.execute(f"CREATE TABLE {temp_table_name} ({field_definitions_str})")
-            self._cursor.execute(f"INSERT INTO {temp_table_name} ({field_names_str}) SELECT {field_names_str} FROM {self._table_name}")
+            self._cursor.execute(f"INSERT INTO {temp_table_name} ({field_names_str}) SELECT {field_names_str} FROM {self.name}")
             # Replace the old table with the new one
-            self._cursor.execute(f"DROP TABLE {self._table_name}")
-            self._cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {self._table_name}")
+            self._cursor.execute(f"DROP TABLE {self.name}")
+            self._cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {self.name}")
 
             # Remove the display field metadata
             self._remove_display_field(field_name)
@@ -979,7 +1123,7 @@ class SQLiteModel(AbstractModel):
             self._connection.commit()
 
         except sqlite3.Error as e:
-            logging.error(f"Error deleting field '{field_name}' from table '{self._table_name}': {e}")
+            logging.error(f"Error deleting field '{field_name}' from table '{self.name}': {e}")
             self._connection.rollback()
             raise
 
@@ -1017,7 +1161,7 @@ class SQLiteModel(AbstractModel):
         # Insert the main record
         field_names = ', '.join(data_dict.keys())
         placeholders = ', '.join(['?'] * len(data_dict))
-        sql = f"INSERT INTO {self._table_name} ({field_names}) VALUES ({placeholders})"
+        sql = f"INSERT INTO {self.name} ({field_names}) VALUES ({placeholders})"
         self._cursor.execute(sql, list(data_dict.values()))
         self._connection.commit()
 
@@ -1077,7 +1221,7 @@ class SQLiteModel(AbstractModel):
             ''', (list(pk_values.values())[0],))
 
         # Then, delete the main record from the table
-        query = f"DELETE FROM {self._table_name} WHERE {where_clause}"
+        query = f"DELETE FROM {self.name} WHERE {where_clause}"
         self._cursor.execute(query, where_values)
         self._connection.commit()
 
@@ -1113,7 +1257,7 @@ class SQLiteModel(AbstractModel):
         if data_dict:
             # Update the main record
             set_clause = ', '.join([f"{field} = ?" for field in data_dict.keys()])
-            sql = f"UPDATE {self._table_name} SET {set_clause} WHERE {pk_field} = ?"
+            sql = f"UPDATE {self.name} SET {set_clause} WHERE {pk_field} = ?"
             self._cursor.execute(sql, list(data_dict.values()) + [pk_value])
             self._connection.commit()
 
@@ -1141,7 +1285,7 @@ class SQLiteModel(AbstractModel):
             raise ValueError("Invalid table name or field names")
 
         # Use the fetch_one method to retrieve the related row
-        query = f"SELECT {field_name} FROM {self._table_name} WHERE {reference_field_name} = ? LIMIT 1"
+        query = f"SELECT {field_name} FROM {self.name} WHERE {reference_field_name} = ? LIMIT 1"
         self._cursor.execute(query, (reference_value,))
 
         if not (results := self._cursor.fetchone()):
@@ -1164,10 +1308,10 @@ class SQLiteModel(AbstractModel):
 
         # Ensure the display field exists in the table
         if field not in self.get_field_names():
-            raise ValueError(f"Field '{field}' does not exist in table '{self._table_name}'")
+            raise ValueError(f"Field '{field}' does not exist in table '{self.name}'")
 
         # Execute query to get the unique values for the display field
-        self._cursor.execute(f"SELECT DISTINCT {field} FROM {self._table_name} ORDER BY {field}")
+        self._cursor.execute(f"SELECT DISTINCT {field} FROM {self.name} ORDER BY {field}")
         return [row[0] for row in self._cursor.fetchall()]
 
     def add_display_field(self, field_name: str, display_field_name: str, display_format: str = None):
@@ -1177,7 +1321,7 @@ class SQLiteModel(AbstractModel):
         self._cursor.execute('''
             INSERT OR REPLACE INTO _meta_display_field (table_name, field_name, display_foreign_field_name, display_format)
             VALUES (?, ?, ?, ?);
-        ''', (self._table_name, field_name, display_field_name, display_format))
+        ''', (self.name, field_name, display_field_name, display_format))
         self._connection.commit()
 
     def get_display_field(self, field_name: str) -> Optional[Tuple[str, str]]:
@@ -1188,7 +1332,7 @@ class SQLiteModel(AbstractModel):
                 SELECT display_foreign_field_name, display_format
                 FROM _meta_display_field
                 WHERE table_name = ? AND field_name = ?;
-            ''', (self._table_name, field_name))
+            ''', (self.name, field_name))
         except sqlite3.OperationalError:
             pass
 
@@ -1229,7 +1373,7 @@ class SQLiteModel(AbstractModel):
             # Translate the rowid into the corresponding foreign key value
             self._cursor.execute(f'''
                 SELECT {m2m.local_fk.referenced_field}
-                FROM {self._table_name}
+                FROM {self.name}
                 WHERE rowid = ?
             ''', (from_value,))
             from_value = self._cursor.fetchone()[0]
@@ -1243,7 +1387,7 @@ class SQLiteModel(AbstractModel):
         # Insert new entries into the junction table
         for value in selected_values:
             self._cursor.execute(f'''
-                INSERT INTO {m2m.junction_table} ({m2m.local_fk.local_field}, {m2m.remote_fk.local_field})
+                INSERT INTO {m2m.junction_table} ({m2m.local_fk.local_field}, {m2m.related_fk.local_field})
                 VALUES (?, ?)
             ''', (from_value, value))
         
@@ -1264,7 +1408,7 @@ class SQLiteModel(AbstractModel):
             self._cursor.execute('''
                 DELETE FROM _meta_display_field
                 WHERE table_name = ? AND field_name = ?;
-            ''', (self._table_name, field_name))
+            ''', (self.name, field_name))
             self._connection.commit()
         except sqlite3.OperationalError:
             pass
@@ -1284,12 +1428,11 @@ class SQLiteModel(AbstractModel):
 
 class Entity:
 
-    def __init__(self, database: SQLiteDatabase, table_name: str, entity_id: Any):
+    def __init__(self, database: SQLiteDatabase, model_name: str, entity_id: Any):
         self._database = database
-        self._table_name = table_name
         self._id = entity_id
 
-        self._model = self._database.get_model(self._table_name)
+        self._model = self._database.get_model(model_name)
         self._cursor = self._database.cursor
     
     @property
@@ -1299,11 +1442,7 @@ class Entity:
     @property
     def model(self):
         return self._model
-    
-    @property
-    def table_name(self):
-        return self._table_name
-    
+
     @property
     def id(self):
         return self._id
