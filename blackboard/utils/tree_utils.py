@@ -201,7 +201,7 @@ class TreeUtil:
                 continue
 
             # Optionally filter by check state if only_checked is True
-            if is_only_checked and index.data(QtCore.Qt.CheckStateRole) == QtCore.Qt.CheckState.Unchecked:
+            if is_only_checked and index.data(QtCore.Qt.ItemDataRole.CheckStateRole) == QtCore.Qt.CheckState.Unchecked:
                 continue
 
             # Check if the index is a leaf node

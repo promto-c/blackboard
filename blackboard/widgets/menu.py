@@ -76,6 +76,7 @@ class SectionAction(QtWidgets.QWidgetAction):
             QtGui.QAction: The inserted action.
         """
         if not isinstance(action, QtGui.QAction):
+            text = text or action
             toolTip = toolTip or text
             action = QtGui.QAction(icon=icon, text=text, toolTip=toolTip, parent=self, **kwargs)
             if data is not None:

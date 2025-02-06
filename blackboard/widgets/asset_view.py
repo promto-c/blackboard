@@ -317,7 +317,7 @@ def main():
     database_view_widget.tree_widget.set_generator(generator)
 
     # Date Filter Setup
-    date_filter_widget = widgets.DateRangeFilterWidget(filter_name="Date")
+    date_filter_widget = widgets.DateFilterWidget(filter_name="Date")
     date_filter_widget.activated.connect(print)
     # Shot Filter Setup
     shot_filter_widget = widgets.MultiSelectFilterWidget(filter_name="Shot")

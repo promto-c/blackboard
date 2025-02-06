@@ -801,7 +801,7 @@ class SQLiteModel(AbstractModel):
         ]
 
     def query(self, fields: Optional[List[str]] = None, conditions: Optional[str] = None,
-              values: Optional[List[Any]] = None, as_dict: bool = False, handle_m2m: bool = False,
+              values: Optional[List[Any]] = None, as_dict: bool = True, handle_m2m: bool = False,
               order_by: Optional[Dict[str, 'SortOrder']] = None, relationships=None
               ) -> Union[Generator[Tuple, None, None], Generator[Dict[str, Union[int, str, float, None]], None, None]]:
         """Retrieve data from a specified table as a generator.

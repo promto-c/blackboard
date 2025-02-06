@@ -43,7 +43,7 @@ def test_insert_and_retrieve_record(db_manager: DatabaseManager):
     test_model = db_manager.create_table("test_table", {"id": "INTEGER PRIMARY KEY", "name": "TEXT"})
     test_model.insert_record({"name": "Test Name"})
 
-    rows = list(test_model.query())
+    rows = list(test_model.query(as_dict=False))
     assert len(rows) == 1
     assert rows[0][1] == "Test Name"
 
@@ -53,14 +53,14 @@ def test_update_record(db_manager: DatabaseManager):
     test_model.insert_record({"name": "Old Name"})
 
     # Retrieve the inserted record to get the rowid
-    rows = list(test_model.query(fields=["rowid", "name"]))
+    rows = list(test_model.query(fields=["rowid", "name"], as_dict=False))
     rowid = rows[0][0]
 
     # Update the record with a new name
     test_model.update_record({"name": "New Name"}, pk_value=rowid)
 
     # Query the updated record and verify the update
-    updated_rows = list(test_model.query(fields=["name"]))
+    updated_rows = list(test_model.query(fields=["name"], as_dict=False))
     assert updated_rows[0][0] == "New Name"
 
 def test_delete_field(db_manager: DatabaseManager):

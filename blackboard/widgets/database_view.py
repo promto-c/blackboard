@@ -123,14 +123,15 @@ class DataViewWidget(QtWidgets.QWidget):
         """Initialize signal-slot connections.
         """
         # Connect signals to slots
-        self.tree_widget.reload_requested.connect(self.activate_filter)
+        self.tree_widget.reload_requested.connect(self.populate)
+        self.filter_bar_widget.filter_changed.connect(self.populate)
+
         bb.utils.KeyBinder.bind_key('Ctrl+F', self.tree_widget, self.search_widget.set_text_as_selection)
 
     # Public Methods
     # --------------
     def add_filter_widget(self, filter_widget: 'FilterWidget'):
         self.filter_bar_widget.add_filter_widget(filter_widget)
-        filter_widget.activated.connect(self.activate_filter)
 
     def save_state(self, settings: QtCore.QSettings, group_name: str = 'data_view'):
         self.tree_widget.save_state(settings, group_name)
@@ -138,24 +139,14 @@ class DataViewWidget(QtWidgets.QWidget):
     def load_state(self, settings: QtCore.QSettings, group_name: str = 'data_view'):
         self.tree_widget.load_state(settings, group_name)
 
-    def activate_filter(self):
-        # Logic to filter data then populate
+    def populate(self):
+        fields = self.tree_widget.fields
+        conditions = self.filter_bar_widget.get_query_conditions()
+
         ...
-        # Example Implementation:
-        # ---
-        # id_to_data_dict = ...
-        # self.populate(id_to_data_dict)
 
-        raise NotImplementedError(f"{self.__class__.__name__}.activate_filter must be implemented by subclasses.")
-
-    def populate(self, id_to_data_dict: Dict[Iterable, Dict[str, Any]]):
-        # Clear old items
-        self.tree_widget.clear()
-
-        # Add items to tree
-        self.tree_widget.add_items(id_to_data_dict)
-
-        self.search_widget.update()
+        # Logic to filter data then populate
+        raise NotImplementedError(f"{self.__class__.__name__}.populate must be implemented by subclasses.")
 
     # Special Methods
     # ---------------
@@ -370,7 +361,6 @@ class AddEditRecordDialog(QtWidgets.QDialog):
                 related_records = list(
                     referenced_model.query(
                         fields=[fk.referenced_field, display_field],
-                        as_dict=True
                     )
                 )
                 display_field_info = referenced_model.get_field(display_field)
@@ -393,7 +383,6 @@ class AddEditRecordDialog(QtWidgets.QDialog):
                 related_records = list(
                     referenced_model.query(
                         fields=[fk.referenced_field],
-                        as_dict=True
                     )
                 )
 
@@ -518,7 +507,6 @@ class AddEditRecordDialog(QtWidgets.QDialog):
         referenced_model = self.db_manager.get_model(many_to_many_field.remote_fk.referenced_table)
         related_records = referenced_model.query(
             fields=[many_to_many_field.local_fk.referenced_field, display_field],
-            as_dict=True
         )
 
         # Add items to the list widget
@@ -724,7 +712,7 @@ class DatabaseViewWidget(DataViewWidget):
         # Check if the column header includes a related table
         if '.' in field_chain:
             parent_chain, local_field = field_chain.rsplit('.', 1)
-            local_table = self._current_model.resolve_model_chain(parent_chain)
+            local_table = self._base_model.resolve_model_chain(parent_chain)
         else:
             # Use the original current table
             local_table = self._current_table
@@ -788,10 +776,10 @@ class DatabaseViewWidget(DataViewWidget):
             return
 
         # Fetch sample data for preview (e.g., first 5 rows)
-        sample_data = list(self._current_model.query(as_dict=True))[:5]
+        sample_data = list(self._base_model.query())[:5]
 
         # Create and show the Functional Column Dialog
-        dialog = FunctionalColumnDialog(self.db_manager, self._current_model, sample_data, self)
+        dialog = FunctionalColumnDialog(self.db_manager, self._base_model, sample_data, self)
         dialog.exec_()
 
     def set_database_manager(self, db_manager: 'DatabaseManager'):
@@ -803,7 +791,7 @@ class DatabaseViewWidget(DataViewWidget):
         """Set the current table and load its data.
         """
         self._current_table = table_name
-        self._current_model = self.db_manager.get_model(table_name)
+        self._base_model = self.db_manager.get_model(table_name)
         self.load_table_data()
 
     def load_table_data(self):
@@ -812,9 +800,9 @@ class DatabaseViewWidget(DataViewWidget):
         if not self.db_manager or not self._current_table:
             return
 
-        primary_key = self._current_model.get_primary_keys()
-        fields = self._current_model.get_field_names()
-        many_to_many_field_names = self._current_model.get_many_to_many_field_names()
+        primary_key = self._base_model.get_primary_keys()
+        fields = self._base_model.get_field_names()
+        many_to_many_field_names = self._base_model.get_many_to_many_field_names()
 
         if not primary_key:
             primary_key = 'rowid'
@@ -823,9 +811,8 @@ class DatabaseViewWidget(DataViewWidget):
         self.tree_widget.clear()
         self.tree_widget.set_primary_key(primary_key)
         self.tree_widget.setHeaderLabels(fields + many_to_many_field_names)
-        generator = self._current_model.query(
+        generator = self._base_model.query(
             fields + many_to_many_field_names, 
-            as_dict=True, 
             handle_m2m=True
         )
         self.tree_widget.set_generator(generator)
@@ -836,7 +823,7 @@ class DatabaseViewWidget(DataViewWidget):
         if not self._current_table:
             return
 
-        dialog = AddEditRecordDialog(self.db_manager, self._current_model)
+        dialog = AddEditRecordDialog(self.db_manager, self._base_model)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             self.load_table_data()
 
@@ -844,7 +831,7 @@ class DatabaseViewWidget(DataViewWidget):
         """Edit the selected record from the tree widget.
         """
         row_data = {self.tree_widget.headerItem().text(col): item.get_value(col) for col in range(self.tree_widget.columnCount())}
-        dialog = AddEditRecordDialog(self.db_manager, self._current_model, row_data)
+        dialog = AddEditRecordDialog(self.db_manager, self._base_model, row_data)
 
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             self.load_table_data()
@@ -859,7 +846,7 @@ class DatabaseViewWidget(DataViewWidget):
             return
 
         # Get the primary key fields and their values
-        pk_fields = self._current_model.get_primary_keys()
+        pk_fields = self._base_model.get_primary_keys()
         pk_values = {pk_field: current_item[pk_field] for pk_field in pk_fields}
 
         # Construct a human-readable representation of the primary key(s) for the confirmation dialog
@@ -873,7 +860,7 @@ class DatabaseViewWidget(DataViewWidget):
         )
 
         if confirm == QtWidgets.QMessageBox.Yes:
-            self._current_model.delete_record(pk_values)
+            self._base_model.delete_record(pk_values)
             self.load_table_data()
 
     def update_add_filter_menu(self):
@@ -897,7 +884,7 @@ class DatabaseViewWidget(DataViewWidget):
             is_relation_column = True
         else:
             # Get field information for the column
-            field_info = self._current_model.get_field(column_name)
+            field_info = self._base_model.get_field(column_name)
 
             # Handle relation columns
             if field_info.is_foreign_key:
@@ -942,24 +929,15 @@ class DatabaseViewWidget(DataViewWidget):
             local_field (str): The foreign key field in the current table.
             referenced_field (str): The primary key field in the related table.
         """
-        current_column_names = self.tree_widget.fields.copy()
+        field_names = self.tree_widget.fields.copy()
 
         # Check if the related column header already exists
-        if relation_chain not in current_column_names:
-            current_column_names.append(relation_chain)
-            self.tree_widget.setHeaderLabels(current_column_names)
+        if relation_chain in field_names:
+            return
+        field_names.append(relation_chain)
+        self.tree_widget.setHeaderLabels(field_names)
 
-        pk = self._current_model.get_primary_keys()[0]
-
-        # Fetch data from the current table
-        data_tuples = self._current_model.query(fields=[pk, relation_chain], as_dict=False)
-
-        # Update the tree widget with the new column data
-        for pk_value, value in data_tuples:
-            item = self.tree_widget.get_item_by_id((pk_value,))
-            if not item:
-                continue
-            item.set_value(relation_chain, value)
+        self.populate()
 
     def add_relation_column_m2m(self, local_table: str, display_field: str, m2m_field: 'ManyToManyField', display_column_label: str):
         """Add a many-to-many relation column to the tree widget.
@@ -981,37 +959,24 @@ class DatabaseViewWidget(DataViewWidget):
         for data_dict in data_dicts:
             self.tree_widget.update_item(data_dict)
 
-    # TODO: Reimplement to query using conditions dict instead of 'where clause'
+    # NOTE: Obsolete. let implement `populate`
     def activate_filter(self):
         """Apply the active filters to the database query and update the tree widget.
         """
         if not self._current_table or not self.db_manager:
             return
 
-        conditions = []
-
-        # Iterate over all active filter widgets
-        for filter_widget in self.filter_bar_widget.get_active_filters():
-            column_name = filter_widget.filter_name
-
-            # Get field information for the column
-            field_info = self._current_model.get_field(column_name)
-            if not field_info:
-                continue  # Skip if field info is not available
-
-            # Get the filter condition and values from the filter widget
-            conditions.append(filter_widget.get_query_conditions())
+        conditions = self.filter_bar_widget.get_query_conditions()
 
         # Get the fields to select
-        fields = self._current_model.get_field_names()
-        many_to_many_field_names = self._current_model.get_many_to_many_field_names()
+        fields = self._base_model.get_field_names()
+        many_to_many_field_names = self._base_model.get_many_to_many_field_names()
         all_fields = fields + many_to_many_field_names
 
         # Execute the query
-        results = self._current_model.query(
+        results = self._base_model.query(
             fields=all_fields,
             conditions=conditions,
-            as_dict=True,
             handle_m2m=True
         )
 
@@ -1022,6 +987,15 @@ class DatabaseViewWidget(DataViewWidget):
             self.tree_widget.set_generator(results, is_fetch_all=True)
         else:
             self.tree_widget.set_generator(results)
+
+    # NOTE: WIP
+    def populate(self):
+        generator = self._base_model.query(
+            fields=self.tree_widget.fields,
+            conditions=self.filter_bar_widget.get_query_conditions(),
+        )
+        self.tree_widget.set_generator(generator)
+
 
 # Main Function
 # -------------
@@ -1053,7 +1027,7 @@ def main():
     database_view_widget.tree_widget.set_generator(generator)
 
     # Date Filter Setup
-    date_filter_widget = widgets.DateRangeFilterWidget(filter_name="Date")
+    date_filter_widget = widgets.DateFilterWidget(filter_name="Date")
     date_filter_widget.activated.connect(print)
     # Shot Filter Setup
     shot_filter_widget = widgets.MultiSelectFilterWidget(filter_name="Shot")

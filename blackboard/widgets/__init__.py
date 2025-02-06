@@ -1,8 +1,8 @@
 from .filter_widget import (
     FilterBarWidget, FilterWidget,
-    DateRangeFilterWidget,
+    DateFilterWidget,
     MultiSelectFilterWidget,
-    DateTimeRangeFilterWidget,
+    DateTimeFilterWidget,
     TextFilterWidget,
     FileTypeFilterWidget,
     BooleanFilterWidget,
@@ -25,7 +25,7 @@ from .label import LabelEmbedderWidget
 
 __all__ = [
     'FilterBarWidget', 'FilterWidget',
-    'DateRangeFilterWidget', 'DateTimeRangeFilterWidget',
+    'DateFilterWidget', 'DateTimeFilterWidget',
     'TextFilterWidget',
     'MultiSelectFilterWidget',
     'FileTypeFilterWidget',

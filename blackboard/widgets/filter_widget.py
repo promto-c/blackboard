@@ -355,6 +355,11 @@ class FilterBarWidget(QtWidgets.QWidget):
         """
         return [filter_widget for filter_widget in self._filter_widgets if filter_widget.is_active]
 
+    def get_query_conditions(self) -> List[Dict[str, Dict['FilterOperation', Any]]]:
+        """Return a list of query conditions for the active filters.
+        """
+        return [filter_widget.get_query_condition() for filter_widget in self.get_active_filters()]
+
     def count_filters(self) -> int:
         """Return the number of active filters.
         """
@@ -365,6 +370,7 @@ class FilterBarWidget(QtWidgets.QWidget):
     @property
     def filter_widgets(self) -> List['FilterWidget']:
         return self._filter_widgets
+
 
 class MoreOptionsButton(QtWidgets.QToolButton):
     def __init__(self, parent=None):
@@ -457,8 +463,9 @@ class FilterButton(QtWidgets.QPushButton):
 
 class FilterWidget(QtWidgets.QWidget):
 
-    SUPPORTED_TYPE = FieldType.NULL
-    CONDITIONS: List[FilterOperation] = SUPPORTED_TYPE.supported_operations
+    SUPPORTED_TYPE: Optional[FilterOperation] = None
+    CONDITIONS: List[FilterOperation] = []
+    DEFAULT_OPERATION = FilterOperation.EQ
 
     activated = QtCore.Signal(bool)
     removed = QtCore.Signal()
@@ -471,7 +478,7 @@ class FilterWidget(QtWidgets.QWidget):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         # Automatically register the subclass if it defines a SUPPORTED_TYPE attribute
-        if hasattr(cls, 'SUPPORTED_TYPE') and cls.SUPPORTED_TYPE is not None:
+        if cls.SUPPORTED_TYPE is not None:
             FilterWidget.registry[cls.SUPPORTED_TYPE] = cls
             cls.CONDITIONS = cls.SUPPORTED_TYPE.supported_operations
 
@@ -496,6 +503,7 @@ class FilterWidget(QtWidgets.QWidget):
 
         # Private Attributes
         # ------------------
+        self._value = None
         self._is_filter_applied = False
         self._initial_focus_widget: QtWidgets.QWidget = None
         self._saved_state = dict()
@@ -555,10 +563,10 @@ class FilterWidget(QtWidgets.QWidget):
 
         self.condition_combo_box = QtWidgets.QComboBox()
         self.condition_combo_box.setProperty('widget-style', 'clean')
-
         # Update the condition combo box
         for condition in self.CONDITIONS:
             self.condition_combo_box.addItem(condition.display_name, condition)
+        self.condition_combo_box.setCurrentText(self.DEFAULT_OPERATION.display_name)
 
         self.clear_button = QtWidgets.QToolButton(self, icon=self.tabler_icon.clear_all, toolTip="Clear all")
 
@@ -622,21 +630,22 @@ class FilterWidget(QtWidgets.QWidget):
         self.switch_to_toggle_filter_action.triggered.connect(lambda: self.set_filter_mode(FilterMode.TOGGLE))
 
         # Connect signals with the filter button
-        self.activated.connect(self._update_button_active_state)
+        self.activated.connect(self._update_active_state)
+        self.activated.connect(self._update_button_text)
 
         bb.utils.KeyBinder.bind_key('Enter', self, self.apply_filter)
 
     # Private Methods
     # ---------------
-    def _update_button_active_state(self, state: bool):
+    def _update_active_state(self, state: bool):
         """Update the active state based on the filter widget's state.
         """
         self._button.setChecked(state)
-        if self.filter_mode == FilterMode.STANDARD:
-            if state:
-                self._button.setText(self.format_label(self.get_value()))
-            else:
-                self._clear_button_text()
+
+    def _update_button_text(self):
+        """Update the button text.
+        """
+        self._button.setText(self.format_label(self.get_value()))
 
     def _clear_button_text(self):
         """Clear the button text.
@@ -736,7 +745,7 @@ class FilterWidget(QtWidgets.QWidget):
     def get_filter_condition(self) -> 'FilterOperation':
         return self.condition_combo_box.currentData(QtCore.Qt.ItemDataRole.UserRole)
 
-    def get_query_conditions(self) -> Dict[str, Dict['FilterOperation', Any]]:
+    def get_query_condition(self) -> Dict[str, Dict['FilterOperation', Any]]:
         return {
             self.filter_name: {
                 self.get_filter_condition(): self.get_value()
@@ -793,22 +802,24 @@ class FilterWidget(QtWidgets.QWidget):
     def save_change(self):
         """Save changes. Must be implemented in subclasses.
         """
-        raise NotImplementedError("Subclasses must implement save_change")
+        self.save_state('condition', self.selected_condition.display_name)
 
     def clear_filter(self):
         """Clear the filter condition. Must be implemented in subclasses.
         """
-        raise NotImplementedError("Subclasses must implement clear_filter")
-    
-    def set_filter(self):
-        """Set the filter. Must be implemented in subclasses.
-        """
-        raise NotImplementedError("Subclasses must implement set_filter")
+        self.condition_combo_box.setCurrentText(self.DEFAULT_OPERATION.display_name)
+        self.save_state('condition', self.DEFAULT_OPERATION.display_name)
 
     def get_value(self) -> Any:
         """Get the filter values. Must be implemented in subclasses.
         """
-        return
+        return self._value
+    
+    def set_value(self, value: Any):
+        """Set the filter values. Must be implemented in subclasses.
+        """
+        self._value = value
+        self._update_button_text()
 
     def format_label(self, value: List[Any] = '', use_format: bool = True):
         """Apply additional formatting to the text.
@@ -863,10 +874,10 @@ class FilterWidget(QtWidgets.QWidget):
         self.setWindowIcon(icon)
 
 
-# TODO: Set selection appropriate as selected conditions
-class DateRangeFilterWidget(FilterWidget):
+class DateFilterWidget(FilterWidget):
 
     SUPPORTED_TYPE = FieldType.DATE
+    DEFAULT_OPERATION = FilterOperation.BETWEEN
 
     # Define a mapping from FilterOperation to label formats
     FORMATTER_MAPPING: Dict['FilterOperation', str] = {
@@ -902,8 +913,6 @@ class DateRangeFilterWidget(FilterWidget):
         for date_range in DateRange:
             self.relative_date_combo_box.addItem(str(date_range), date_range)
 
-        self.condition_combo_box.setCurrentText(str(FilterOperation.BETWEEN))
-
         # Set the layout for the widget
         self.widget_layout.addWidget(self.relative_date_combo_box)
         self.widget_layout.addWidget(self.calendar)
@@ -921,9 +930,7 @@ class DateRangeFilterWidget(FilterWidget):
     def _update_selection_mode(self, index):
         """Update the selection mode based on the selected condition.
         """
-        filter_operation = self.condition_combo_box.currentData()
-
-        if filter_operation.num_values == 1:
+        if self.selected_condition.num_values == 1:
             self.calendar.set_selection_mode(CalendarSelectionMode.SINGLE)
         else:
             self.calendar.set_selection_mode(CalendarSelectionMode.RANGE)
@@ -946,6 +953,7 @@ class DateRangeFilterWidget(FilterWidget):
     def save_change(self):
         """Save the current selection as the new state.
         """
+        super().save_change()
         current_index = self.relative_date_combo_box.currentIndex()
         filter_label = self.relative_date_combo_box.currentText()
         
@@ -975,7 +983,7 @@ class DateRangeFilterWidget(FilterWidget):
         else:
             return
 
-    def format_label(self, values):
+    def format_label(self, values: List['datetime.date'] | 'datetime.date'):
         # Retrieve the format string based on the selected condition
         format_str = self.FORMATTER_MAPPING.get(self.selected_condition, self.selected_condition.display_name)
         if self.selected_condition.num_values > 1:
@@ -996,6 +1004,7 @@ class DateRangeFilterWidget(FilterWidget):
     def clear_filter(self):
         """Clear the selected date range and reset the relative date selector.
         """
+        super().clear_filter()
         # Reset the relative date selector to its initial state
         self.relative_date_combo_box.setCurrentIndex(0)
         self.relative_date_combo_box.setItemText(0, str(DateRange.SELECTED_DATE_RANGE))
@@ -1032,9 +1041,11 @@ class DateRangeFilterWidget(FilterWidget):
 
 
 # NOTE: WIP
-class DateTimeRangeFilterWidget(DateRangeFilterWidget):
+class DateTimeFilterWidget(DateFilterWidget):
 
     SUPPORTED_TYPE = FieldType.DATETIME
+
+    TIME_FORMAT = "HH:mm:ss"
 
     def __init__(self, filter_name: str = '', display_name: str = None, parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
@@ -1050,10 +1061,8 @@ class DateTimeRangeFilterWidget(DateRangeFilterWidget):
         self.time_layout = QtWidgets.QHBoxLayout()
         self.widget_layout.addLayout(self.time_layout)
 
-        self.time_start_edit = QtWidgets.QTimeEdit(self)
-        self.time_end_edit = QtWidgets.QTimeEdit(self)
-        self.time_start_edit.setDisplayFormat("HH:mm:ss")
-        self.time_end_edit.setDisplayFormat("HH:mm:ss")
+        self.time_start_edit = QtWidgets.QTimeEdit(self, displayFormat=self.TIME_FORMAT)
+        self.time_end_edit = QtWidgets.QTimeEdit(self, displayFormat=self.TIME_FORMAT)
 
         self.time_start_label = widgets.LabelEmbedderWidget(self.time_start_edit, 'Start Time', self)
         self.time_end_label = widgets.LabelEmbedderWidget(self.time_end_edit, 'End Time', self)
@@ -1099,6 +1108,7 @@ class TextFilterWidget(FilterWidget):
     """
 
     SUPPORTED_TYPE = FieldType.TEXT
+    DEFAULT_OPERATION = FilterOperation.CONTAINS
 
     def __init__(self, filter_name: str = "Text Filter", display_name: str = None, parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
@@ -1131,7 +1141,7 @@ class TextFilterWidget(FilterWidget):
     def discard_change(self):
         """Revert the widget to its previously saved state.
         """
-        saved_condition = self.load_state('condition', FilterOperation.CONTAINS.display_name)
+        saved_condition = self.load_state('condition', self.DEFAULT_OPERATION.display_name)
         self.condition_combo_box.setCurrentText(saved_condition)
 
         self.text_edit.setText(self.load_state('text', ""))
@@ -1139,22 +1149,21 @@ class TextFilterWidget(FilterWidget):
     def save_change(self):
         """Save the current state of the filter settings.
         """
-        self.save_state('condition', self.selected_condition.display_name)
+        super().save_change()
         self.save_state('text', self.text_edit.text())
 
     def get_value(self):
         if not self.selected_condition.requires_value():
-            text_value = ''
             return
-        else:
-            text_value = self.text_edit.text()
-            return text_value
+        
+        return self.text_edit.text()
 
     def clear_filter(self):
         """Clear all filter settings and reset to the default state.
         """
-        self.condition_combo_box.setCurrentIndex(0)
+        super().clear_filter()
         self.text_edit.clear()
+        self.save_state('text', '')
 
     def update_ui_for_condition(self, index: int):
         """Update UI components based on the selected condition.
@@ -1240,6 +1249,7 @@ class MultiSelectFilterWidget(FilterWidget):
     """
 
     SUPPORTED_TYPE = FieldType.ENUM
+    DEFAULT_OPERATION = FilterOperation.IN
 
     def __init__(self, filter_name: str = '', display_name: str = None, parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
@@ -1375,7 +1385,7 @@ class MultiSelectFilterWidget(FilterWidget):
         model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), filter_func=filter_func)
 
         for model_index in model_indexes:
-            self.tree_view.model().setData(model_index, checked_state, QtCore.Qt.CheckStateRole)
+            self.tree_view.model().setData(model_index, checked_state, QtCore.Qt.ItemDataRole.CheckStateRole)
 
         # TODO: Handle to add new inputs
         # # Check if the tag is a wildcard
@@ -1417,7 +1427,7 @@ class MultiSelectFilterWidget(FilterWidget):
             if is_proxy_model:
                 model_index_to_check_state[model_index] = checked_state
             else:
-                self.tree_view.model().setData(model_index, checked_state, QtCore.Qt.CheckStateRole)
+                self.tree_view.model().setData(model_index, checked_state, QtCore.Qt.ItemDataRole.CheckStateRole)
 
         if is_proxy_model:
             self.tree_view.model().set_check_states(model_index_to_check_state)
@@ -1425,19 +1435,16 @@ class MultiSelectFilterWidget(FilterWidget):
     def get_checked_state_dict(self, parent_index: QtCore.QModelIndex = QtCore.QModelIndex()):
         """Return a dictionary of the checked state for each item.
         """
-        checked_state_dict = {}
-
-        model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), parent_index)
-        for model_index in model_indexes:
-            text = model_index.data()
-            checked_state = model_index.data(QtCore.Qt.CheckStateRole)
-            checked_state_dict[text] = checked_state
-
-        return checked_state_dict
+        return {
+            model_index.data(): model_index.data(QtCore.Qt.ItemDataRole.CheckStateRole)
+            for model_index in bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), parent_index)
+        }
 
     def clear_filter(self):
         """Clear all selections in the tree widget.
         """
+        super().clear_filter()
+
         # Uncheck all items in the tree widget
         self.uncheck_all()
 
@@ -1447,10 +1454,10 @@ class MultiSelectFilterWidget(FilterWidget):
     def uncheck_all(self, parent_index: QtCore.QModelIndex = QtCore.QModelIndex()):
         """Recursively unchecks all child indexes.
         """
-        model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), parent_index)
+        model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), parent_index, is_only_checked=True)
 
         for model_index in model_indexes:
-            self.tree_view.model().setData(model_index, QtCore.Qt.CheckState.Unchecked, QtCore.Qt.CheckStateRole)
+            self.tree_view.model().setData(model_index, QtCore.Qt.CheckState.Unchecked, QtCore.Qt.ItemDataRole.CheckStateRole)
 
     def add_items(self, item_names: Union[Dict[str, List[str]], List[str]]):
         """Add items to the tree widget.
@@ -1525,15 +1532,6 @@ class MultiSelectFilterWidget(FilterWidget):
 
     # Slot Implementations
     # --------------------
-    def set_filter(self, filters: List[str]):
-        """Set the filter items.
-        """
-        self.clear_filter()
-        self.set_check_items(filters)
-        self.apply_filter()
-
-        self.tree_view.expandAll()
-
     def discard_change(self):
         """Discard changes and revert to the saved state.
         """
@@ -1543,16 +1541,28 @@ class MultiSelectFilterWidget(FilterWidget):
     def save_change(self):
         """Save the changes and emit the filter data.
         """
+        super().save_change()
+
         checked_state_dict = self.get_checked_state_dict()
         self.save_state('checked_state', checked_state_dict)
 
     def get_value(self) -> List[str]:
         return self.tag_list_view.get_tags()
 
+    def set_value(self, values: List[str]):
+        """Set the filter items.
+        """
+        # Uncheck all items in the tree widget and clear the line edit
+        self.uncheck_all()
+        self.filter_entry_edit.clear()
+        # Set new
+        self.set_check_items(values)
+
+        self.tree_view.expandAll()
+        self._update_button_text()
+
 
 class FileTypeFilterWidget(FilterWidget):
-
-    SUPPORTED_TYPE = FieldType.ENUM
 
     def __init__(self, filter_name: str = '', display_name: str = None, parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
@@ -1639,7 +1649,10 @@ class FileTypeFilterWidget(FilterWidget):
     def get_checked_state_dict(self):
         """Return a dictionary of the checked state for each checkbox.
         """
-        return {checkbox.text(): checkbox.isChecked() for checkbox in self.checkboxes.values()}
+        return {
+            checkbox.text(): checkbox.isChecked()
+            for checkbox in self.checkboxes.values()
+        }
 
     def uncheck_all(self):
         """Uncheck all checkboxes.
@@ -1650,6 +1663,8 @@ class FileTypeFilterWidget(FilterWidget):
     def clear_filter(self):
         """Clear all selections and resets the filter to its initial state.
         """
+        super().clear_filter()
+
         # Uncheck all checkboxes
         self.uncheck_all()
         # Clear the custom input field
@@ -1660,12 +1675,11 @@ class FileTypeFilterWidget(FilterWidget):
     def save_change(self):
         """Save the changes and emit the filter data.
         """
-        custom_types = self.get_custom_types()
-        checked_state_dict = self.get_checked_state_dict()
-        
+        super().save_change()
+
         # Save and add custom extensions
-        self.save_state('custom_input', custom_types)
-        self.save_state('checked_state', checked_state_dict)
+        self.save_state('custom_input', self.get_custom_types())
+        self.save_state('checked_state', self.get_checked_state_dict())
 
     def discard_change(self):
         """Revert any changes made.
@@ -1766,7 +1780,7 @@ class NumericFilterWidget(FilterWidget):
     def save_change(self):
         """Save the current state of the filter settings.
         """
-        self.save_state('condition', self.selected_condition.display_name)
+        super().save_change()
         self.save_state('lower_value', self.lower_value_edit.text())
         self.save_state('upper_value', self.upper_value_edit.text())
 
@@ -1791,7 +1805,7 @@ class NumericFilterWidget(FilterWidget):
     def clear_filter(self):
         """Clear all filter settings and reset to the default state.
         """
-        self.condition_combo_box.setCurrentIndex(0)
+        super().clear_filter()
         self.lower_value_edit.clear()
         self.upper_value_edit.clear()
 
@@ -1867,6 +1881,7 @@ class BooleanFilterWidget(FilterWidget):
     """
 
     SUPPORTED_TYPE = FieldType.BOOLEAN
+    DEFAULT_OPERATION = FilterOperation.EQ
 
     def __init__(self, filter_name: str = "Boolean Filter", display_name: str = None, parent: QtWidgets.QWidget = None):
         super().__init__(filter_name=filter_name, display_name=display_name, parent=parent)
@@ -1908,7 +1923,7 @@ class BooleanFilterWidget(FilterWidget):
     
     def on_condition_changed(self):
         # When condition is EQ or NEQ, show the boolean value widget; otherwise, hide it.
-        if self.condition_combo_box.currentData() in (FilterOperation.EQ, FilterOperation.NEQ):
+        if self.selected_condition.requires_value():
             self.value_widget.show()
         else:
             self.value_widget.hide()
@@ -1929,30 +1944,29 @@ class BooleanFilterWidget(FilterWidget):
     
     def save_change(self):
         """Save the current state of the filter settings."""
-        current_op = self.condition_combo_box.currentData()
-        self.save_state('condition', current_op.display_name)
+        super().save_change()
         # Save the boolean value only if the condition requires it.
-        if current_op in (FilterOperation.EQ, FilterOperation.NEQ):
+        if self.selected_condition.requires_value():
             # The button group's checked id: 1 for True, 0 for False.
             selected_bool = bool(self.boolean_group.checkedId())
             self.save_state('value', selected_bool)
+        else:
+            self.save_state('value', None)
 
     def format_label(self, _values=None):
         # Format a label based on the condition and (if applicable) the boolean value.
-        current_op = self.condition_combo_box.currentData()
-        if current_op in (FilterOperation.EQ, FilterOperation.NEQ):
+        if self.selected_condition.requires_value():
             selected_bool = "True" if self.boolean_group.checkedId() == 1 else "False"
-            label_text = f"{self.display_name}: {current_op.display_name} {selected_bool}"
+            label_text = f"{self.display_name}: {self.selected_condition.display_name} {selected_bool}"
         else:
-            label_text = f"{self.display_name}: {current_op.display_name}"
+            label_text = f"{self.display_name}: {self.selected_condition.display_name}"
         return label_text
     
     def clear_filter(self):
         """Clear the filter settings and reset to the default state."""
         # Reset condition to "Equals" (default) and select True.
-        self.condition_combo_box.setCurrentIndex(0)
+        super().clear_filter()
         self.btn_true.setChecked(True)
-        self.save_state('condition', FilterOperation.EQ.display_name)
         self.save_state('value', True)
 
 
@@ -2009,10 +2023,10 @@ if __name__ == '__main__':
     model.appendRow(berries)
 
     # Date Filter Setup
-    date_filter_widget = DateRangeFilterWidget(filter_name="Date")
+    date_filter_widget = DateFilterWidget(filter_name="Date")
     date_filter_widget.activated.connect(print)
     # Date Filter Setup
-    date_time_filter_widget = DateTimeRangeFilterWidget(filter_name="Date Time")
+    date_time_filter_widget = DateTimeFilterWidget(filter_name="Date Time")
     date_time_filter_widget.activated.connect(print)
     # Shot Filter Setup
     shot_filter_widget = MultiSelectFilterWidget(filter_name="Shot")

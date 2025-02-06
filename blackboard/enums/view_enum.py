@@ -37,16 +37,18 @@ class FilterOperation(Enum):
     AFTER = ("After", "> ?", 1)
     EQ = ("Equals", "= ?", 1)
     NEQ = ("Not Equals", "!= ?", 1)
-    CONTAINS = ("Contains", "LIKE '%' || ? || '%'", 1)   # Special LIKE operator for string matching
+    CONTAINS = ("Contains", "LIKE '%' || ? || '%'", 1)                  # Special LIKE operator for string matching
     NOT_CONTAINS = ("Does Not Contain", "NOT LIKE '%' || ? || '%'", 1)
-    STARTS_WITH = ("Starts With", "LIKE ? || '%'", 1)  # Start with pattern matching
-    ENDS_WITH = ("Ends With", "LIKE '%' || ?", 1)      # End with pattern matching
-    IS_NULL = ("Is Null", "IS NULL", 0)  # Checks for NULL values
-    IS_NOT_NULL = ("Is Not Null", "IS NOT NULL", 0)  # Checks for NOT NULL values
-    IN = ("In", "IN", -1)  # Special case for IN query, variable number of arguments
-    NOT_IN = ("Not In", "NOT IN", -1)  # Special case for NOT IN query, variable number of arguments
-    BETWEEN = ("Between", "BETWEEN ? AND ?", 2)  # Special case for BETWEEN operator, requires two values
-    NOT_BETWEEN = ("Not Between", "NOT BETWEEN ? AND ?", 2)  # Special case for NOT BETWEEN operator, requires two values
+    STARTS_WITH = ("Starts With", "LIKE ? || '%'", 1)                   # Start with pattern matching
+    ENDS_WITH = ("Ends With", "LIKE '%' || ?", 1)                       # End with pattern matching
+    NOT_STARTS_WITH = ("Not Starts With", "NOT LIKE ? || '%'", 1)
+    NOT_ENDS_WITH = ("Not Ends With", "NOT LIKE '%' || ?", 1)
+    IS_NULL = ("Is Null", "IS NULL", 0)                                 # Checks for NULL values
+    IS_NOT_NULL = ("Is Not Null", "IS NOT NULL", 0)                     # Checks for NOT NULL values
+    IN = ("In", "IN", -1)                                               # Special case for IN query, variable number of arguments
+    NOT_IN = ("Not In", "NOT IN", -1)                                   # Special case for NOT IN query, variable number of arguments
+    BETWEEN = ("Between", "BETWEEN ? AND ?", 2)                         # Special case for BETWEEN operator, requires two values
+    NOT_BETWEEN = ("Not Between", "NOT BETWEEN ? AND ?", 2)             # Special case for NOT BETWEEN operator, requires two values
 
     # Initialization and Setup
     # ------------------------
