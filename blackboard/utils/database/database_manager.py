@@ -230,7 +230,7 @@ class ViewModel:
         self._relation_chains.append(relation_chain)
         # Cache join tables
         for step in relation_chain.steps:
-            self._join_tables.add((step.local_table, step.foreign_key, step.referenced_table, step.referenced_field))
+            self._join_tables.add((step.local_table, step.foreign_key, step.related_table, step.related_field))
         # Add the select fields
         self._selected_fields.extend(relation_chain.select_fields)
 
@@ -257,18 +257,18 @@ class ViewModel:
             current_alias = self._aliases.get(current_table, current_table)
             for step in relation_chain.steps:
                 # Generate an alias for the referenced table if not already aliased
-                if step.referenced_table not in self._aliases:
-                    alias = f"{step.referenced_table}_alias{self._alias_counter}"
+                if step.related_table not in self._aliases:
+                    alias = f"{step.related_table}_alias{self._alias_counter}"
                     self._alias_counter += 1
-                    self._aliases[step.referenced_table] = alias
+                    self._aliases[step.related_table] = alias
                 else:
-                    alias = self._aliases[step.referenced_table]
+                    alias = self._aliases[step.related_table]
                 # Build the JOIN clause
-                join_clause = f" LEFT JOIN {step.referenced_table} AS {alias} ON {current_alias}.{step.foreign_key} = {alias}.{step.referenced_field}"
+                join_clause = f" LEFT JOIN {step.related_table} AS {alias} ON {current_alias}.{step.foreign_key} = {alias}.{step.related_field}"
                 join_clauses.append(join_clause)
                 # Update current table and alias
                 current_alias = alias
-                current_table = step.referenced_table
+                current_table = step.related_table
         # Append the JOIN clauses to the query
         query += ' '.join(join_clauses)
         return query

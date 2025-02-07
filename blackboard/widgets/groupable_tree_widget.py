@@ -422,6 +422,8 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         self.uniform_row_height_slider.valueChanged.connect(self.tree_widget.set_row_height)
         self.reload_action.triggered.connect(self.tree_widget.reload_requested.emit)
 
+
+# TODO: Fix cell color blending when set color adaptive at first column
 class GroupableTreeWidget(MomentumScrollTreeWidget):
     """A QTreeWidget subclass that displays data in a tree structure with the ability to group data by a specific column.
 
