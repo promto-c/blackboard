@@ -432,8 +432,8 @@ class SQLiteModel(AbstractModel):
             # Skip if the index is not unique
             if not index['unique']:
                 continue  
-            for field in self._database.query_raw(f"PRAGMA index_info({index['name']})", as_dict=False):
-                unique_fields.append(field[2])
+            for field in self._database.query_raw(f"PRAGMA index_info({index['name']})"):
+                unique_fields.append(field['name'])
 
         return unique_fields
 

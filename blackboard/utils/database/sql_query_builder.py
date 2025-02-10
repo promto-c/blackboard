@@ -123,7 +123,7 @@ class SQLQueryBuilder:
 
         # Convert input into a list of tuples: [(field, alias)]
         if not fields:
-            return "SELECT *", grouped_field_aliases
+            return "*", grouped_field_aliases
         elif isinstance(fields, dict):
             # Convert each dictionary item into tuples of (field, alias)
             fields = [(field, alias) for field, alias in fields.items()]
@@ -140,7 +140,7 @@ class SQLQueryBuilder:
             fields = expanded_fields
         else:
             # Treat any other string input as a direct SELECT clause
-            return f"SELECT\n\t{fields}", grouped_field_aliases
+            return fields, grouped_field_aliases
 
         # Handle both list of tuples (field, alias)
         select_parts = [
@@ -148,7 +148,7 @@ class SQLQueryBuilder:
             for field, alias in fields
         ]
         # NOTE: Handle indirect relational fields, such as one-to-many relationships.
-        return "SELECT\n\t" + ",\n\t".join(select_parts), grouped_field_aliases
+        return ",\n\t".join(select_parts), grouped_field_aliases
 
     @staticmethod
     def build_from_clause(current_model: str) -> str:
@@ -258,8 +258,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             join_clauses.append(join_clause)
 
         if group_by_fields:
-            group_by_fields_str = ', '.join(group_by_fields)
-            group_by_clause = f'GROUP BY\n\t{group_by_fields_str}'
+            group_by_clause = ', '.join(group_by_fields)
         else:
             group_by_clause = None
 
@@ -267,40 +266,40 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         return '\n'.join(join_clauses), group_by_clause
 
     @staticmethod
-    def build_where_clause(conditions: Optional[Dict[Union[GroupOperator, str], Any]], 
+    def build_where_clause(conditions: Dict[Union[GroupOperator, str], Any], 
                            group_operator: Union[GroupOperator, str] = GroupOperator.AND,
-                           build_where_root: bool = True) -> Tuple[str, Set[str], List[Any]]:
+                           ) -> Tuple[str, Set[str], List[Any]]:
         """Build the WHERE clause of the query.
 
         Examples:
             >>> SQLQueryBuilder.build_where_clause({"name": "John"})
-            ('WHERE\\n\\t_.name = ?', ['John'])
+            ('_.name = ?', ['John'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "age": {"gte": 18},
             ...     "name": {"contains": "John"}
-            ... }, build_where_root=False)
+            ... })
             ("_.age >= ? AND _.name LIKE '%' || ? || '%'", [18, 'John'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "status": {"in": ["active", "pending", "suspended"]}
-            ... }, build_where_root=False)
+            ... })
             ('_.status IN (?, ?, ?)', ['active', 'pending', 'suspended'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "status": {"not_in": ["inactive", "deleted"]}
-            ... }, build_where_root=False)
+            ... })
             ('_.status NOT IN (?, ?)', ['inactive', 'deleted'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "age": {"lt": 25},
             ...     "name": {"contains": "John"}
-            ... }, build_where_root=False)
+            ... })
             ("_.age < ? AND _.name LIKE '%' || ? || '%'", [25, 'John'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "id": 123
-            ... }, build_where_root=False)
+            ... })
             ('_.id = ?', [123])
 
             >>> SQLQueryBuilder.build_where_clause({
@@ -310,7 +309,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             ...        "assigned_to.role": {"eq": "Artist"}
             ...    }
             ... })
-            ("WHERE\\n\\t('shot.sequence.project'.name LIKE '%' || ? || '%' OR 'shot'.status = ? OR 'assigned_to'.role = ?)", ['Forest', 'Completed', 'Artist'])
+            ("('shot.sequence.project'.name LIKE '%' || ? || '%' OR 'shot'.status = ? OR 'assigned_to'.role = ?)", ['Forest', 'Completed', 'Artist'])
 
             >>> SQLQueryBuilder.build_where_clause({
             ...     "OR": {
@@ -321,7 +320,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             ...         }
             ...     }
             ... })
-            ('WHERE\\n\\t(_.age < ? OR (_.status = ? AND _.id >= ?))', [18, 'inactive', 100])
+            ('(_.age < ? OR (_.status = ? AND _.id >= ?))', [18, 'inactive', 100])
         """
         where_clauses = []
         values = []
@@ -330,15 +329,10 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         if not conditions:
             return None, None, None
 
-        if isinstance(conditions, str):
-            return f'WHERE\n\t{conditions}', fields, values
-
         for key, value in SQLQueryBuilder._extract_key_value_pairs(conditions):
             # Handle key as `GroupOperator`
             if isinstance(key, GroupOperator) or GroupOperator.is_valid(key):
-                sub_where_clause, sub_fields, sub_values = SQLQueryBuilder.build_where_clause(
-                    value, group_operator=key, build_where_root=False
-                )
+                sub_where_clause, sub_fields, sub_values = SQLQueryBuilder.build_where_clause(value, group_operator=key)
                 where_clauses.append(f"({sub_where_clause})")
                 fields.update(sub_fields)
                 values.extend(sub_values)
@@ -373,13 +367,11 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
                 values.append(value)
 
         where_clauses_str = SQLQueryBuilder._join_where_clauses(where_clauses, group_operator)
-        if build_where_root:
-            where_clauses_str = f'WHERE\n\t{where_clauses_str}'
 
         return where_clauses_str, fields, values
 
     @staticmethod
-    def build_order_by_clause(order_by: Optional[Dict[str, SortOrder]]) -> str:
+    def build_order_by_clause(order_by: Dict[str, SortOrder]) -> str:
         """Build the ORDER BY clause of the query.
         
         >>> SQLQueryBuilder.build_order_by_clause({
@@ -395,20 +387,18 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         "ORDER BY\\n\\t'shot'.name DESC, _.name ASC"
         """
         if not order_by:
-            return ""
-        
-        if isinstance(order_by, str):
-            return f'ORDER BY\n\t{order_by}'
+            return
 
         # Ensure that the input for order_by values are `SortOrder` or strings
-        order_by_clause = ", ".join(
-            [f"{SQLQueryBuilder._build_inner_alias(field)} {str(direction).upper()}" for field, direction in order_by.items()]
+        return ", ".join(
+            [
+                f"{SQLQueryBuilder._build_inner_alias(field)} {str(direction).upper()}"
+                for field, direction in order_by.items()
+            ]
         )
 
-        return f"ORDER BY\n\t{order_by_clause}"
-
     @staticmethod
-    def build_query(model: str, fields = None, conditions = None, relationships = None, order_by: Optional[Dict[str, SortOrder]] = None, limit: int = None, values = None):
+    def build_query(model: str, fields = None, conditions = None, relationships = None, order_by: Optional[Dict[str, SortOrder]] = None, limit: int = None):
         
         # Fill relationships
         if relationships:
@@ -419,31 +409,23 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
 
         # NOTE: Handle indirect relational fields, such as one-to-many relationships.
         select_clause, grouped_field_aliases = SQLQueryBuilder.build_select_clause(fields, relationships, base_model=model)
-
-        query_clauses = [
-            select_clause,
-            SQLQueryBuilder.build_from_clause(model),
-        ]
-
-        where_clause, where_fields, extracted_values = SQLQueryBuilder.build_where_clause(conditions)
-        if where_fields:
-            if fields:
-                fields = list(where_fields) + list(fields)
-            else:
-                fields = list(where_fields)
+        where_clause, where_fields, values = SQLQueryBuilder.build_where_clause(conditions)
+        fields = list(fields or []) + list(where_fields or [])
         join_clause, group_by_clause = SQLQueryBuilder.build_join_clause(fields, model, relationships)
-        
-        values = values or extracted_values
         order_by_clause = SQLQueryBuilder.build_order_by_clause(order_by)
 
+        query_clauses = [
+            f"SELECT\n\t{select_clause}",
+            f"FROM\n\t'{model}' AS _",
+        ]
         if join_clause:
             query_clauses.append(join_clause)
         if where_clause:
-            query_clauses.append(where_clause)
+            query_clauses.append(f'WHERE\n\t{where_clause}')
         if group_by_clause:
-            query_clauses.append(group_by_clause)
+            query_clauses.append(f'GROUP BY\n\t{group_by_clause}')
         if order_by_clause:
-            query_clauses.append(order_by_clause)
+            query_clauses.append(f'ORDER BY\n\t{order_by_clause}')
         if limit:
             query_clauses.append(f'LIMIT\n\t{limit}')
 
@@ -456,7 +438,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             yield from conditions.items()
         else:  # Case where `where` is a list of dictionaries
             for condition_dict in conditions:
-                yield next(iter(condition_dict.items()))
+                yield from condition_dict.items()
 
     @staticmethod
     def _parse_relationship(relationship: str, separator: str = '.'):
