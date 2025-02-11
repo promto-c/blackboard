@@ -170,7 +170,7 @@ class SQLiteDatabase(AbstractDatabase):
             for row in self.query_raw(f"PRAGMA foreign_key_list('{model_name}')")
         )
 
-    def query_raw(self, query: str, parameters: Optional[List[Any]] = None, as_dict: bool = True, is_single_field_query: bool = False):
+    def query_raw(self, query: str, parameters: Optional[List[Any]] = None, as_dict: bool = True, is_single_field: bool = False):
         """Execute a raw SQL query and yield results as dictionaries or tuples.
 
         Args:
@@ -192,7 +192,7 @@ class SQLiteDatabase(AbstractDatabase):
         try:
             if as_dict:
                 yield from map(dict, cursor)
-            elif is_single_field_query:
+            elif is_single_field:
                 yield from map(lambda x: x[0], cursor)
             else:
                 yield from map(tuple, cursor)
@@ -217,8 +217,8 @@ class SQLiteDatabase(AbstractDatabase):
         Yields:
             Tuple[Any, ...] | Dict[str, Any]: Each row from the query result.
         """
-        is_single_field_query = isinstance(fields, str)
-        if is_single_field_query:
+        is_single_field = isinstance(fields, str)
+        if is_single_field:
             fields = [fields]
 
         # Merge provided relationships with default relationships.
@@ -238,7 +238,7 @@ class SQLiteDatabase(AbstractDatabase):
 
         # No grouped (JSON) fields present: yield raw results.
         if not grouped_field_aliases:
-            yield from self.query_raw(query, parameters, as_dict, is_single_field_query)
+            yield from self.query_raw(query, parameters, as_dict, is_single_field)
         # Grouped fields are present.
         elif as_dict:
             yield from (
