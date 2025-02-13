@@ -20,43 +20,48 @@ from blackboard.utils.database.sql_query_builder import SQLQueryBuilder, QueryCo
 
 # Class Definitions
 # -----------------
-# TODO: Rename to be more appropriate
-class CustomRow(sqlite3.Row):
+class ContextAwareRow(sqlite3.Row):
 
-    cursor: 'CustomCursor'
+    cursor: 'ContextAwareCursor'
 
-    def __new__(cls, cursor: 'CustomCursor', row: Tuple[Any, ...]) -> 'CustomRow':
+    def __new__(cls, cursor: 'ContextAwareCursor', row: Tuple[Any, ...]) -> 'ContextAwareRow':
         obj = super().__new__(cls, cursor, row)
         obj.cursor = cursor
         return obj
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         # Get the original value.
         value = super().__getitem__(key)
 
         if not (context := self.cursor.context):
             return value
 
-        field_chain = context.get_field_by_alias(key)
+        if isinstance(key, int):
+            field_chain = context.get_field_by_index(key)
+        else:
+            field_chain = context.get_field_by_alias(key)
+        model_field_name = context.resolve_model_field(field_chain)
 
         if field_chain in context.grouped_fields:
             value = json.loads(value)
 
-        # NOTE: WIP
-        # model_field_name = context.resolve_model_field(field_chain)
+        if model_field_name not in context.serializers:
+            return value
 
-        # # If a formatter exists for this key, apply it.
-        # if model_field_name in context.formatters and callable(context.formatters[model_field_name]):
-        #     return context.formatters[model_field_name](value)
+        serializer = context.serializers[model_field_name]
+        if value in context.grouped_fields:
+            value = [serializer.deserialize(v) for v in value]
+        else:
+            value = serializer.deserialize(value)
+
         return value
 
 
-# TODO: Rename to be more appropriate
-class CustomCursor(sqlite3.Cursor):
+class ContextAwareCursor(sqlite3.Cursor):
 
     def __init__(self, connection: sqlite3.Connection, context: 'QueryContext' = None):
         super().__init__(connection)
-        self.row_factory = CustomRow
+        self.row_factory = ContextAwareRow
         self.context = context
 
     def set_query_context(self, context: 'QueryContext'):
@@ -94,8 +99,8 @@ class SQLiteDatabase(AbstractDatabase):
         """
         return self._connection
 
-    def cursor(self) -> 'CustomCursor':
-        return CustomCursor(self._connection)
+    def cursor(self) -> 'ContextAwareCursor':
+        return ContextAwareCursor(self._connection)
 
     # Public Methods
     # --------------

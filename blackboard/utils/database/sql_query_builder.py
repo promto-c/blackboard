@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import Dict, Any, List, Tuple, Optional, Union, Generator, Iterable, Set
+from typing import Dict, Any, Callable, List, Tuple, Optional, Union, Generator, Iterable, Set
 
 # Standard Library Imports
 # ------------------------
@@ -14,19 +14,46 @@ from blackboard.enums.view_enum import GroupOperator, SortOrder, FilterOperation
 # Class Definitions
 # -----------------
 # NOTE: WIP
+class DataSerializer:
+    """Serializes and deserializes data for storage.
+
+    This class encapsulates functions that convert Python values to a storage-compatible
+    format (serialization) and convert stored values back into Python values (deserialization).
+
+    Attributes:
+        serialize (Callable[[Any], Any]): Function to serialize a Python value for storage.
+        deserialize (Callable[[Any], Any]): Function to deserialize a stored value back to Python.
+    """
+
+    def __init__(self,
+                 serialize: Callable[[Any], Any],
+                 deserialize: Callable[[Any], Any]) -> None:
+        """Initializes the DataSerializer with serialization functions.
+
+        Args:
+            serialize (Callable[[Any], Any]): Function to serialize a Python value for storage.
+            deserialize (Callable[[Any], Any]): Function to deserialize a stored value back to Python.
+        """
+        self.serialize = serialize
+        self.deserialize = deserialize
+
+
 @dataclass
 class QueryContext:
-    """A class that holds the context for a built query, including its components such as fields, conditions, and relationships."""
+    """A class that holds the context for a built query, including its components such as fields, conditions, and relationships.
+    """
     model: str
-    query: str
-    parameters: List[Any]
+    query: str = field(default_factory=str)
+    parameters: List[Any] = field(default_factory=list)
+
     relationships: Dict[str, str] = field(default_factory=dict)
-    formatters: Dict[str, str] = field(default_factory=dict)
+    serializers: Dict[str, 'DataSerializer'] = field(default_factory=dict)
+
     field_to_alias: Dict[str, str] = field(default_factory=dict)
     alias_to_field: Dict[str, str] = field(default_factory=dict)
     grouped_fields: List[str] = field(default_factory=list)
 
-    def add_field_alias_pairs(self, pairs: List[Tuple[str, str]]) -> None:
+    def add_field_alias_pairs(self, pairs: List[Tuple[str, str]]):
         """Add field-alias pairs and maintain a reversible mapping.
 
         This method updates both `field_aliases` (field → alias) and 
@@ -61,14 +88,19 @@ class QueryContext:
 
         Returns:
             str: The field name corresponding to the alias.
-
-        Example:
-            >>> result = QueryContext(query="SELECT id FROM tasks", parameters=[])
-            >>> result.add_field_alias_pairs([("tasks.id", "task_id"), ("tasks.name", "task_name")])
-            >>> result.get_field_by_alias("task_id")
-            'tasks.id'
         """
         return self.alias_to_field.get(alias)
+    
+    def get_field_by_index(self, index: int) -> str:
+        """Retrieve the field name using its index.
+
+        Args:
+            index (int): The index of the field to retrieve.
+
+        Returns:
+            str: The field name at the specified index.
+        """
+        return list(self.field_to_alias.keys())[index]
 
     def resolve_model(self, relation_chain: str) -> str:
         """Resolve a chain of relationships to determine the final model.
@@ -92,7 +124,7 @@ class QueryContext:
         """
         return SQLQueryBuilder.resolve_model(self.model, relation_chain, self.relationships)
     
-    def resolve_model_field(self, field_chain: str) -> Tuple[str, str]:
+    def resolve_model_field(self, field_chain: str, as_tuple: bool = False) -> Tuple[str, str]:
         """Resolve a field to determine the final model it belongs to.
 
         Args:
@@ -106,11 +138,11 @@ class QueryContext:
             ...     'User.name': 'Profile.id',
             ...     'Profile.account': 'Account.id'
             ... }
-            >>> result = QueryContext(query="SELECT id FROM tasks", parameters=[], relationships=relationships)
-            >>> result.resolve_model_field('name.account')
-            ('Account', 'account')
+            >>> result = QueryContext(model='User', relationships=relationships)
+            >>> result.resolve_model_field('name.account', as_tuple=True)
+            ('Profile', 'account')
         """
-        return SQLQueryBuilder.resolve_model_field(self.model, field_chain, self.relationships)
+        return SQLQueryBuilder.resolve_model_field(self.model, field_chain, self.relationships, as_tuple=as_tuple)
 
 
 class SQLQueryBuilder:
@@ -154,9 +186,9 @@ class SQLQueryBuilder:
             base_model, _right_field = relationships[left_model_field].split(sep)
 
         return base_model
-    
+
     @classmethod
-    def resolve_model_field(cls, base_model: str, field_chain: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
+    def resolve_model_field(cls, base_model: str, field_chain: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR, as_tuple: bool = False) -> str | Tuple[str, str]:
         """Resolve a field to determine the final model.
 
         This method resolves a field to determine the final model it belongs to. It uses the `relationships`
@@ -183,11 +215,15 @@ class SQLQueryBuilder:
             'Profile.account'
         """
         if sep not in field_chain:
-            return f"{base_model}{sep}{field_chain}"
-        
-        parent_chain, field_name = SQLQueryBuilder._parse_relationship(field_chain)
-        model_name = cls.resolve_model(base_model, parent_chain, relationships, sep)
-        return f"{model_name}{sep}{field_name}"
+            model_name, field_name = base_model, field_chain
+        else:
+            parent_chain, field_name = cls._parse_relationship(field_chain, sep)
+            model_name = cls.resolve_model(base_model, parent_chain, relationships, sep)
+
+        if as_tuple:
+            return model_name, field_name
+        else:
+            return f"{model_name}{sep}{field_name}"
 
     @staticmethod
     def propagate_hierarchies(fields: List[str], sep: str = CHAIN_SEPARATOR, prune_leaves: int = 0) -> List[str]:
@@ -364,8 +400,10 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         return '\n'.join(join_clauses)
 
     @staticmethod
-    def build_where_clause(conditions: Dict[Union[GroupOperator, str], Any], 
+    def build_where_clause(base_model: str,
+                           conditions: Dict[Union[GroupOperator, str], Any], 
                            group_operator: Union[GroupOperator, str] = GroupOperator.AND,
+                           serializers: Optional[Dict[str, 'DataSerializer']] = None,
                            ) -> Tuple[str, Set[str], List[Any]]:
         """Build the WHERE clause of the query.
 
@@ -428,19 +466,21 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             return None, None, None
 
         for key, value in SQLQueryBuilder._extract_key_value_pairs(conditions):
-            # Handle key as `GroupOperator`
+            # Handle group operators by recursively building sub-clauses.
             if isinstance(key, GroupOperator) or GroupOperator.is_valid(key):
-                sub_where_clause, sub_fields, sub_parameters = SQLQueryBuilder.build_where_clause(value, group_operator=key)
+                sub_where_clause, sub_fields, sub_parameters = SQLQueryBuilder.build_where_clause(
+                    base_model, value, group_operator=key, serializers=serializers
+                )
                 where_clauses.append(f"({sub_where_clause})")
                 fields.update(sub_fields)
                 parameters.extend(sub_parameters)
                 continue
 
-            # Handle 
+            # If value is not a dict, assume equality.
             if not isinstance(value, dict):
                 operator = FilterOperation.EQ
             else:
-                # Extract the operator and value
+                # Extract the operator and value.
                 operator, value = next(iter(value.items()))
 
             if not isinstance(operator, FilterOperation):
@@ -448,7 +488,9 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
 
             if operator.is_multi_value():
                 if not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
-                    raise ValueError(f"For '{operator}' operation, value should be an iterable (but not a string or bytes)")
+                    raise ValueError(
+                        f"For '{operator}' operation, value should be an iterable (but not a string or bytes)"
+                    )
                 placeholders = ', '.join(['?'] * len(value))
                 sql_operator = f"{operator.sql_operator} ({placeholders})"
             else:
@@ -458,11 +500,23 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             where_clause = f"{SQLQueryBuilder._build_inner_alias(key)} {sql_operator}"
             where_clauses.append(where_clause)
 
-            # Handle special case for IN and NOT IN
+            if serializers:
+                model_field_name = SQLQueryBuilder.resolve_model_field(base_model, key, relationships)
+                serializer = serializers.get(model_field_name)
+            else:
+                serializer = None
+
+            # Process the value(s) with a serializer if provided.
             if operator.is_multi_value() or operator.num_values > 1:
-                parameters.extend(value)
+                if serializer:
+                    parameters.extend([serializer.serialize(v) for v in value])
+                else:
+                    parameters.extend(value)
             elif operator.requires_value():
-                parameters.append(value)
+                if serializer:
+                    parameters.append(serializer.serialize(value))
+                else:
+                    parameters.append(value)
 
         where_clauses_str = SQLQueryBuilder._join_where_clauses(where_clauses, group_operator)
 
@@ -498,6 +552,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
     @staticmethod
     def build_context(model: str, fields = None, conditions = None, relationships = None,
                       order_by: Optional[Dict[str, SortOrder]] = None, limit: int = None,
+                      serializers: Optional[Dict[str, 'DataSerializer']] = None,
                       ) -> 'QueryContext':
         """Constructs a SQL query dynamically based on the given parameters.
 
@@ -551,7 +606,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         group_by_clause = ', '.join(grouped_fields)
 
         select_clause = SQLQueryBuilder.build_select_clause(field_to_alias_pairs, grouped_fields)
-        where_clause, where_fields, parameters = SQLQueryBuilder.build_where_clause(conditions)
+        where_clause, where_fields, parameters = SQLQueryBuilder.build_where_clause(model, conditions, serializers=serializers)
         fields = list(fields or []) + list(where_fields or [])
         join_clause = SQLQueryBuilder.build_join_clause(model, fields, relationships)
         order_by_clause = SQLQueryBuilder.build_order_by_clause(order_by)
