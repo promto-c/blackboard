@@ -508,7 +508,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             if not isinstance(operator, FilterOperation):
                 operator = FilterOperation.from_string(operator)
 
-            if operator.is_multi_value():
+            if operator.is_multi_param():
                 if not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
                     raise ValueError(
                         f"For '{operator}' operation, value should be an iterable (but not a string or bytes)"
@@ -529,12 +529,12 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
                 serializer = None
 
             # Process the value(s) with a serializer if provided.
-            if operator.is_multi_value() or operator.num_values > 1:
+            if operator.is_multi_param() or operator.num_params > 1:
                 if serializer:
                     parameters.extend([serializer.serialize(v) for v in value])
                 else:
                     parameters.extend(value)
-            elif operator.requires_value():
+            elif operator.requires_param():
                 if serializer:
                     parameters.append(serializer.serialize(value))
                 else:

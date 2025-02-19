@@ -25,6 +25,7 @@ import blackboard as bb
 from blackboard import widgets
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollArea
 from blackboard.widgets.filter_widget import FilterWidget, MultiSelectFilterWidget
+from blackboard.utils.database.sql_query_builder import SQLQueryBuilder
 
 
 # Class Definitions
@@ -844,8 +845,14 @@ class DatabaseViewWidget(DataViewWidget):
         # TODO: Store relation chain in header item to be extract from item directly instead of extract from split '.'
         if '.' in column_name:
             # The column represents a relation, split to get the table and field names
-            related_table, display_field = column_name.split('.')
+            related_table, display_field = SQLQueryBuilder.resolve_model_field(
+                self._base_model.name,
+                field_chain=column_name,
+                relationships=self._database.get_relationships(self._base_model.name),
+                as_tuple=True
+            )
             is_relation_column = True
+
         else:
             # Get field information for the column
             field_info = self._base_model.get_field(column_name)
