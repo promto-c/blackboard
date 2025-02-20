@@ -1181,7 +1181,7 @@ class TextFilterWidget(FilterWidget):
         """
         if not self.selected_condition.requires_param():
             text = self.selected_condition.display_name
-        elif value:
+        else:
             text = f"{self.selected_condition.display_name}: {value}"
 
         return super().format_label(text)
@@ -1189,7 +1189,7 @@ class TextFilterWidget(FilterWidget):
     def check_validity(self):
         """Check if the filter is active based on current values.
         """
-        return self.selected_condition.requires_param() or bool(self.text_edit.text())
+        return not self.selected_condition.requires_param() or bool(self.text_edit.text())
 
 class FilterEntryEdit(QtWidgets.QLineEdit):
     def __init__(self, parent=None):
