@@ -547,18 +547,25 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
     @staticmethod
     def build_order_by_clause(order_by: Dict[str, SortOrder]) -> str:
         """Build the ORDER BY clause of the query.
-        
-        >>> SQLQueryBuilder.build_order_by_clause({
-        ...     "shot.name": SortOrder.DESC,
-        ...     "name": SortOrder.ASC
-        ... })
-        "'shot'.name DESC, _.name ASC"
-        
-        >>> SQLQueryBuilder.build_order_by_clause({
-        ...     "shot.name": "desc",
-        ...     "name": "asc"
-        ... })
-        "'shot'.name DESC, _.name ASC"
+
+        Args:
+            order_by (Dict[str, SortOrder]): A dictionary specifying the fields to sort by and the sort order.
+
+        Returns:
+            str: The ORDER BY clause in SQL format.
+
+        Examples:
+            >>> SQLQueryBuilder.build_order_by_clause({
+            ...     "shot.name": SortOrder.DESC,
+            ...     "name": SortOrder.ASC
+            ... })
+            "'shot'.name DESC, _.name ASC"
+            
+            >>> SQLQueryBuilder.build_order_by_clause({
+            ...     "shot.name": "desc",
+            ...     "name": "asc"
+            ... })
+            "'shot'.name DESC, _.name ASC"
         """
         if not order_by:
             return

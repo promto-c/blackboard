@@ -259,7 +259,9 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         super().paintEvent(event)
         self._move_ext_button()
 
+
 # TODO: Add support to set column name mapping to filter widget
+# TODO: Add support to get as dict or serialize for save/load view state
 class FilterBarWidget(QtWidgets.QWidget):
 
     filter_changed = QtCore.Signal()
